@@ -429,39 +429,6 @@ export default function MenuPage() {
         </div>
       </div>
 
-      {/* ── Floating Call to Order Button ── */}
-      {DISPLAY_ONLY && (
-        <motion.div
-          initial={{ y: 100, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.4, type: "spring", stiffness: 200 }}
-          className="fixed bottom-6 inset-x-4 z-50 flex gap-3 max-w-md mx-auto"
-        >
-          <a
-            href="tel:+966566507666"
-            className="flex-1 h-14 bg-gradient-to-r from-[#7D3D0F] via-[#9B4E14] to-[#D4912A] text-white rounded-2xl shadow-2xl shadow-[#7D3D0F]/40 flex items-center gap-3 px-5 font-bold active:scale-95 transition-all"
-            data-testid="link-call-order"
-          >
-            <span className="bg-white/20 p-2 rounded-xl">
-              <Phone className="w-5 h-5" />
-            </span>
-            <div className="leading-tight">
-              <div className="text-[10px] opacity-80 font-medium">{tc('اطلب الآن', 'Order Now')}</div>
-              <div className="text-sm font-black" dir="ltr">+966 56 650 7666</div>
-            </div>
-          </a>
-          <a
-            href="https://maps.app.goo.gl/zhHFfQVjWRxVKEBn6?g_st=ic"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="h-14 w-14 bg-white dark:bg-white/10 border-2 border-[#7D3D0F]/20 hover:border-[#7D3D0F] text-[#7D3D0F] rounded-2xl shadow-xl flex items-center justify-center active:scale-95 transition-all"
-            data-testid="link-location-map"
-            title={tc('موقعنا في الرياض', 'Our location in Riyadh')}
-          >
-            <MapPin className="w-6 h-6" />
-          </a>
-        </motion.div>
-      )}
 
       {/* ── Item Detail Modal (shows call-us toast in DISPLAY_ONLY) ── */}
       <AddToCartModal
