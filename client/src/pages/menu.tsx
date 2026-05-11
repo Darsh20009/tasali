@@ -397,9 +397,6 @@ export default function MenuPage() {
                               <SarIcon />
                             </span>
                           </span>
-                          <div className="w-7 h-7 rounded-lg bg-[#7D3D0F]/10 group-hover:bg-[#7D3D0F] flex items-center justify-center transition-colors">
-                            <Phone className="w-3.5 h-3.5 text-[#7D3D0F] group-hover:text-white transition-colors" />
-                          </div>
                         </div>
                       </div>
                     </motion.button>
