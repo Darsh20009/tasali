@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useTranslate } from "@/lib/useTranslate";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useCustomer } from "@/contexts/CustomerContext";
 import { useLocation } from "wouter";
 import { 
@@ -11,13 +11,20 @@ import {
   Cake, 
   User, 
   Search, 
-  QrCode, 
   MapPin, 
   Clock, 
   Utensils, 
   Sparkles,
   Languages,
-  Phone
+  Phone,
+  ShoppingCart,
+  Trash2,
+  Plus,
+  Minus,
+  Send,
+  CheckCircle,
+  X,
+  ChevronUp,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import tasaliLogo from "@assets/logo.png";
@@ -27,6 +34,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import type { AddonPreview } from "@/components/menu-layouts";
 import SarIcon from "@/components/sar-icon";
+import { apiRequest } from "@/lib/queryClient";
 
 interface MenuCategory {
   id: string;
@@ -38,7 +46,15 @@ interface MenuCategory {
   isSystem?: boolean;
 }
 
-const DISPLAY_ONLY = true;
+interface CartEntry {
+  key: string;
+  cartItem: any;
+  nameAr: string;
+  nameEn?: string;
+  price: number;
+  imageUrl?: string;
+  quantity: number;
+}
 
 export default function MenuPage() {
   const tc = useTranslate();
@@ -52,6 +68,10 @@ export default function MenuPage() {
   const [selectedItem, setSelectedItem] = useState<CoffeeItem | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [cart, setCart] = useState<CartEntry[]>([]);
+  const [isCartOpen, setIsCartOpen] = useState(false);
+  const [customerNote, setCustomerNote] = useState("");
+  const [orderSuccess, setOrderSuccess] = useState<{ orderNumber: string } | null>(null);
 
   const { data: coffeeItems = [], isLoading } = useQuery<CoffeeItem[]>({
     queryKey: ["/api/coffee-items"],
@@ -78,6 +98,26 @@ export default function MenuPage() {
 
   const { data: businessConfig } = useQuery<any>({
     queryKey: ["/api/business-config"],
+  });
+
+  const sendOrderMutation = useMutation({
+    mutationFn: async (orderBody: any) => {
+      const res = await apiRequest("POST", "/api/orders", orderBody);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setOrderSuccess({ orderNumber: data.orderNumber || data._id?.slice(-6).toUpperCase() || "—" });
+      setCart([]);
+      setCustomerNote("");
+      setIsCartOpen(false);
+    },
+    onError: () => {
+      toast({
+        title: tc("خطأ", "Error"),
+        description: tc("حدث خطأ أثناء إرسال الطلب، حاول مرة أخرى", "Failed to send order, please try again"),
+        variant: "destructive",
+      });
+    },
   });
 
   const isStoreOpen = () => {
@@ -158,9 +198,83 @@ export default function MenuPage() {
     return Math.max(0, ...coffeeItems.map(item => (item as any).salesCount || 0));
   }, [coffeeItems]);
 
+  const cartTotal = useMemo(() =>
+    cart.reduce((sum, entry) => sum + entry.price * entry.quantity, 0),
+    [cart]
+  );
+  const cartItemCount = useMemo(() =>
+    cart.reduce((sum, entry) => sum + entry.quantity, 0),
+    [cart]
+  );
+
   const handleItemClick = (item: CoffeeItem) => {
     setSelectedItem(item);
     setIsModalOpen(true);
+  };
+
+  const handleAddToCart = (cartItemData: any) => {
+    if (!selectedItem) return;
+    const price = typeof selectedItem.price === 'number' ? selectedItem.price : parseFloat(String(selectedItem.price) || '0');
+    const key = `${(selectedItem as any).id}-${cartItemData.selectedSize}`;
+    setCart(prev => {
+      const existing = prev.findIndex(e => e.key === key);
+      if (existing >= 0) {
+        return prev.map((e, i) => i === existing ? { ...e, quantity: e.quantity + (cartItemData.quantity || 1) } : e);
+      }
+      return [...prev, {
+        key,
+        cartItem: cartItemData,
+        nameAr: selectedItem.nameAr,
+        nameEn: (selectedItem as any).nameEn,
+        price,
+        imageUrl: selectedItem.imageUrl,
+        quantity: cartItemData.quantity || 1,
+      }];
+    });
+    toast({
+      title: tc("تمت الإضافة ✓", "Added ✓"),
+      description: i18n.language === 'ar' ? selectedItem.nameAr : ((selectedItem as any).nameEn || selectedItem.nameAr),
+    });
+  };
+
+  const removeFromCart = (key: string) => {
+    setCart(prev => prev.filter(e => e.key !== key));
+  };
+
+  const changeQty = (key: string, delta: number) => {
+    setCart(prev => prev.map(e => {
+      if (e.key !== key) return e;
+      const newQty = e.quantity + delta;
+      return newQty <= 0 ? null! : { ...e, quantity: newQty };
+    }).filter(Boolean));
+  };
+
+  const handleSendOrder = () => {
+    if (cart.length === 0) return;
+    const items = cart.map(entry => ({
+      coffeeItemId: entry.cartItem.coffeeItemId,
+      name: entry.nameAr,
+      nameAr: entry.nameAr,
+      nameEn: entry.nameEn,
+      quantity: entry.quantity,
+      price: entry.price,
+      selectedSize: entry.cartItem.selectedSize,
+      selectedAddons: entry.cartItem.selectedAddons || [],
+      imageUrl: entry.imageUrl,
+    }));
+    const totalAmount = cartTotal;
+    sendOrderMutation.mutate({
+      items,
+      totalAmount,
+      paymentMethod: 'cash',
+      orderType: 'dine-in',
+      channel: 'customer-menu',
+      status: 'pending',
+      customerNote: customerNote.trim() || undefined,
+      customerName: customerNote.trim() || tc('عميل المنيو', 'Menu Customer'),
+      notes: customerNote.trim() || undefined,
+      source: 'menu',
+    });
   };
 
   if (isLoading) {
@@ -262,7 +376,7 @@ export default function MenuPage() {
         </div>
 
         {/* ── Content Area ── */}
-        <div className="max-w-md mx-auto px-4 pb-32 space-y-5 -mt-4">
+        <div className="max-w-md mx-auto px-4 pb-40 space-y-5 -mt-4">
 
           {/* ── Search ── */}
           <div className="relative">
@@ -330,6 +444,8 @@ export default function MenuPage() {
                   const isNew = (item as any).isNewProduct === 1;
                   const isBestSeller = salesCount > 0 && maxSalesCount > 0 && salesCount >= maxSalesCount * 0.6;
                   const price = typeof item.price === 'number' ? item.price : parseFloat(String(item.price) || '0');
+                  const cartKey = `${(item as any).id}-default`;
+                  const inCart = cart.find(e => e.key.startsWith(`${(item as any).id}-`));
 
                   return (
                     <motion.button
@@ -374,6 +490,13 @@ export default function MenuPage() {
                           )}
                         </div>
 
+                        {/* In-cart indicator */}
+                        {inCart && (
+                          <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-[#7D3D0F] flex items-center justify-center shadow-md">
+                            <span className="text-white text-[10px] font-black">{inCart.quantity}</span>
+                          </div>
+                        )}
+
                         {/* Unavailable overlay */}
                         {!isAvailable && (
                           <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
@@ -397,6 +520,9 @@ export default function MenuPage() {
                               <SarIcon />
                             </span>
                           </span>
+                          <div className="w-7 h-7 rounded-lg bg-[#7D3D0F] flex items-center justify-center shadow-sm">
+                            <Plus className="w-3.5 h-3.5 text-white" />
+                          </div>
                         </div>
                       </div>
                     </motion.button>
@@ -432,22 +558,234 @@ export default function MenuPage() {
         </div>
       </div>
 
+      {/* ── Floating Cart Button ── */}
+      <AnimatePresence>
+        {cart.length > 0 && !isCartOpen && (
+          <motion.button
+            initial={{ y: 80, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 80, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            onClick={() => setIsCartOpen(true)}
+            className="fixed bottom-6 inset-x-4 max-w-md mx-auto z-40 bg-[#7D3D0F] hover:bg-[#6B3310] text-white rounded-2xl shadow-xl shadow-[#7D3D0F]/40 flex items-center justify-between px-5 py-4 transition-colors"
+            data-testid="button-open-cart"
+          >
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <ShoppingCart className="w-5 h-5" />
+                <span className="absolute -top-2 -right-2 w-4 h-4 bg-[#D4912A] rounded-full text-[10px] font-black flex items-center justify-center">
+                  {cartItemCount}
+                </span>
+              </div>
+              <span className="font-bold text-sm">{tc('عرض الطلب', 'View Order')}</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="font-black text-base">{cartTotal.toFixed(2)}</span>
+              <SarIcon />
+              <ChevronUp className="w-4 h-4 opacity-70 mr-1" />
+            </div>
+          </motion.button>
+        )}
+      </AnimatePresence>
 
-      {/* ── Item Detail Modal (shows call-us toast in DISPLAY_ONLY) ── */}
+      {/* ── Cart Sheet (Bottom Drawer) ── */}
+      <AnimatePresence>
+        {isCartOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsCartOpen(false)}
+              className="fixed inset-0 bg-black/50 z-40"
+            />
+            {/* Drawer */}
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", stiffness: 300, damping: 35 }}
+              className="fixed bottom-0 inset-x-0 z-50 bg-white dark:bg-[#1a0c05] rounded-t-3xl shadow-2xl max-h-[85vh] flex flex-col"
+              dir={dir}
+            >
+              {/* Handle */}
+              <div className="flex justify-center pt-3 pb-1">
+                <div className="w-10 h-1 rounded-full bg-gray-200 dark:bg-white/20" />
+              </div>
+
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 pb-3 pt-1 border-b border-gray-100 dark:border-white/10">
+                <div className="flex items-center gap-2">
+                  <ShoppingCart className="w-5 h-5 text-[#7D3D0F]" />
+                  <h2 className="font-black text-[#3D1A0A] dark:text-white text-base">
+                    {tc('طلبك', 'Your Order')}
+                  </h2>
+                  <span className="bg-[#7D3D0F] text-white text-[11px] font-black px-2 py-0.5 rounded-full">
+                    {cartItemCount}
+                  </span>
+                </div>
+                <button
+                  onClick={() => setIsCartOpen(false)}
+                  className="w-8 h-8 rounded-xl bg-gray-100 dark:bg-white/10 flex items-center justify-center"
+                  data-testid="button-close-cart"
+                >
+                  <X className="w-4 h-4 text-gray-500 dark:text-white/60" />
+                </button>
+              </div>
+
+              {/* Cart Items */}
+              <div className="flex-1 overflow-y-auto px-5 py-3 space-y-3">
+                {cart.map(entry => {
+                  const name = i18n.language === 'ar' ? entry.nameAr : (entry.nameEn || entry.nameAr);
+                  return (
+                    <div key={entry.key} className="flex items-center gap-3 bg-[#F5F0EA] dark:bg-white/5 rounded-2xl p-3">
+                      {entry.imageUrl ? (
+                        <img src={entry.imageUrl} alt={name} className="w-12 h-12 rounded-xl object-cover flex-shrink-0" />
+                      ) : (
+                        <div className="w-12 h-12 rounded-xl bg-[#7D3D0F]/10 flex items-center justify-center flex-shrink-0">
+                          <Coffee className="w-5 h-5 text-[#7D3D0F]/50" />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-[#3D1A0A] dark:text-white text-sm line-clamp-1">{name}</p>
+                        <p className="text-[#7D3D0F] dark:text-[#D4912A] font-black text-sm">
+                          {(entry.price * entry.quantity).toFixed(2)} <SarIcon />
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button
+                          onClick={() => changeQty(entry.key, -1)}
+                          className="w-7 h-7 rounded-lg bg-white dark:bg-white/10 border border-gray-200 dark:border-white/10 flex items-center justify-center"
+                          data-testid={`button-decrease-${entry.key}`}
+                        >
+                          <Minus className="w-3 h-3 text-gray-600 dark:text-white/60" />
+                        </button>
+                        <span className="w-5 text-center font-black text-sm text-[#3D1A0A] dark:text-white">{entry.quantity}</span>
+                        <button
+                          onClick={() => changeQty(entry.key, 1)}
+                          className="w-7 h-7 rounded-lg bg-white dark:bg-white/10 border border-gray-200 dark:border-white/10 flex items-center justify-center"
+                          data-testid={`button-increase-${entry.key}`}
+                        >
+                          <Plus className="w-3 h-3 text-gray-600 dark:text-white/60" />
+                        </button>
+                        <button
+                          onClick={() => removeFromCart(entry.key)}
+                          className="w-7 h-7 rounded-lg bg-red-50 dark:bg-red-900/20 flex items-center justify-center"
+                          data-testid={`button-remove-${entry.key}`}
+                        >
+                          <Trash2 className="w-3 h-3 text-red-500" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Note Field */}
+                <div className="bg-[#F5F0EA] dark:bg-white/5 rounded-2xl p-4 space-y-2">
+                  <label className="text-sm font-bold text-[#3D1A0A] dark:text-white flex items-center gap-2">
+                    <Send className="w-4 h-4 text-[#D4912A]" />
+                    {tc('ملاحظة للكاشير', 'Note to Cashier')}
+                  </label>
+                  <textarea
+                    value={customerNote}
+                    onChange={e => setCustomerNote(e.target.value)}
+                    placeholder={tc('مثلاً: اسمك، رقم الطاولة، أو أي طلب خاص...', 'e.g. your name, table number, or special request...')}
+                    rows={3}
+                    className="w-full bg-white dark:bg-white/10 border border-[#7D3D0F]/20 rounded-xl px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#7D3D0F]/30 resize-none"
+                    data-testid="textarea-customer-note"
+                  />
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-5 pb-6 pt-3 border-t border-gray-100 dark:border-white/10 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground font-medium">{tc('الإجمالي', 'Total')}</span>
+                  <span className="text-xl font-black text-[#7D3D0F] dark:text-[#D4912A]">
+                    {cartTotal.toFixed(2)} <SarIcon />
+                  </span>
+                </div>
+                <button
+                  onClick={handleSendOrder}
+                  disabled={sendOrderMutation.isPending}
+                  className="w-full bg-[#7D3D0F] hover:bg-[#6B3310] disabled:opacity-60 text-white font-black py-4 rounded-2xl text-sm flex items-center justify-center gap-2 shadow-lg shadow-[#7D3D0F]/30 transition-colors"
+                  data-testid="button-send-order"
+                >
+                  {sendOrderMutation.isPending ? (
+                    <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
+                      <Coffee className="w-5 h-5" />
+                    </motion.div>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      {tc('أرسل الطلب للكاشير', 'Send Order to Cashier')}
+                    </>
+                  )}
+                </button>
+                <p className="text-center text-[11px] text-muted-foreground">
+                  {tc('سيتم الدفع عند الاستلام في الكاشير', 'Payment will be collected at the cashier')}
+                </p>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* ── Order Success Modal ── */}
+      <AnimatePresence>
+        {orderSuccess && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-6"
+          >
+            <motion.div
+              initial={{ scale: 0.8, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.8, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 300, damping: 25 }}
+              className="bg-white dark:bg-[#1a0c05] rounded-3xl p-8 text-center max-w-sm w-full shadow-2xl"
+              dir={dir}
+            >
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ delay: 0.2, type: "spring", stiffness: 300 }}
+                className="w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-5"
+              >
+                <CheckCircle className="w-10 h-10 text-green-500" />
+              </motion.div>
+              <h2 className="text-xl font-black text-[#3D1A0A] dark:text-white mb-2">
+                {tc('تم إرسال طلبك!', 'Order Sent!')}
+              </h2>
+              <p className="text-muted-foreground text-sm mb-4">
+                {tc('وصل طلبك للكاشير وسيتم تحضيره قريباً', 'Your order reached the cashier and will be prepared soon')}
+              </p>
+              <div className="bg-[#F5F0EA] dark:bg-white/5 rounded-2xl px-6 py-3 mb-6">
+                <p className="text-[11px] text-muted-foreground mb-1">{tc('رقم الطلب', 'Order Number')}</p>
+                <p className="text-2xl font-black text-[#7D3D0F] dark:text-[#D4912A]">#{orderSuccess.orderNumber}</p>
+              </div>
+              <button
+                onClick={() => setOrderSuccess(null)}
+                className="w-full bg-[#7D3D0F] hover:bg-[#6B3310] text-white font-black py-3.5 rounded-2xl text-sm transition-colors"
+                data-testid="button-success-close"
+              >
+                {tc('حسناً', 'Got it')}
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Item Detail Modal ── */}
       <AddToCartModal
         item={selectedItem}
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         variants={selectedItem ? (groupedItems[getGroupingKey(selectedItem)] || [selectedItem]) : []}
-        onAddToCart={() => {
-          if (DISPLAY_ONLY) {
-            setIsModalOpen(false);
-            toast({
-              title: tc("للطلب اتصل بنا", "Call us to order"),
-              description: tc("اتصل على +966 56 650 7666 أو زر فرعنا في الرياض", "Call +966 56 650 7666 or visit our Riyadh branch"),
-            });
-          }
-        }}
+        onAddToCart={handleAddToCart}
       />
     </div>
   );
