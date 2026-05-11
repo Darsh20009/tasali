@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useTranslate } from "@/lib/useTranslate";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useCustomer } from "@/contexts/CustomerContext";
 import { useLocation } from "wouter";
 import { 
@@ -21,10 +21,10 @@ import {
   Trash2,
   Plus,
   Minus,
-  Send,
-  CheckCircle,
   X,
   ChevronUp,
+  Eye,
+  ArrowRight,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import tasaliLogo from "@assets/logo.png";
@@ -34,7 +34,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import type { AddonPreview } from "@/components/menu-layouts";
 import SarIcon from "@/components/sar-icon";
-import { apiRequest } from "@/lib/queryClient";
 
 interface MenuCategory {
   id: string;
@@ -71,7 +70,7 @@ export default function MenuPage() {
   const [cart, setCart] = useState<CartEntry[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [customerNote, setCustomerNote] = useState("");
-  const [orderSuccess, setOrderSuccess] = useState<{ orderNumber: string } | null>(null);
+  const [showOrderDisplay, setShowOrderDisplay] = useState(false);
 
   const { data: coffeeItems = [], isLoading } = useQuery<CoffeeItem[]>({
     queryKey: ["/api/coffee-items"],
@@ -98,26 +97,6 @@ export default function MenuPage() {
 
   const { data: businessConfig } = useQuery<any>({
     queryKey: ["/api/business-config"],
-  });
-
-  const sendOrderMutation = useMutation({
-    mutationFn: async (orderBody: any) => {
-      const res = await apiRequest("POST", "/api/orders", orderBody);
-      return res.json();
-    },
-    onSuccess: (data) => {
-      setOrderSuccess({ orderNumber: data.orderNumber || data._id?.slice(-6).toUpperCase() || "—" });
-      setCart([]);
-      setCustomerNote("");
-      setIsCartOpen(false);
-    },
-    onError: () => {
-      toast({
-        title: tc("خطأ", "Error"),
-        description: tc("حدث خطأ أثناء إرسال الطلب، حاول مرة أخرى", "Failed to send order, please try again"),
-        variant: "destructive",
-      });
-    },
   });
 
   const isStoreOpen = () => {
@@ -249,32 +228,10 @@ export default function MenuPage() {
     }).filter(Boolean));
   };
 
-  const handleSendOrder = () => {
+  const handleShowOrder = () => {
     if (cart.length === 0) return;
-    const items = cart.map(entry => ({
-      coffeeItemId: entry.cartItem.coffeeItemId,
-      name: entry.nameAr,
-      nameAr: entry.nameAr,
-      nameEn: entry.nameEn,
-      quantity: entry.quantity,
-      price: entry.price,
-      selectedSize: entry.cartItem.selectedSize,
-      selectedAddons: entry.cartItem.selectedAddons || [],
-      imageUrl: entry.imageUrl,
-    }));
-    const totalAmount = cartTotal;
-    sendOrderMutation.mutate({
-      items,
-      totalAmount,
-      paymentMethod: 'cash',
-      orderType: 'dine-in',
-      channel: 'customer-menu',
-      status: 'pending',
-      customerNote: customerNote.trim() || undefined,
-      customerName: customerNote.trim() || tc('عميل المنيو', 'Menu Customer'),
-      notes: customerNote.trim() || undefined,
-      source: 'menu',
-    });
+    setIsCartOpen(false);
+    setShowOrderDisplay(true);
   };
 
   if (isLoading) {
@@ -718,24 +675,15 @@ export default function MenuPage() {
                   </span>
                 </div>
                 <button
-                  onClick={handleSendOrder}
-                  disabled={sendOrderMutation.isPending}
-                  className="w-full bg-[#7D3D0F] hover:bg-[#6B3310] disabled:opacity-60 text-white font-black py-4 rounded-2xl text-sm flex items-center justify-center gap-2 shadow-lg shadow-[#7D3D0F]/30 transition-colors"
-                  data-testid="button-send-order"
+                  onClick={handleShowOrder}
+                  className="w-full bg-[#7D3D0F] hover:bg-[#6B3310] text-white font-black py-4 rounded-2xl text-sm flex items-center justify-center gap-2 shadow-lg shadow-[#7D3D0F]/30 transition-colors"
+                  data-testid="button-show-order"
                 >
-                  {sendOrderMutation.isPending ? (
-                    <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
-                      <Coffee className="w-5 h-5" />
-                    </motion.div>
-                  ) : (
-                    <>
-                      <Send className="w-4 h-4" />
-                      {tc('عرض الطلب للكاشير', 'Show Order to Cashier')}
-                    </>
-                  )}
+                  <Eye className="w-4 h-4" />
+                  {tc('عرض الطلب للكاشير', 'Show Order to Cashier')}
                 </button>
                 <p className="text-center text-[11px] text-muted-foreground">
-                  {tc('سيتم الدفع عند الاستلام في الكاشير', 'Payment will be collected at the cashier')}
+                  {tc('اعرض هذه الشاشة للكاشير ليسجّل طلبك', 'Show this screen to the cashier to register your order')}
                 </p>
               </div>
             </motion.div>
@@ -743,49 +691,99 @@ export default function MenuPage() {
         )}
       </AnimatePresence>
 
-      {/* ── Order Success Modal ── */}
+      {/* ── Order Display Screen (show to cashier) ── */}
       <AnimatePresence>
-        {orderSuccess && (
+        {showOrderDisplay && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-6"
+            className="fixed inset-0 bg-[#3D1A0A] z-50 flex flex-col"
+            dir={dir}
           >
-            <motion.div
-              initial={{ scale: 0.8, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.8, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 300, damping: 25 }}
-              className="bg-white dark:bg-[#1a0c05] rounded-3xl p-8 text-center max-w-sm w-full shadow-2xl"
-              dir={dir}
-            >
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ delay: 0.2, type: "spring", stiffness: 300 }}
-                className="w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-5"
-              >
-                <CheckCircle className="w-10 h-10 text-green-500" />
-              </motion.div>
-              <h2 className="text-xl font-black text-[#3D1A0A] dark:text-white mb-2">
-                {tc('تم إرسال طلبك!', 'Order Sent!')}
-              </h2>
-              <p className="text-muted-foreground text-sm mb-4">
-                {tc('وصل طلبك للكاشير وسيتم تحضيره قريباً', 'Your order reached the cashier and will be prepared soon')}
-              </p>
-              <div className="bg-[#F5F0EA] dark:bg-white/5 rounded-2xl px-6 py-3 mb-6">
-                <p className="text-[11px] text-muted-foreground mb-1">{tc('رقم الطلب', 'Order Number')}</p>
-                <p className="text-2xl font-black text-[#7D3D0F] dark:text-[#D4912A]">#{orderSuccess.orderNumber}</p>
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 pt-10 pb-4">
+              <div className="flex items-center gap-3">
+                <img src={tasaliLogo} alt="تسالي كرومش" className="w-10 h-10 object-contain rounded-xl" />
+                <div>
+                  <p className="text-white font-black text-sm">تسالي كرومش</p>
+                  <p className="text-[#D4912A] text-[10px] font-bold tracking-widest">TASALI QURUMSH</p>
+                </div>
               </div>
               <button
-                onClick={() => setOrderSuccess(null)}
-                className="w-full bg-[#7D3D0F] hover:bg-[#6B3310] text-white font-black py-3.5 rounded-2xl text-sm transition-colors"
-                data-testid="button-success-close"
+                onClick={() => setShowOrderDisplay(false)}
+                className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center"
+                data-testid="button-close-display"
               >
-                {tc('حسناً', 'Got it')}
+                <X className="w-4 h-4 text-white" />
               </button>
-            </motion.div>
+            </div>
+
+            {/* Title */}
+            <div className="text-center px-5 pb-4">
+              <p className="text-[#D4912A] text-xs font-bold tracking-widest uppercase mb-1">
+                {tc('اعرض هذه الشاشة للكاشير', 'Show this screen to the cashier')}
+              </p>
+              <h2 className="text-white text-2xl font-black">{tc('طلبي', 'My Order')}</h2>
+            </div>
+
+            {/* Items list */}
+            <div className="flex-1 overflow-y-auto px-5 space-y-2 pb-4">
+              {cart.map((entry, i) => {
+                const name = i18n.language === 'ar' ? entry.nameAr : (entry.nameEn || entry.nameAr);
+                return (
+                  <div key={entry.key} className="flex items-center gap-3 bg-white/10 rounded-2xl p-3">
+                    {entry.imageUrl ? (
+                      <img src={entry.imageUrl} alt={name} className="w-14 h-14 rounded-xl object-cover flex-shrink-0" />
+                    ) : (
+                      <div className="w-14 h-14 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0">
+                        <Coffee className="w-6 h-6 text-white/40" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white font-black text-base line-clamp-1">{name}</p>
+                      {entry.cartItem.selectedSize && entry.cartItem.selectedSize !== 'default' && (
+                        <p className="text-white/50 text-xs">{entry.cartItem.selectedSize}</p>
+                      )}
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-[#D4912A] font-black text-lg">×{entry.quantity}</p>
+                      <p className="text-white/70 text-xs">{(entry.price * entry.quantity).toFixed(2)} <SarIcon /></p>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Note */}
+              {customerNote.trim() && (
+                <div className="bg-[#D4912A]/20 border border-[#D4912A]/40 rounded-2xl p-4">
+                  <p className="text-[#D4912A] text-xs font-bold mb-1">{tc('ملاحظة', 'Note')}</p>
+                  <p className="text-white text-sm font-medium">{customerNote}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Total */}
+            <div className="px-5 pb-10 pt-3 border-t border-white/10 space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-white/60 font-medium text-sm">{tc('الإجمالي', 'Total')}</span>
+                <span className="text-[#D4912A] font-black text-3xl">
+                  {cartTotal.toFixed(2)} <span className="text-lg"><SarIcon /></span>
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  setShowOrderDisplay(false);
+                  setCart([]);
+                  setCustomerNote("");
+                }}
+                className="w-full bg-white/10 hover:bg-white/20 text-white font-bold py-3.5 rounded-2xl text-sm flex items-center justify-center gap-2 transition-colors"
+                data-testid="button-done-display"
+              >
+                <ArrowRight className="w-4 h-4" />
+                {tc('تم — العودة للقائمة', 'Done — Back to Menu')}
+              </button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
