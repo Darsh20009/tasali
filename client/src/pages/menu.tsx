@@ -154,14 +154,6 @@ export default function MenuPage() {
   }, [representativeItems, selectedCategory, searchQuery, i18n.language]);
 
   const handleItemClick = (item: CoffeeItem) => {
-    const name = i18n.language === 'ar' ? item.nameAr : item.nameEn || item.nameAr;
-    if (DISPLAY_ONLY) {
-      toast({
-        title: tc("للطلب اتصل بنا", "Call us to order"),
-        description: tc(`اتصل على +966 56 650 7666 لطلب ${name}`, `Call +966 56 650 7666 to order ${name}`),
-      });
-      return;
-    }
     setSelectedItem(item);
     setIsModalOpen(true);
   };
