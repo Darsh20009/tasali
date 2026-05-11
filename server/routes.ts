@@ -12137,7 +12137,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Configure multer for drink image uploads
-  const drinksUploadsDir = path.resolve(__dirname, '..', 'attached_assets', 'drinks');
+  const drinksUploadsDir = path.resolve(__dirname, '..', 'public', 'drinks');
   const drinksStorage = multer.diskStorage({
     destination: function (req, file, cb) {
       if (!fs.existsSync(drinksUploadsDir)) {
@@ -12198,7 +12198,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.json({ url: objectPath });
       } catch (storageError) {
         console.log('[UPLOAD] Object storage not available, falling back to local storage');
-        const fileUrl = `/attached_assets/drinks/${req.file.filename}`;
+        const fileUrl = `/drinks/${req.file.filename}`;
         res.json({ url: fileUrl });
       }
     } catch (error) {
@@ -12210,7 +12210,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // List all uploaded drink images
   app.get("/api/drink-images", requireAuth, async (req: AuthRequest, res) => {
     try {
-      const drinksDir = path.resolve(__dirname, '..', 'attached_assets', 'drinks');
+      const drinksDir = path.resolve(__dirname, '..', 'public', 'drinks');
       if (!fs.existsSync(drinksDir)) {
         return res.json([]);
       }
@@ -12223,7 +12223,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         })
         .map(f => ({
           filename: f,
-          url: `/attached_assets/drinks/${f}`,
+          url: `/drinks/${f}`,
           uploadedAt: fs.statSync(path.join(drinksDir, f)).mtime.toISOString()
         }));
       res.json(files);
