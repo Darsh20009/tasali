@@ -683,7 +683,7 @@ export default function MenuPage() {
                   {tc('عرض الطلب للكاشير', 'Show Order to Cashier')}
                 </button>
                 <p className="text-center text-[11px] text-muted-foreground">
-                  {tc('اعرض هذه الشاشة للكاشير ليسجّل طلبك', 'Show this screen to the cashier to register your order')}
+                  {tc('اعرض منتجاتك أو طلبك للكاشير', 'Show your products or order to the cashier')}
                 </p>
               </div>
             </motion.div>
