@@ -6848,6 +6848,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Sort by salesCount descending so best-sellers appear first
+      finalItems = [...finalItems].sort((a: any, b: any) => ((b.salesCount || 0) - (a.salesCount || 0)));
+
       // Store in memory cache for next requests (60 seconds)
       cache.set(ck, finalItems, CACHE_TTL.COFFEE_ITEMS);
       res.json(finalItems);

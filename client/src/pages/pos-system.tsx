@@ -15,7 +15,7 @@ import {
   Archive, RefreshCw, Wifi, WifiOff, Loader2,
   Navigation, SplitSquareVertical, Banknote,
   Lock, Bell, BellOff, MonitorSmartphone, ScanLine,
-  PauseCircle, Receipt, Settings, User, Wallet
+  PauseCircle, Receipt, Settings, User
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,7 +46,7 @@ import PrinterSettingsPanel from "@/components/printer-settings-panel";
 import { loadPrinterSettings } from "@/lib/thermal-printer";
 
 type OrderType = "dine_in" | "takeaway" | "delivery" | "car_pickup";
-type PaymentMethod = "cash" | "card" | "tasali-card" | "split";
+type PaymentMethod = "cash" | "card" | "split";
 
 const ORDER_TYPES = [
   { id: "dine_in", name: "محلي", nameEn: "Dine-in", icon: Coffee },
@@ -58,7 +58,6 @@ const ORDER_TYPES = [
 const PAYMENT_METHODS = [
   { id: "cash", icon: Banknote, tKey: "pos.payment_cash" },
   { id: "card", icon: CreditCard, tKey: "pos.payment_card" },
-  { id: "tasali-card", icon: Wallet, tKey: "pos.payment_loyalty" },
   { id: "split", icon: SplitSquareVertical, tKey: "pos.payment_split" },
 ];
 
@@ -69,7 +68,6 @@ export default function PosSystem() {
   const PAYMENT_METHOD_LABELS: Record<string, string> = {
     cash: tc("نقدي","Cash"),
     card: tc("شبكة","Network"),
-    "tasali-card": tc("بطاقة تسالي كرومش","بطاقة تسالي"),
     split: tc("نقدي + شبكة","Cash + Network"),
   };
   const dir = i18n.language === 'ar' ? 'rtl' : 'ltr';
@@ -539,7 +537,8 @@ export default function PosSystem() {
           return arName.includes(q) || enName.includes(q);
         });
       })
-      .map(group => group[0]);
+      .map(group => group[0])
+      .sort((a, b) => ((b as any).salesCount || 0) - ((a as any).salesCount || 0));
   }, [productsData, selectedCategory, searchQuery, groupedItemsMap]);
 
   const visibleCategories = useMemo(() => {
@@ -1703,36 +1702,6 @@ export default function PosSystem() {
               )}
             </div>
 
-            {/* Points discount toggle — only when customer found with ≥100 pts */}
-            {customerLookupFound === true && customerPoints >= 100 && (
-              <div className={`rounded-xl border-2 p-3 transition-colors ${usePoints ? 'border-amber-400 bg-amber-50 dark:bg-amber-950/30' : 'border-muted bg-muted/30'}`}>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Wallet className="w-4 h-4 text-amber-600 shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-xs font-black text-amber-700 dark:text-amber-300 leading-none">
-                        {i18n.language === 'ar' ? 'استخدام النقاط' : 'Use Points'}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground mt-0.5">
-                        {customerPoints} {i18n.language === 'ar' ? 'نقطة' : 'pts'} = {(customerPoints / 50).toFixed(2)} {t('pos.currency')}
-                      </p>
-                    </div>
-                  </div>
-                  <Switch
-                    checked={usePoints}
-                    onCheckedChange={setUsePoints}
-                    data-testid="toggle-use-points"
-                  />
-                </div>
-                {usePoints && (
-                  <p className="text-[11px] text-amber-700 dark:text-amber-300 font-bold mt-2 border-t border-amber-200 dark:border-amber-700 pt-2">
-                    {i18n.language === 'ar'
-                      ? `سيُخصم ${pointsDiscount.toFixed(2)} ريال (${Math.round(pointsDiscount * 50)} نقطة) من الطلب`
-                      : `${pointsDiscount.toFixed(2)} SAR (${Math.round(pointsDiscount * 50)} pts) will be deducted`}
-                  </p>
-                )}
-              </div>
-            )}
 
             {/* Offline / Queue Indicator */}
             {(!isOnline || offlineQueueCount > 0) && (
