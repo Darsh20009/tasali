@@ -153,6 +153,11 @@ export default function MenuPage() {
       .sort((a, b) => ((b as any).salesCount || 0) - ((a as any).salesCount || 0));
   }, [representativeItems, selectedCategory, searchQuery, i18n.language]);
 
+  const maxSalesCount = useMemo(() => {
+    if (!coffeeItems.length) return 0;
+    return Math.max(0, ...coffeeItems.map(item => (item as any).salesCount || 0));
+  }, [coffeeItems]);
+
   const handleItemClick = (item: CoffeeItem) => {
     setSelectedItem(item);
     setIsModalOpen(true);
@@ -322,6 +327,8 @@ export default function MenuPage() {
                   const nameSecondary = i18n.language === 'ar' ? item.nameEn : item.nameAr;
                   const isAvailable = item.isAvailable !== 0;
                   const salesCount = (item as any).salesCount || 0;
+                  const isNew = (item as any).isNewProduct === 1;
+                  const isBestSeller = salesCount > 0 && maxSalesCount > 0 && salesCount >= maxSalesCount * 0.6;
                   const price = typeof item.price === 'number' ? item.price : parseFloat(String(item.price) || '0');
 
                   return (
@@ -353,12 +360,19 @@ export default function MenuPage() {
                           <img src={tasaliLogo} alt={name} className="w-16 h-16 object-contain opacity-30" />
                         </div>
 
-                        {/* Best seller badge */}
-                        {salesCount > 10 && (
-                          <div className="absolute top-2 left-2 bg-[#D4912A] text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm">
-                            ⭐ {tc('الأكثر طلباً', 'Best Seller')}
-                          </div>
-                        )}
+                        {/* Badges */}
+                        <div className="absolute top-2 left-2 flex flex-col gap-1">
+                          {isBestSeller && (
+                            <div className="bg-[#D4912A] text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm whitespace-nowrap">
+                              ⭐ {tc('الأكثر طلباً', 'Best Seller')}
+                            </div>
+                          )}
+                          {isNew && (
+                            <div className="bg-green-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm whitespace-nowrap">
+                              ✨ {tc('جديد', 'New')}
+                            </div>
+                          )}
+                        </div>
 
                         {/* Unavailable overlay */}
                         {!isAvailable && (

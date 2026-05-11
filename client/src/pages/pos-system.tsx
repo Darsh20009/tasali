@@ -615,6 +615,11 @@ export default function PosSystem() {
     return [...dynamicCats, ...legacyCats];
   }, [productsData, menuCategories, i18n.language]);
 
+  const maxSalesCount = useMemo(() => {
+    if (!productsData?.length) return 0;
+    return Math.max(0, ...productsData.map(p => (p as any).salesCount || 0));
+  }, [productsData]);
+
   const calculateTotal = useMemo(() => {
     return orderItems.reduce((sum, item) => {
       const addonsPrice = (item.customization?.selectedItemAddons || []).reduce((s: number, a: any) => s + (Number(a.price) || 0), 0);
@@ -1389,19 +1394,36 @@ export default function PosSystem() {
                         const groupKey = getGroupingKey(item);
                         const groupCount = (groupedItemsMap[groupKey] || [item]).length;
                         const hasAddonsBadge = itemsWithAddonsSet.has(item.id);
+                        const itemSales = (item as any).salesCount || 0;
+                        const isBestSeller = itemSales > 0 && maxSalesCount > 0 && itemSales >= maxSalesCount * 0.6;
+                        const isNew = (item as any).isNewProduct === 1;
                         return (
-                          <div className="absolute top-1.5 right-1.5 flex flex-col gap-1">
-                            {groupCount > 1 && (
-                              <Badge className="text-[9px] sm:text-[10px] px-1.5 py-0.5 bg-primary/90 text-white font-bold">
-                                {groupCount} {i18n.language === 'ar' ? 'خيارات' : 'options'}
-                              </Badge>
-                            )}
-                            {hasAddonsBadge && (
-                              <Badge className="text-[9px] sm:text-[10px] px-1.5 py-0.5 bg-orange-500/90 text-white font-bold">
-                                + {i18n.language === 'ar' ? 'إضافات' : 'Addons'}
-                              </Badge>
-                            )}
-                          </div>
+                          <>
+                            <div className="absolute top-1.5 right-1.5 flex flex-col gap-1">
+                              {groupCount > 1 && (
+                                <Badge className="text-[9px] sm:text-[10px] px-1.5 py-0.5 bg-primary/90 text-white font-bold">
+                                  {groupCount} {i18n.language === 'ar' ? 'خيارات' : 'options'}
+                                </Badge>
+                              )}
+                              {hasAddonsBadge && (
+                                <Badge className="text-[9px] sm:text-[10px] px-1.5 py-0.5 bg-orange-500/90 text-white font-bold">
+                                  + {i18n.language === 'ar' ? 'إضافات' : 'Addons'}
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="absolute top-1.5 left-1.5 flex flex-col gap-1">
+                              {isBestSeller && (
+                                <Badge className="text-[9px] sm:text-[10px] px-1.5 py-0.5 bg-[#D4912A] text-white font-bold">
+                                  ⭐ {i18n.language === 'ar' ? 'الأكثر مبيعاً' : 'Best Seller'}
+                                </Badge>
+                              )}
+                              {isNew && (
+                                <Badge className="text-[9px] sm:text-[10px] px-1.5 py-0.5 bg-green-500 text-white font-bold">
+                                  ✨ {i18n.language === 'ar' ? 'جديد' : 'New'}
+                                </Badge>
+                              )}
+                            </div>
+                          </>
                         );
                       })()}
                     </div>
