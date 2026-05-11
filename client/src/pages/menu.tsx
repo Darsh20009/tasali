@@ -143,11 +143,7 @@ export default function MenuPage() {
 
   const getGroupingKey = (item: CoffeeItem): string => {
     if ((item as any).groupId) return `${item.category}::${(item as any).groupId}`;
-    const nameAr = item.nameAr || "";
-    if (!nameAr || typeof nameAr !== 'string') return `${item.category}::unknown`;
-    const cleaned = nameAr.trim().replace(/^[\u064B-\u0652]+/, '');
-    const firstWord = cleaned.split(/\s+/)[0] || 'unknown';
-    return `${item.category}::${firstWord}`;
+    return `${item.category}::${(item as any).id || item.nameAr}`;
   };
 
   const groupedItems = useMemo(() => coffeeItems.reduce((acc: Record<string, CoffeeItem[]>, item) => {
