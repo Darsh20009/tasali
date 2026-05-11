@@ -730,7 +730,7 @@ export default function MenuPage() {
                   ) : (
                     <>
                       <Send className="w-4 h-4" />
-                      {tc('أرسل الطلب للكاشير', 'Send Order to Cashier')}
+                      {tc('عرض الطلب للكاشير', 'Show Order to Cashier')}
                     </>
                   )}
                 </button>
