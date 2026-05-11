@@ -4256,6 +4256,104 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Refund / Return Order ──────────────────────────────────────────────────
+  app.post("/api/orders/:id/refund", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const allowedRoles = ['cashier', 'manager', 'admin', 'owner'];
+      if (!req.employee || !allowedRoles.includes(req.employee.role)) {
+        return res.status(403).json({ error: "غير مصرح" });
+      }
+
+      const { id } = req.params;
+      const { refundType, refundMethod, refundCashAmount, reason, items } = req.body;
+
+      const order = await OrderModel.findOne({ $or: [{ _id: id.length === 24 ? id : null }, { id }] }).catch(() =>
+        OrderModel.findById(id)
+      );
+      if (!order) return res.status(404).json({ error: "الطلب غير موجود" });
+
+      if ((order as any).refundInfo?.refundedAt) {
+        return res.status(400).json({ error: "تم استرجاع هذا الطلب مسبقاً" });
+      }
+
+      const total = Number(order.totalAmount) || 0;
+      let refundAmount = 0;
+
+      if (refundType === 'full') {
+        refundAmount = total;
+      } else if (refundType === 'partial' && Array.isArray(items) && items.length > 0) {
+        refundAmount = items.reduce((sum: number, it: any) => sum + (Number(it.price) * Number(it.quantity || 1)), 0);
+        refundAmount = Math.min(refundAmount, total);
+      }
+
+      if (refundAmount <= 0) {
+        return res.status(400).json({ error: "مبلغ الاسترجاع غير صحيح" });
+      }
+
+      const cashPart = refundMethod === 'cash' ? refundAmount
+        : refundMethod === 'split' ? Math.min(Number(refundCashAmount) || 0, refundAmount)
+        : 0;
+      const cardPart = refundAmount - cashPart;
+
+      const refundInfo = {
+        refundedAt: new Date(),
+        refundType,
+        refundMethod,
+        refundAmount,
+        refundCashAmount: cashPart,
+        refundCardAmount: cardPart,
+        reason: reason || '',
+        refundedBy: req.employee.fullName || req.employee.username || 'موظف',
+        items: refundType === 'partial' ? items : [],
+      };
+
+      (order as any).refundInfo = refundInfo;
+      order.paymentStatus = 'refunded';
+      if (refundType === 'full') order.status = 'cancelled';
+      order.updatedAt = new Date();
+      order.markModified('refundInfo');
+      await order.save();
+
+      // Track in active shift
+      const employeeId = (req.employee as any)?._id?.toString() || (req.employee as any)?.id;
+      const activeShift = await CashierShiftModel.findOne({ employeeId, status: 'open' });
+      if (activeShift) {
+        activeShift.totalRefunds = (activeShift.totalRefunds || 0) + refundAmount;
+        activeShift.totalCancelledOrders = (activeShift.totalCancelledOrders || 0) + (refundType === 'full' ? 1 : 0);
+        activeShift.updatedAt = new Date();
+        await activeShift.save();
+      }
+
+      // Negative accounting revenue entry to deduct from profits
+      try {
+        const { RevenueModel } = await import('@shared/schema');
+        const vatRatio = total > 0 ? (Number(order.tax) || 0) / total : 0;
+        const refundVat = -(refundAmount * vatRatio);
+        const refundNet = -(refundAmount * (1 - vatRatio));
+        await new RevenueModel({
+          branchId: order.branchId,
+          date: new Date(),
+          orderId: (order as any)._id?.toString(),
+          category: 'refund',
+          description: `استرجاع طلب #${order.orderNumber}${reason ? ' — ' + reason : ''}`,
+          grossAmount: -refundAmount,
+          vatAmount: refundVat,
+          netAmount: refundNet,
+          paymentMethod: refundMethod,
+          employeeId: req.employee.id,
+          notes: JSON.stringify({ refundType, refundMethod, cashPart, cardPart }),
+        }).save();
+      } catch (accErr) {
+        console.error('[Refund] Accounting entry error:', accErr);
+      }
+
+      res.json({ success: true, refundInfo, order: serializeDoc(order) });
+    } catch (error) {
+      console.error('[Refund]', error);
+      res.status(500).json({ error: "فشل في تنفيذ الاسترجاع" });
+    }
+  });
+
   // Cash movement (cash in/out during shift)
   app.post("/api/shifts/cash-movement", requireAuth, async (req: AuthRequest, res) => {
     try {

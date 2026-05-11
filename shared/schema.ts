@@ -1279,6 +1279,17 @@ export interface IOrder extends Document {
     updatedBy?: string;
     notes?: string;
   }>;
+  refundInfo?: {
+    refundedAt: Date;
+    refundType: 'full' | 'partial';
+    refundMethod: 'cash' | 'card' | 'split';
+    refundAmount: number;
+    refundCashAmount: number;
+    refundCardAmount: number;
+    reason?: string;
+    refundedBy?: string;
+    items?: any[];
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -1342,6 +1353,7 @@ const OrderSchema = new Schema<IOrder>({
   productReservationStatus: { type: String, enum: ['pending_payment', 'pending_confirmation', 'confirmed', 'rejected', 'cancelled', 'completed'], default: 'pending_payment' },
   productReservationPackageName: { type: String },
   productReservationNotes: { type: String },
+  refundInfo: { type: Schema.Types.Mixed },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });

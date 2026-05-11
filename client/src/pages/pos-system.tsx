@@ -15,7 +15,7 @@ import {
   Archive, RefreshCw, Wifi, WifiOff, Loader2,
   Navigation, SplitSquareVertical, Banknote,
   Lock, Bell, BellOff, MonitorSmartphone, ScanLine,
-  PauseCircle, Receipt, Settings, User
+  PauseCircle, Receipt, Settings, User, RotateCcw, TrendingDown
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -142,6 +142,15 @@ export default function PosSystem() {
     const saved = localStorage.getItem("pos-zoom");
     return saved ? Number(saved) : 100;
   });
+
+  // ── Refund state ────────────────────────────────────────────────────
+  const [showRefundDialog, setShowRefundDialog] = useState(false);
+  const [refundOrder, setRefundOrder] = useState<any>(null);
+  const [refundType, setRefundType] = useState<'full' | 'partial'>('full');
+  const [refundMethod, setRefundMethod] = useState<'cash' | 'card' | 'split'>('cash');
+  const [refundCashInput, setRefundCashInput] = useState('');
+  const [refundReason, setRefundReason] = useState('');
+  const [refundSelectedItems, setRefundSelectedItems] = useState<Record<string, boolean>>({});
 
   const { isConnected: wsConnected, sendMessage: wsSend } = useOrderWebSocket({
     clientType: "pos",
@@ -441,6 +450,35 @@ export default function PosSystem() {
     },
     onError: () => {
       toast({ variant: "destructive", title: t('pos.error'), description: t('pos.table_clear_error') });
+    }
+  });
+
+  // ── Refund mutation ─────────────────────────────────────────────────
+  const refundMutation = useMutation({
+    mutationFn: async (payload: {
+      orderId: string;
+      refundType: 'full' | 'partial';
+      refundMethod: 'cash' | 'card' | 'split';
+      refundCashAmount?: number;
+      reason?: string;
+      items?: any[];
+    }) => {
+      const { orderId, ...body } = payload;
+      return await apiRequest("POST", `/api/orders/${orderId}/refund`, body);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orders/live"] });
+      setShowRefundDialog(false);
+      setRefundOrder(null);
+      setRefundType('full');
+      setRefundMethod('cash');
+      setRefundCashInput('');
+      setRefundReason('');
+      setRefundSelectedItems({});
+      toast({ title: tc('تم الاسترجاع بنجاح', 'Refund Processed'), description: tc('تم خصم المبلغ من الإيرادات والأرباح', 'Amount deducted from revenue and profits') });
+    },
+    onError: (err: any) => {
+      toast({ variant: "destructive", title: tc('فشل الاسترجاع', 'Refund Failed'), description: err?.message || tc('حدث خطأ، حاول مجددًا', 'An error occurred, please try again') });
     }
   });
 
@@ -2008,6 +2046,32 @@ export default function PosSystem() {
                               {t('pos.cancel')}
                             </Button>
                           )}
+                          {(order.paymentStatus === 'paid' || order.status === 'completed') && !(order as any).refundInfo?.refundedAt && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="border-orange-400 text-orange-600 hover:bg-orange-50"
+                              data-testid={`button-refund-${order.id}`}
+                              onClick={() => {
+                                setRefundOrder(order);
+                                setRefundType('full');
+                                setRefundMethod('cash');
+                                setRefundCashInput('');
+                                setRefundReason('');
+                                setRefundSelectedItems({});
+                                setShowRefundDialog(true);
+                              }}
+                            >
+                              <RotateCcw className="w-3 h-3 ml-1" />
+                              {tc('استرجاع', 'Refund')}
+                            </Button>
+                          )}
+                          {(order as any).refundInfo?.refundedAt && (
+                            <Badge variant="outline" className="text-orange-600 border-orange-300 text-xs">
+                              <RotateCcw className="w-3 h-3 ml-1" />
+                              {tc('مسترجع', 'Refunded')}
+                            </Badge>
+                          )}
                         </div>
                       </CardContent>
                     </Card>
@@ -2015,6 +2079,292 @@ export default function PosSystem() {
                 });
               })()}
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Refund Dialog ──────────────────────────────────────────────── */}
+      <Dialog open={showRefundDialog} onOpenChange={(o) => { if (!refundMutation.isPending) { setShowRefundDialog(o); if (!o) setRefundOrder(null); } }}>
+        <DialogContent className="max-w-lg w-full max-h-[92vh] flex flex-col p-0 gap-0 overflow-hidden" dir={dir}>
+          <DialogHeader className="px-5 pt-5 pb-3 border-b shrink-0 bg-orange-50">
+            <DialogTitle className="flex items-center gap-2 text-lg font-black text-orange-700">
+              <RotateCcw className="w-5 h-5" />
+              {tc('استرجاع الطلب', 'Order Refund')}
+            </DialogTitle>
+            {refundOrder && (
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {tc('طلب', 'Order')} #{fmtOrderNum(refundOrder.orderNumber || refundOrder.dailyNumber || '')}
+                {' · '}{tc('المبلغ الأصلي', 'Original Amount')}: {Number(refundOrder.totalAmount || 0).toFixed(2)} {tc('ر.س', 'SAR')}
+              </p>
+            )}
+          </DialogHeader>
+
+          {refundOrder && (() => {
+            const orderTotal = Number(refundOrder.totalAmount || 0);
+            const orderItems: any[] = Array.isArray(refundOrder.items) ? refundOrder.items : [];
+
+            // Compute selected partial items list
+            const selectedPartialItems = orderItems.filter((_: any, idx: number) => refundSelectedItems[String(idx)]);
+            const partialAmount = selectedPartialItems.reduce((s: number, it: any) => {
+              const price = Number(it.price || it.coffeeItem?.price || 0);
+              const qty = Number(it.quantity || 1);
+              return s + price * qty;
+            }, 0);
+
+            const refundAmount = refundType === 'full' ? orderTotal : Math.min(partialAmount, orderTotal);
+            const cashAmount = refundMethod === 'cash' ? refundAmount
+              : refundMethod === 'split' ? Math.min(Number(refundCashInput) || 0, refundAmount)
+              : 0;
+            const cardAmount = refundAmount - cashAmount;
+            const vatRatio = orderTotal > 0 ? (Number(refundOrder.tax) || 0) / orderTotal : 0;
+            const refundVat = refundAmount * vatRatio;
+            const refundNet = refundAmount - refundVat;
+
+            const canConfirm = refundAmount > 0
+              && (refundMethod !== 'split' || (cashAmount >= 0 && cashAmount <= refundAmount))
+              && (refundType === 'full' || selectedPartialItems.length > 0);
+
+            return (
+              <div className="flex-1 min-h-0 overflow-y-auto">
+                <div className="p-4 space-y-4">
+
+                  {/* 1. Refund Type */}
+                  <div>
+                    <p className="text-xs font-bold text-muted-foreground mb-2 uppercase tracking-wide">{tc('نوع الاسترجاع', 'Refund Type')}</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        className={`rounded-xl border-2 p-3 text-sm font-bold transition-all ${refundType === 'full' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-border bg-card text-foreground'}`}
+                        onClick={() => setRefundType('full')}
+                        data-testid="refund-type-full"
+                      >
+                        <RotateCcw className="w-4 h-4 mx-auto mb-1" />
+                        {tc('استرجاع كامل', 'Full Refund')}
+                        <p className="text-xs font-normal mt-0.5 opacity-70">{orderTotal.toFixed(2)} {tc('ر.س', 'SAR')}</p>
+                      </button>
+                      <button
+                        className={`rounded-xl border-2 p-3 text-sm font-bold transition-all ${refundType === 'partial' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-border bg-card text-foreground'}`}
+                        onClick={() => setRefundType('partial')}
+                        data-testid="refund-type-partial"
+                      >
+                        <SplitSquareVertical className="w-4 h-4 mx-auto mb-1" />
+                        {tc('استرجاع جزئي', 'Partial Refund')}
+                        <p className="text-xs font-normal mt-0.5 opacity-70">{tc('اختر الأصناف', 'Select items')}</p>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 2. Partial items selector */}
+                  {refundType === 'partial' && orderItems.length > 0 && (
+                    <div>
+                      <p className="text-xs font-bold text-muted-foreground mb-2 uppercase tracking-wide">{tc('الأصناف المرتجعة', 'Returned Items')}</p>
+                      <div className="space-y-2 rounded-xl border bg-card p-2">
+                        {orderItems.map((item: any, idx: number) => {
+                          const name = item.coffeeItem?.nameAr || item.nameAr || item.name || tc('صنف', 'Item');
+                          const price = Number(item.price || item.coffeeItem?.price || 0);
+                          const qty = Number(item.quantity || 1);
+                          const lineTotal = price * qty;
+                          const selected = !!refundSelectedItems[String(idx)];
+                          return (
+                            <button
+                              key={idx}
+                              className={`w-full flex items-center gap-3 p-2.5 rounded-lg text-right transition-all ${selected ? 'bg-orange-50 border border-orange-300' : 'hover:bg-muted/50 border border-transparent'}`}
+                              onClick={() => setRefundSelectedItems(prev => ({ ...prev, [String(idx)]: !prev[String(idx)] }))}
+                              data-testid={`refund-item-${idx}`}
+                            >
+                              <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 ${selected ? 'bg-orange-500 border-orange-500' : 'border-border'}`}>
+                                {selected && <Check className="w-3 h-3 text-white" />}
+                              </div>
+                              <div className="flex-1 text-right">
+                                <p className="text-sm font-bold">{name}</p>
+                                <p className="text-xs text-muted-foreground">{qty} × {price.toFixed(2)} {tc('ر.س', 'SAR')}</p>
+                              </div>
+                              <p className="text-sm font-black text-primary">{lineTotal.toFixed(2)}</p>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {selectedPartialItems.length === 0 && (
+                        <p className="text-xs text-orange-500 mt-1">{tc('اختر صنفاً واحداً على الأقل', 'Select at least one item')}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 3. Refund method */}
+                  <div>
+                    <p className="text-xs font-bold text-muted-foreground mb-2 uppercase tracking-wide">{tc('طريقة الاسترجاع', 'Refund Method')}</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {([
+                        { id: 'cash', labelAr: 'كاش', labelEn: 'Cash', icon: Banknote },
+                        { id: 'card', labelAr: 'بطاقة', labelEn: 'Card', icon: CreditCard },
+                        { id: 'split', labelAr: 'مختلط', labelEn: 'Split', icon: SplitSquareVertical },
+                      ] as const).map(m => (
+                        <button
+                          key={m.id}
+                          className={`rounded-xl border-2 p-3 text-sm font-bold transition-all ${refundMethod === m.id ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-border bg-card text-foreground'}`}
+                          onClick={() => setRefundMethod(m.id)}
+                          data-testid={`refund-method-${m.id}`}
+                        >
+                          <m.icon className="w-4 h-4 mx-auto mb-1" />
+                          {tc(m.labelAr, m.labelEn)}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Split cash entry */}
+                    {refundMethod === 'split' && (
+                      <div className="mt-3 space-y-2">
+                        <p className="text-xs font-bold">{tc('مبلغ الكاش المسترجع', 'Cash Amount to Refund')}</p>
+                        <div className="flex gap-2 items-center">
+                          <Input
+                            type="number"
+                            min="0"
+                            max={refundAmount}
+                            step="0.01"
+                            placeholder="0.00"
+                            value={refundCashInput}
+                            onChange={e => setRefundCashInput(e.target.value)}
+                            className="text-center font-bold text-lg"
+                            data-testid="refund-cash-input"
+                          />
+                          <span className="text-sm font-bold shrink-0">{tc('ر.س', 'SAR')}</span>
+                        </div>
+                        <div className="flex justify-between text-xs text-muted-foreground">
+                          <span>{tc('المتبقي على البطاقة', 'Rest on Card')}: <strong className="text-foreground">{Math.max(0, cardAmount).toFixed(2)} {tc('ر.س', 'SAR')}</strong></span>
+                          <button className="text-orange-500 font-bold" onClick={() => setRefundCashInput(String(refundAmount.toFixed(2)))}>
+                            {tc('كله كاش', 'All Cash')}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 4. Reason */}
+                  <div>
+                    <p className="text-xs font-bold text-muted-foreground mb-2 uppercase tracking-wide">{tc('سبب الاسترجاع', 'Refund Reason')}</p>
+                    <Input
+                      placeholder={tc('اكتب سبب الاسترجاع (اختياري)...', 'Enter refund reason (optional)...')}
+                      value={refundReason}
+                      onChange={e => setRefundReason(e.target.value)}
+                      data-testid="refund-reason-input"
+                    />
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {[tc('طلب العميل', 'Customer request'), tc('خطأ في الطلب', 'Wrong order'), tc('جودة غير مقبولة', 'Quality issue'), tc('تكرار الطلب', 'Duplicate order')].map(r => (
+                        <button key={r} className="text-xs px-2 py-1 rounded-lg border hover:bg-muted transition-colors" onClick={() => setRefundReason(r)}>{r}</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 5. Financial summary */}
+                  <div className="rounded-xl border-2 border-orange-200 bg-orange-50 p-4 space-y-2">
+                    <p className="text-sm font-black text-orange-700 flex items-center gap-1.5">
+                      <TrendingDown className="w-4 h-4" />
+                      {tc('ملخص الاسترجاع', 'Refund Summary')}
+                    </p>
+                    <Separator />
+                    <div className="space-y-1.5 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">{tc('المبلغ الكلي للاسترجاع', 'Total Refund Amount')}</span>
+                        <span className="font-black text-orange-700">− {refundAmount.toFixed(2)} {tc('ر.س', 'SAR')}</span>
+                      </div>
+                      {refundMethod === 'cash' && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground flex items-center gap-1"><Banknote className="w-3 h-3" />{tc('نقداً', 'Cash')}</span>
+                          <span className="font-bold">{cashAmount.toFixed(2)} {tc('ر.س', 'SAR')}</span>
+                        </div>
+                      )}
+                      {refundMethod === 'card' && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground flex items-center gap-1"><CreditCard className="w-3 h-3" />{tc('بطاقة', 'Card')}</span>
+                          <span className="font-bold">{cardAmount.toFixed(2)} {tc('ر.س', 'SAR')}</span>
+                        </div>
+                      )}
+                      {refundMethod === 'split' && (
+                        <>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground flex items-center gap-1"><Banknote className="w-3 h-3" />{tc('نقداً', 'Cash')}</span>
+                            <span className="font-bold">{cashAmount.toFixed(2)} {tc('ر.س', 'SAR')}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground flex items-center gap-1"><CreditCard className="w-3 h-3" />{tc('بطاقة', 'Card')}</span>
+                            <span className="font-bold">{Math.max(0, cardAmount).toFixed(2)} {tc('ر.س', 'SAR')}</span>
+                          </div>
+                        </>
+                      )}
+                      <Separator />
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>{tc('الضريبة المسترجعة (15%)', 'VAT Refunded (15%)')}</span>
+                        <span className="text-red-500">− {refundVat.toFixed(2)} {tc('ر.س', 'SAR')}</span>
+                      </div>
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>{tc('الخصم من صافي الربح', 'Net Profit Deduction')}</span>
+                        <span className="text-red-500">− {refundNet.toFixed(2)} {tc('ر.س', 'SAR')}</span>
+                      </div>
+                    </div>
+                    <div className="mt-2 p-2 bg-orange-100 rounded-lg">
+                      <p className="text-xs text-orange-700 font-medium">
+                        {tc('سيتم تسجيل هذه العملية في المحاسبة وخصمها من إيرادات اليوم والأرباح تلقائياً.', 'This refund will be recorded in accounting and automatically deducted from today\'s revenue and profits.')}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Actions */}
+          <div className="border-t p-4 flex gap-3 shrink-0 bg-background">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => { setShowRefundDialog(false); setRefundOrder(null); }}
+              disabled={refundMutation.isPending}
+              data-testid="refund-cancel-btn"
+            >
+              {tc('إلغاء', 'Cancel')}
+            </Button>
+            <Button
+              className="flex-1 bg-orange-600 hover:bg-orange-700 text-white font-bold"
+              disabled={refundMutation.isPending || !refundOrder || (() => {
+                const orderTotal = Number(refundOrder?.totalAmount || 0);
+                const orderItems: any[] = Array.isArray(refundOrder?.items) ? refundOrder.items : [];
+                const selectedPartialItems = orderItems.filter((_: any, idx: number) => refundSelectedItems[String(idx)]);
+                const partialAmount = selectedPartialItems.reduce((s: number, it: any) => (s + Number(it.price || it.coffeeItem?.price || 0) * Number(it.quantity || 1)), 0);
+                const refundAmount = refundType === 'full' ? orderTotal : Math.min(partialAmount, orderTotal);
+                const cashAmount = refundMethod === 'split' ? Math.min(Number(refundCashInput) || 0, refundAmount) : 0;
+                const cardAmount = refundAmount - cashAmount;
+                return refundAmount <= 0
+                  || (refundType === 'partial' && selectedPartialItems.length === 0)
+                  || (refundMethod === 'split' && (cashAmount < 0 || cardAmount < 0));
+              })()}
+              onClick={() => {
+                if (!refundOrder) return;
+                const orderTotal = Number(refundOrder.totalAmount || 0);
+                const orderItems: any[] = Array.isArray(refundOrder.items) ? refundOrder.items : [];
+                const selectedPartialItems = orderItems.filter((_: any, idx: number) => refundSelectedItems[String(idx)]);
+                const partialAmount = selectedPartialItems.reduce((s: number, it: any) => (s + Number(it.price || it.coffeeItem?.price || 0) * Number(it.quantity || 1)), 0);
+                const refundAmount = refundType === 'full' ? orderTotal : Math.min(partialAmount, orderTotal);
+                const cashAmount = refundMethod === 'split' ? Math.min(Number(refundCashInput) || 0, refundAmount) : 0;
+                refundMutation.mutate({
+                  orderId: refundOrder.id || refundOrder._id,
+                  refundType,
+                  refundMethod,
+                  refundCashAmount: cashAmount,
+                  reason: refundReason,
+                  items: refundType === 'partial' ? selectedPartialItems.map((it: any) => ({
+                    nameAr: it.coffeeItem?.nameAr || it.nameAr || it.name || '',
+                    price: Number(it.price || it.coffeeItem?.price || 0),
+                    quantity: Number(it.quantity || 1),
+                  })) : [],
+                });
+              }}
+              data-testid="refund-confirm-btn"
+            >
+              {refundMutation.isPending ? (
+                <><Loader2 className="w-4 h-4 animate-spin ml-2" />{tc('جاري الاسترجاع...', 'Processing...')}</>
+              ) : (
+                <><RotateCcw className="w-4 h-4 ml-2" />{tc('تأكيد الاسترجاع', 'Confirm Refund')}</>
+              )}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -2774,14 +3124,14 @@ export default function PosSystem() {
                   variant="outline"
                   size="sm"
                   className="flex-1"
-                  disabled={posZoom <= 60}
-                  onClick={() => setPosZoom(z => Math.max(60, z - 5))}
+                  disabled={posZoom <= 30}
+                  onClick={() => setPosZoom(z => Math.max(30, z - 5))}
                   data-testid="button-zoom-out"
                 >
                   <span className="text-lg font-bold">−</span>
                 </Button>
                 <div className="flex-1 flex justify-center gap-1">
-                  {[70, 80, 90, 100].map(v => (
+                  {[30, 50, 70, 100].map(v => (
                     <Button
                       key={v}
                       variant={posZoom === v ? "default" : "outline"}
