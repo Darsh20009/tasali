@@ -25,6 +25,7 @@ import {
   ChevronUp,
   Eye,
   ArrowRight,
+  Send,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import tasaliLogo from "@assets/logo.png";
