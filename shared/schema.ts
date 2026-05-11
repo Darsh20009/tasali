@@ -758,6 +758,12 @@ export interface IBusinessConfig extends Document {
   prepBaseMinutes?: number;
   prepExtraMinutesPerItem?: number;
   prepFreeItemCount?: number;
+  shiftConfig?: {
+    autoShiftEnabled?: boolean;
+    shiftDurationHours?: number;
+    shiftStartTimes?: string[];
+    localTimeOffsetHours?: number;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -870,6 +876,12 @@ const BusinessConfigSchema = new Schema<IBusinessConfig>({
   prepBaseMinutes: { type: Number, default: 10 },
   prepExtraMinutesPerItem: { type: Number, default: 3 },
   prepFreeItemCount: { type: Number, default: 2 },
+  shiftConfig: { type: Schema.Types.Mixed, default: () => ({
+    autoShiftEnabled: true,
+    shiftDurationHours: 12,
+    shiftStartTimes: ['06:00', '18:00'],
+    localTimeOffsetHours: 3,
+  })},
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });

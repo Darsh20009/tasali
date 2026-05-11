@@ -15,7 +15,8 @@ import {
   Archive, RefreshCw, Wifi, WifiOff, Loader2,
   Navigation, SplitSquareVertical, Banknote,
   Lock, Bell, BellOff, MonitorSmartphone, ScanLine,
-  PauseCircle, Receipt, Settings, User, RotateCcw, TrendingDown
+  PauseCircle, Receipt, Settings, User, RotateCcw, TrendingDown,
+  Play, Square, CreditCard as CardIcon
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -143,7 +144,104 @@ export default function PosSystem() {
     return saved ? Number(saved) : 100;
   });
 
-  // ── Refund state ────────────────────────────────────────────────────
+  // ── Shift state ─────────────────────────────────────────────────────
+  const [showPosShiftOpen, setShowPosShiftOpen] = useState(false);
+  const [showPosShiftClose, setShowPosShiftClose] = useState(false);
+  const [posOpeningCash, setPosOpeningCash] = useState("");
+  const [posClosingCash, setPosClosingCash] = useState("");
+  const [posClosingNotes, setPosClosingNotes] = useState("");
+  const [showShiftDetails, setShowShiftDetails] = useState(false);
+
+  const { data: activeShift, refetch: refetchShift } = useQuery<any | null>({
+    queryKey: ['/api/shifts/active'],
+    refetchInterval: 60000,
+    retry: false,
+  });
+
+  const { data: currentPeriod } = useQuery<any>({
+    queryKey: ['/api/shifts/current-period'],
+    refetchInterval: 300000,
+    retry: false,
+  });
+
+  const openShiftMutation = useMutation({
+    mutationFn: async (data: { openingCash: number; notes: string }) => {
+      const res = await apiRequest("POST", "/api/shifts/open", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "تم فتح الوردية بنجاح", description: "يمكنك الآن استقبال الطلبات" });
+      queryClient.invalidateQueries({ queryKey: ['/api/shifts/active'] });
+      setShowPosShiftOpen(false);
+      setPosOpeningCash("");
+    },
+    onError: (error: any) => {
+      toast({ title: "خطأ", description: error.message || "فشل في فتح الوردية", variant: "destructive" });
+    },
+  });
+
+  const closeShiftMutation = useMutation({
+    mutationFn: async (data: { closingCash: number; closingNotes: string }) => {
+      const res = await apiRequest("POST", "/api/shifts/close", data);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "تم إغلاق الوردية", description: "تم إنشاء تقرير Z بنجاح" });
+      queryClient.invalidateQueries({ queryKey: ['/api/shifts/active'] });
+      setShowPosShiftClose(false);
+      setPosClosingCash("");
+      setPosClosingNotes("");
+      if (data.shift) handlePrintShiftReport(data.shift);
+    },
+    onError: (error: any) => {
+      toast({ title: "خطأ", description: error.message || "فشل في إغلاق الوردية", variant: "destructive" });
+    },
+  });
+
+  const handlePrintShiftReport = (shift: any) => {
+    const printWindow = window.open('', '_blank', 'width=400,height=800');
+    if (!printWindow) return;
+    const pb = shift.paymentBreakdown || {};
+    const cashIn = (shift.cashMovements || []).filter((m: any) => m.type === 'cash_in' || m.type === 'paid_in').reduce((s: number, m: any) => s + m.amount, 0);
+    const cashOut = (shift.cashMovements || []).filter((m: any) => m.type === 'cash_out' || m.type === 'paid_out').reduce((s: number, m: any) => s + m.amount, 0);
+    const fmt = (n: number) => `${(n || 0).toFixed(2)} ر.س`;
+    const fmtTime = (d: string) => new Date(d).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
+    printWindow.document.write(`<html dir="rtl"><head><title>تقرير الوردية</title>
+      <style>body{font-family:Arial,sans-serif;padding:10px;max-width:340px;margin:0 auto;font-size:13px}
+      .hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:8px;margin-bottom:8px}
+      .hdr h1{font-size:17px;margin:3px 0}.hdr h2{font-size:13px;color:#7D3D0F;margin:2px 0}
+      .row{display:flex;justify-content:space-between;padding:2px 0}
+      .sec{border-top:1px dashed #999;margin:6px 0;padding-top:6px}
+      .sec-t{font-weight:bold;font-size:13px;margin-bottom:4px;color:#7D3D0F}
+      .bold{font-weight:bold;border-top:2px solid #000;padding-top:4px;margin-top:4px}
+      .foot{text-align:center;margin-top:12px;border-top:1px dashed #999;padding-top:8px;font-size:11px;color:#666}
+      @media print{body{padding:3px}}</style></head><body>
+      <div class="hdr"><h1>تسالي كرومش</h1><h2>تقرير الوردية - ${shift.isAuto ? 'تلقائية' : 'Z'}</h2><div>${shift.shiftNumber}</div></div>
+      <div class="row"><span>الكاشير:</span><span>${shift.employeeName || '-'}</span></div>
+      <div class="row"><span>بداية الوردية:</span><span>${fmtTime(shift.openedAt)}</span></div>
+      <div class="row"><span>نهاية الوردية:</span><span>${shift.closedAt ? fmtTime(shift.closedAt) : '-'}</span></div>
+      <div class="sec"><div class="sec-t">ملخص المبيعات</div>
+      <div class="row"><span>إجمالي المبيعات:</span><span>${fmt(shift.totalSales)}</span></div>
+      <div class="row"><span>عدد الطلبات:</span><span>${shift.totalOrders}</span></div>
+      <div class="row"><span>مبيعات نقدية:</span><span>${fmt(shift.totalCashSales)}</span></div>
+      <div class="row"><span>مبيعات شبكة:</span><span>${fmt(shift.totalCardSales)}</span></div>
+      ${(pb.loyalty || 0) > 0 ? `<div class="row"><span>بطاقة ولاء:</span><span>${fmt(pb.loyalty)}</span></div>` : ''}
+      <div class="row"><span>ضريبة القيمة المضافة:</span><span>${fmt(shift.totalVAT)}</span></div>
+      <div class="bold row"><span>صافي الإيرادات:</span><span>${fmt(shift.netRevenue)}</span></div></div>
+      ${!shift.isAuto ? `<div class="sec"><div class="sec-t">الصندوق</div>
+      <div class="row"><span>رصيد الافتتاح:</span><span>${fmt(shift.openingCash)}</span></div>
+      ${cashIn > 0 ? `<div class="row"><span>إيداعات:</span><span>${fmt(cashIn)}</span></div>` : ''}
+      ${cashOut > 0 ? `<div class="row"><span>سحوبات:</span><span>${fmt(cashOut)}</span></div>` : ''}
+      <div class="row"><span>الرصيد المتوقع:</span><span>${fmt(shift.expectedCash || 0)}</span></div>
+      <div class="row"><span>الرصيد الفعلي:</span><span>${fmt(shift.closingCash || 0)}</span></div>
+      <div class="bold row"><span>الفرق:</span><span>${fmt(shift.cashDifference || 0)}</span></div></div>` : ''}
+      <div class="foot"><div>TASALI QURUMSH</div><div>${new Date().toLocaleString('ar-SA')}</div></div>
+      </body></html>`);
+    printWindow.document.close();
+    setTimeout(() => printWindow.print(), 500);
+  };
+
+  // ── Refund state ─────────────────────────────────────────────────────
   const [showRefundDialog, setShowRefundDialog] = useState(false);
   const [refundOrder, setRefundOrder] = useState<any>(null);
   const [refundType, setRefundType] = useState<'full' | 'partial'>('full');
@@ -1289,6 +1387,113 @@ export default function PosSystem() {
           </Button>
         </div>
       </header>
+
+      {/* ── Shift Status Bar ── */}
+      {activeShift ? (
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/30 border-b border-emerald-200 dark:border-emerald-800 shrink-0">
+          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="text-xs font-semibold text-emerald-800 dark:text-emerald-300">وردية مفتوحة</span>
+          <span className="text-xs text-muted-foreground hidden sm:inline">|</span>
+          <span className="text-xs text-muted-foreground hidden sm:inline">{activeShift.employeeName}</span>
+          <span className="text-xs text-muted-foreground hidden sm:inline">|</span>
+          <span className="text-xs text-muted-foreground hidden sm:inline">بدأت: {new Date(activeShift.openedAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}</span>
+          <div className="flex-1" />
+          <div className="hidden sm:flex items-center gap-3 text-xs">
+            <span className="flex items-center gap-1 text-green-700 dark:text-green-400 font-mono"><Banknote className="w-3 h-3" /> {(activeShift.totalCashSales || 0).toFixed(2)} ر.س</span>
+            <span className="flex items-center gap-1 text-blue-700 dark:text-blue-400 font-mono"><CreditCard className="w-3 h-3" /> {(activeShift.totalCardSales || 0).toFixed(2)} ر.س</span>
+            <span className="flex items-center gap-1 text-purple-700 dark:text-purple-400 font-mono"><ShoppingCart className="w-3 h-3" /> {activeShift.totalOrders || 0} طلب</span>
+          </div>
+          <Button size="sm" variant="ghost" className="h-6 text-xs gap-1 hidden sm:flex" onClick={() => handlePrintShiftReport(activeShift)}>
+            <Printer className="w-3 h-3" /> طباعة
+          </Button>
+          <Button size="sm" variant="destructive" className="h-6 text-xs gap-1" onClick={() => setShowPosShiftClose(true)}>
+            <Square className="w-3 h-3" /> غلق الوردية
+          </Button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800 shrink-0">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+          <span className="text-xs text-amber-800 dark:text-amber-300 flex-1">
+            لا توجد وردية مفتوحة
+            {currentPeriod?.hasPeriod && (
+              <span className="hidden sm:inline text-amber-600"> — الفترة التلقائية: {currentPeriod.label}</span>
+            )}
+          </span>
+          <Button size="sm" className="h-6 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700" onClick={() => setShowPosShiftOpen(true)}>
+            <Play className="w-3 h-3" /> بدا الوردية
+          </Button>
+        </div>
+      )}
+
+      {/* ── POS Shift Open Dialog ── */}
+      <Dialog open={showPosShiftOpen} onOpenChange={setShowPosShiftOpen}>
+        <DialogContent className="sm:max-w-sm" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Play className="w-5 h-5 text-emerald-600" />
+              بدء وردية جديدة
+            </DialogTitle>
+          </DialogHeader>
+          {currentPeriod?.hasPeriod && (
+            <div className="bg-amber-50 dark:bg-amber-950/20 rounded-lg p-3 text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <span>الفترة التلقائية الحالية بدأت من {new Date(currentPeriod.start).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}. ستبدأ وردية يدوية منفصلة.</span>
+            </div>
+          )}
+          <div className="space-y-3 py-2">
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">رصيد الافتتاح (ر.س)</label>
+              <Input type="number" placeholder="0.00" value={posOpeningCash} onChange={e => setPosOpeningCash(e.target.value)} className="text-lg text-center font-mono" dir="ltr" />
+              <p className="text-xs text-muted-foreground mt-1">المبلغ الموجود في الصندوق الآن</p>
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" onClick={() => setShowPosShiftOpen(false)}>إلغاء</Button>
+            <Button onClick={() => openShiftMutation.mutate({ openingCash: Number(posOpeningCash) || 0, notes: '' })} disabled={openShiftMutation.isPending} className="bg-emerald-600 hover:bg-emerald-700 gap-2">
+              {openShiftMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+              بدء الوردية
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── POS Shift Close Dialog ── */}
+      <Dialog open={showPosShiftClose} onOpenChange={setShowPosShiftClose}>
+        <DialogContent className="sm:max-w-sm" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Square className="w-5 h-5 text-red-500" />
+              إغلاق الوردية
+            </DialogTitle>
+          </DialogHeader>
+          {activeShift && (
+            <div className="bg-muted/50 rounded-lg p-3 space-y-1 text-xs">
+              <div className="flex justify-between"><span>بدأت:</span><span>{new Date(activeShift.openedAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}</span></div>
+              <div className="flex justify-between"><span>عدد الطلبات:</span><span>{activeShift.totalOrders}</span></div>
+              <div className="flex justify-between"><span>نقدي:</span><span className="font-mono">{(activeShift.totalCashSales || 0).toFixed(2)} ر.س</span></div>
+              <div className="flex justify-between"><span>شبكة:</span><span className="font-mono">{(activeShift.totalCardSales || 0).toFixed(2)} ر.س</span></div>
+              <div className="flex justify-between font-bold border-t pt-1"><span>الإجمالي:</span><span className="font-mono text-primary">{(activeShift.totalSales || 0).toFixed(2)} ر.س</span></div>
+            </div>
+          )}
+          <div className="space-y-3 py-2">
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">الرصيد الفعلي في الصندوق (ر.س)</label>
+              <Input type="number" placeholder="0.00" value={posClosingCash} onChange={e => setPosClosingCash(e.target.value)} className="text-lg text-center font-mono" dir="ltr" />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">ملاحظات (اختياري)</label>
+              <Input placeholder="أي ملاحظات..." value={posClosingNotes} onChange={e => setPosClosingNotes(e.target.value)} />
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" onClick={() => setShowPosShiftClose(false)}>إلغاء</Button>
+            <Button variant="destructive" onClick={() => closeShiftMutation.mutate({ closingCash: Number(posClosingCash) || 0, closingNotes: posClosingNotes })} disabled={closeShiftMutation.isPending} className="gap-2">
+              {closeShiftMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4" />}
+              إغلاق وطباعة
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <main className="flex-1 flex overflow-hidden">
 

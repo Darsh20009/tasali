@@ -4579,6 +4579,134 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Auto-calculated virtual shifts (no manual shift needed)
+  app.get("/api/shifts/auto", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { days = '14', branchId } = req.query;
+      const daysNum = Math.min(Number(days) || 14, 60);
+      const tenantId = getTenantIdFromRequest(req) || 'demo-tenant';
+
+      const bizConfig = await BusinessConfigModel.findOne({ tenantId }).lean();
+      const shiftCfg = (bizConfig as any)?.shiftConfig || {};
+      const shiftDurationHours: number = shiftCfg.shiftDurationHours || 12;
+      const shiftStartTimes: string[] = shiftCfg.shiftStartTimes?.length ? shiftCfg.shiftStartTimes : ['06:00', '18:00'];
+      const localOffsetHours: number = shiftCfg.localTimeOffsetHours ?? 3;
+
+      const nowUTC = new Date();
+      const blocks: Array<{ start: Date; end: Date; shiftNumber: string }> = [];
+
+      for (let d = 0; d < daysNum; d++) {
+        for (const startTimeStr of [...shiftStartTimes].sort()) {
+          const [h, m] = startTimeStr.split(':').map(Number);
+          const blockStart = new Date(nowUTC);
+          blockStart.setUTCDate(blockStart.getUTCDate() - d);
+          blockStart.setUTCHours(h - localOffsetHours, m, 0, 0);
+
+          const blockEnd = new Date(blockStart);
+          blockEnd.setUTCHours(blockEnd.getUTCHours() + shiftDurationHours);
+
+          if (blockEnd > nowUTC) continue; // skip current/future
+          if (blockStart < new Date(nowUTC.getTime() - daysNum * 24 * 60 * 60 * 1000)) continue;
+
+          const localHour = (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+          const dateStr = blockStart.toISOString().slice(0, 10);
+          blocks.push({
+            start: blockStart,
+            end: blockEnd,
+            shiftNumber: `AUTO-${dateStr}-${localHour.replace(':', '')}`,
+          });
+        }
+      }
+
+      const autoShifts = await Promise.all(blocks.map(async (block) => {
+        const filter: any = {
+          createdAt: { $gte: block.start, $lt: block.end },
+          status: { $nin: ['cancelled'] },
+        };
+        if (branchId) filter.branchId = branchId;
+
+        const orders = await OrderModel.find(filter)
+          .select('totalAmount paymentMethod createdAt id orderNumber')
+          .lean();
+
+        const totalSales = orders.reduce((s, o) => s + Number(o.totalAmount || 0), 0);
+        const totalCash = orders.filter(o => (o as any).paymentMethod === 'cash').reduce((s, o) => s + Number(o.totalAmount || 0), 0);
+        const totalCard = orders.filter(o => (o as any).paymentMethod === 'card').reduce((s, o) => s + Number(o.totalAmount || 0), 0);
+        const totalVAT = totalSales > 0 ? totalSales - totalSales / 1.15 : 0;
+
+        return {
+          _id: `auto_${block.start.getTime()}`,
+          type: 'auto',
+          isAuto: true,
+          shiftNumber: block.shiftNumber,
+          openedAt: block.start.toISOString(),
+          closedAt: block.end.toISOString(),
+          totalSales,
+          totalOrders: orders.length,
+          totalCashSales: totalCash,
+          totalCardSales: totalCard,
+          totalDigitalSales: 0,
+          totalVAT,
+          netRevenue: totalSales - totalVAT,
+          paymentBreakdown: { cash: totalCash, card: totalCard, loyalty: 0 },
+          orderTypeBreakdown: { dine_in: 0, takeaway: 0, car_pickup: 0, delivery: 0, online: 0 },
+          cashMovements: [],
+          orderIds: orders.map((o: any) => o.id || o._id?.toString()),
+          status: 'closed',
+          employeeName: 'تلقائي',
+        };
+      }));
+
+      res.json(autoShifts.sort((a, b) => new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime()));
+    } catch (error) {
+      console.error('[SHIFTS] Auto shift error:', error);
+      res.status(500).json({ error: 'فشل في حساب الورديات التلقائية' });
+    }
+  });
+
+  // Get current auto-shift period info (for POS banner)
+  app.get("/api/shifts/current-period", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const tenantId = getTenantIdFromRequest(req) || 'demo-tenant';
+      const bizConfig = await BusinessConfigModel.findOne({ tenantId }).lean();
+      const shiftCfg = (bizConfig as any)?.shiftConfig || {};
+      const shiftDurationHours: number = shiftCfg.shiftDurationHours || 12;
+      const shiftStartTimes: string[] = shiftCfg.shiftStartTimes?.length ? shiftCfg.shiftStartTimes : ['06:00', '18:00'];
+      const localOffsetHours: number = shiftCfg.localTimeOffsetHours ?? 3;
+
+      const nowUTC = new Date();
+      let currentPeriod: { start: Date; end: Date; label: string } | null = null;
+
+      for (let d = 0; d <= 1; d++) {
+        for (const startTimeStr of [...shiftStartTimes].sort()) {
+          const [h, m] = startTimeStr.split(':').map(Number);
+          const blockStart = new Date(nowUTC);
+          blockStart.setUTCDate(blockStart.getUTCDate() - d);
+          blockStart.setUTCHours(h - localOffsetHours, m, 0, 0);
+          const blockEnd = new Date(blockStart);
+          blockEnd.setUTCHours(blockEnd.getUTCHours() + shiftDurationHours);
+
+          if (blockStart <= nowUTC && nowUTC < blockEnd) {
+            currentPeriod = {
+              start: blockStart,
+              end: blockEnd,
+              label: `${startTimeStr} — ${new Date(blockEnd.getTime()).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Riyadh' })}`,
+            };
+          }
+        }
+      }
+
+      res.json(currentPeriod ? {
+        hasPeriod: true,
+        start: currentPeriod.start.toISOString(),
+        end: currentPeriod.end.toISOString(),
+        label: currentPeriod.label,
+      } : { hasPeriod: false });
+    } catch (error) {
+      res.status(500).json({ error: 'فشل في جلب الفترة الحالية' });
+    }
+  });
+
   // Temporary test route for email
 
   app.get("/api/pos/hardware-status", requireAuth, (req: AuthRequest, res) => {
