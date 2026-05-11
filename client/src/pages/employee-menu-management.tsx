@@ -798,7 +798,7 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
 
  const dynamicCategoryIds = menuCategories.map(c => c.id);
  const dynamicCategoryNames: Record<string, string> = Object.fromEntries(
-   menuCategories.map(c => [c.id, c.nameAr])
+   menuCategories.map(c => [c.id, tc(c.nameAr, c.nameEn || c.nameAr)])
  );
  const unifiedCategoryNames: Record<string, string> = Object.fromEntries(
    UNIFIED_CATEGORIES.map(c => [c.id, c.nameAr])
@@ -1051,7 +1051,7 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
                          </SelectTrigger>
                          <SelectContent className="bg-white border-gray-200 text-gray-900">
                            {availableForDropdown.map(cat => (
-                             <SelectItem key={cat.id} value={cat.id}>{cat.nameAr}</SelectItem>
+                             <SelectItem key={cat.id} value={cat.id}>{tc(cat.nameAr, cat.nameEn || cat.nameAr)}</SelectItem>
                            ))}
                          </SelectContent>
                        </Select>
@@ -1903,7 +1903,7 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
  </SelectTrigger>
  <SelectContent className="bg-white border-gray-200 text-gray-900">
  {availableForDropdown.map(cat => (
-   <SelectItem key={cat.id} value={cat.id}>{cat.nameAr}</SelectItem>
+   <SelectItem key={cat.id} value={cat.id}>{tc(cat.nameAr, cat.nameEn || cat.nameAr)}</SelectItem>
  ))}
  </SelectContent>
  </Select>
@@ -2485,7 +2485,7 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
             <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0">
               {idx + 1}
             </span>
-            <span className="flex-1 text-sm font-medium text-foreground">{cat.nameAr}</span>
+            <span className="flex-1 text-sm font-medium text-foreground">{tc(cat.nameAr, cat.nameEn || cat.nameAr)}</span>
             {cat.nameEn && <span className="text-xs text-muted-foreground">{cat.nameEn}</span>}
             <div className="flex flex-col gap-0.5">
               <button

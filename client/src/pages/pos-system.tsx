@@ -581,15 +581,39 @@ export default function PosSystem() {
 
   const visibleCategories = useMemo(() => {
     const itemCategorySet = new Set(productsData?.map(p => p.category).filter(Boolean) || []);
-    return menuCategories
+    const dbCatIds = new Set(menuCategories.map(c => c.id));
+
+    const dynamicCats = menuCategories
       .filter(c => itemCategorySet.has(c.id))
       .map(c => ({
         id: c.id,
-        name: c.nameAr,
+        name: i18n.language === 'ar' ? c.nameAr : (c.nameEn || c.nameAr),
         icon: Tag,
         color: "text-primary"
       }));
-  }, [productsData, menuCategories]);
+
+    const legacyNames: Record<string, { ar: string; en: string }> = {
+      hot:       { ar: 'وجبات ساخنة',    en: 'Hot Snacks' },
+      cold:      { ar: 'مشروبات باردة',   en: 'Cold Drinks' },
+      desserts:  { ar: 'الحلويات',        en: 'Desserts' },
+      bakery:    { ar: 'المخبوزات',       en: 'Bakery' },
+      sandwiches:{ ar: 'ساندويتش',        en: 'Sandwiches' },
+      basic:     { ar: 'سناكس أساسية',   en: 'Main Snacks' },
+      specialty: { ar: 'أطباق إضافية',   en: 'Specialty Items' },
+      drinks:    { ar: 'الأطباق',         en: 'Drinks' },
+      food:      { ar: 'المأكولات',       en: 'Food' },
+    };
+    const legacyCats = Array.from(itemCategorySet)
+      .filter(id => !dbCatIds.has(id) && legacyNames[id as string])
+      .map(id => ({
+        id,
+        name: i18n.language === 'ar' ? legacyNames[id].ar : legacyNames[id].en,
+        icon: Tag,
+        color: "text-primary"
+      }));
+
+    return [...dynamicCats, ...legacyCats];
+  }, [productsData, menuCategories, i18n.language]);
 
   const calculateTotal = useMemo(() => {
     return orderItems.reduce((sum, item) => {
