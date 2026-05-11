@@ -554,6 +554,17 @@ export default function MenuPage() {
             <p className="text-[10px] text-muted-foreground/40">
               {tc('جميع الأسعار شاملة الضريبة', 'All prices include VAT')}
             </p>
+            <a
+              href="https://qiroxstudio.online"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-[10px] text-muted-foreground/50 hover:text-[#7D3D0F] transition-colors mt-1"
+              data-testid="link-qirox-studio"
+            >
+              <span>صنع عبر</span>
+              <span className="font-black tracking-wide text-[#D4912A]/70 hover:text-[#D4912A]">QIROX STUDIO</span>
+              <span className="text-[8px]">↗</span>
+            </a>
           </div>
         </div>
       </div>
