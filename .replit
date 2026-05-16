@@ -44,3 +44,4 @@ build = ["npm", "run", "build"]
 [userenv]
 
 [userenv.shared]
+MONGODB_URI = "mongodb+srv://tasaliy:ASDqwe123@tasaliyqurmash.behfnnh.mongodb.net/?appName=tasaliyqurmash"
