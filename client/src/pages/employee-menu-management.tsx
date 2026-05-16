@@ -1219,12 +1219,12 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
                   type="text"
                   value={sectionName}
                   onChange={(e) => { const newName = e.target.value; setAddEditableAddons(prev => prev.map(a => a.section === sectionName ? {...a, section: newName} : a)); }}
-                  placeholder="اسم القسم"
+                  placeholder={tc("اسم القسم", "Section name")}
                   className="flex-1 text-sm font-semibold text-gray-700 bg-transparent border-b border-gray-200 focus:border-primary focus:outline-none"
                   data-testid={"input-add-section-name-" + sectionName}
                 />
-                <button type="button" onClick={() => changeSectionType(sectionName, 'multiple')} className={`text-xs px-2 py-0.5 rounded-r-none rounded-l border transition-colors ${selType === 'multiple' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-500 border-gray-300 hover:border-primary/50'}`} data-testid={"btn-add-sec-multi-" + sectionName}>☑ متعدد</button>
-                <button type="button" onClick={() => changeSectionType(sectionName, 'single')} className={`text-xs px-2 py-0.5 rounded-l-none rounded-r border-t border-b border-r transition-colors ${selType === 'single' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-500 border-gray-300 hover:border-primary/50'}`} data-testid={"btn-add-sec-single-" + sectionName}>◉ واحد</button>
+                <button type="button" onClick={() => changeSectionType(sectionName, 'multiple')} className={`text-xs px-2 py-0.5 rounded-r-none rounded-l border transition-colors ${selType === 'multiple' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-500 border-gray-300 hover:border-primary/50'}`} data-testid={"btn-add-sec-multi-" + sectionName}>☑ {tc("متعدد", "Multiple")}</button>
+                <button type="button" onClick={() => changeSectionType(sectionName, 'single')} className={`text-xs px-2 py-0.5 rounded-l-none rounded-r border-t border-b border-r transition-colors ${selType === 'single' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-500 border-gray-300 hover:border-primary/50'}`} data-testid={"btn-add-sec-single-" + sectionName}>◉ {tc("واحد", "Single")}</button>
                 <button type="button" onClick={() => setAddEditableAddons(prev => prev.filter((_, i) => !indices.includes(i)))} className="text-red-400 hover:text-red-600 mr-0.5" data-testid={"btn-del-section-" + sectionName}><X className="w-4 h-4" /></button>
               </div>
               <div className="space-y-1.5 pr-2">
@@ -1237,12 +1237,12 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
                       <Input type="text" placeholder="اسم الخيار (عربي)" value={addon.nameAr} onChange={(e) => { const next = [...addEditableAddons]; next[idx] = { ...next[idx], nameAr: e.target.value }; setAddEditableAddons(next); }} className="bg-white border-gray-300 text-gray-900 h-8 text-sm" data-testid={"input-add-addon-name-" + idx} />
                       <Input type="text" placeholder="Option name (English)" value={addon.nameEn || ''} onChange={(e) => { const next = [...addEditableAddons]; next[idx] = { ...next[idx], nameEn: e.target.value }; setAddEditableAddons(next); }} className="bg-white border-gray-200 text-gray-900 h-8 text-sm" dir="ltr" data-testid={"input-add-addon-name-en-" + idx} />
                     </div>
-                    <Input type="number" placeholder="السعر" value={addon.price} onChange={(e) => { const next = [...addEditableAddons]; next[idx] = { ...next[idx], price: parseFloat(e.target.value) || 0 }; setAddEditableAddons(next); }} className="bg-white border-gray-300 text-gray-900 w-20 h-8 text-sm" data-testid={"input-add-addon-price-" + idx} />
+                    <Input type="number" placeholder={tc("السعر", "Price")} value={addon.price} onChange={(e) => { const next = [...addEditableAddons]; next[idx] = { ...next[idx], price: parseFloat(e.target.value) || 0 }; setAddEditableAddons(next); }} className="bg-white border-gray-300 text-gray-900 w-20 h-8 text-sm" data-testid={"input-add-addon-price-" + idx} />
                     <button type="button" onClick={() => setAddEditableAddons(addEditableAddons.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 shrink-0" data-testid={"button-remove-addon-" + idx}><X className="w-4 h-4" /></button>
                   </div>
                 ); })}
               </div>
-              <button type="button" onClick={() => setAddEditableAddons(prev => [...prev, { nameAr: '', price: 0, imageUrl: '', category: 'other', section: sectionName, selectionType: selType }])} className="text-xs text-primary hover:underline pr-2" data-testid={"btn-add-option-" + sectionName}>+ إضافة خيار لهذا القسم</button>
+              <button type="button" onClick={() => setAddEditableAddons(prev => [...prev, { nameAr: '', price: 0, imageUrl: '', category: 'other', section: sectionName, selectionType: selType }])} className="text-xs text-primary hover:underline pr-2" data-testid={"btn-add-option-" + sectionName}>+ {tc("إضافة خيار لهذا القسم", "Add option to this section")}</button>
             </div>
           );
         })}
@@ -1256,12 +1256,12 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
                 <Input type="text" placeholder="اسم الإضافة (عربي)" value={addon.nameAr} onChange={(e) => { const next = [...addEditableAddons]; next[idx] = { ...next[idx], nameAr: e.target.value }; setAddEditableAddons(next); }} className="bg-gray-50 border-gray-300 text-gray-900" data-testid={"input-add-addon-name-" + idx} />
                 <Input type="text" placeholder="Addon name (English)" value={addon.nameEn || ''} onChange={(e) => { const next = [...addEditableAddons]; next[idx] = { ...next[idx], nameEn: e.target.value }; setAddEditableAddons(next); }} className="bg-gray-50 border-gray-200 text-gray-900" dir="ltr" data-testid={"input-add-addon-name-en-" + idx} />
               </div>
-              <Input type="number" placeholder="السعر" value={addon.price} onChange={(e) => { const next = [...addEditableAddons]; next[idx] = { ...next[idx], price: parseFloat(e.target.value) || 0 }; setAddEditableAddons(next); }} className="bg-gray-50 border-gray-300 text-gray-900 w-20" data-testid={"input-add-addon-price-" + idx} />
+              <Input type="number" placeholder={tc("السعر", "Price")} value={addon.price} onChange={(e) => { const next = [...addEditableAddons]; next[idx] = { ...next[idx], price: parseFloat(e.target.value) || 0 }; setAddEditableAddons(next); }} className="bg-gray-50 border-gray-300 text-gray-900 w-20" data-testid={"input-add-addon-price-" + idx} />
               <Button type="button" size="sm" variant="outline" onClick={() => setAddEditableAddons(addEditableAddons.filter((_, i) => i !== idx))} className="border-red-500/30 text-red-500 shrink-0" data-testid={"button-remove-addon-" + idx}><X className="w-4 h-4" /></Button>
             </div>
             <div className="flex gap-1">
-              <button type="button" onClick={() => { const next = [...addEditableAddons]; next[idx] = { ...next[idx], selectionType: 'multiple' }; setAddEditableAddons(next); }} className={`flex-1 text-xs py-1 rounded border transition-colors ${(addon.selectionType || 'multiple') === 'multiple' ? 'bg-primary text-primary-foreground border-primary' : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-400'}`} data-testid={"button-add-addon-multi-" + idx}>☑ اختيار متعدد</button>
-              <button type="button" onClick={() => { const next = [...addEditableAddons]; next[idx] = { ...next[idx], selectionType: 'single' }; setAddEditableAddons(next); }} className={`flex-1 text-xs py-1 rounded border transition-colors ${(addon.selectionType || 'multiple') === 'single' ? 'bg-primary text-primary-foreground border-primary' : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-400'}`} data-testid={"button-add-addon-single-" + idx}>◉ اختيار واحد فقط</button>
+              <button type="button" onClick={() => { const next = [...addEditableAddons]; next[idx] = { ...next[idx], selectionType: 'multiple' }; setAddEditableAddons(next); }} className={`flex-1 text-xs py-1 rounded border transition-colors ${(addon.selectionType || 'multiple') === 'multiple' ? 'bg-primary text-primary-foreground border-primary' : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-400'}`} data-testid={"button-add-addon-multi-" + idx}>☑ {tc("اختيار متعدد", "Multiple choice")}</button>
+              <button type="button" onClick={() => { const next = [...addEditableAddons]; next[idx] = { ...next[idx], selectionType: 'single' }; setAddEditableAddons(next); }} className={`flex-1 text-xs py-1 rounded border transition-colors ${(addon.selectionType || 'multiple') === 'single' ? 'bg-primary text-primary-foreground border-primary' : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-400'}`} data-testid={"button-add-addon-single-" + idx}>◉ {tc("اختيار واحد فقط", "Single choice only")}</button>
             </div>
           </div>
         ); })}
@@ -2066,12 +2066,12 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
                    type="text"
                    value={sectionName}
                    onChange={(e) => { const newName = e.target.value; setEditableAddons(prev => prev.map(a => a.section === sectionName ? {...a, section: newName} : a)); }}
-                   placeholder="اسم القسم"
+                   placeholder={tc("اسم القسم", "Section name")}
                    className="flex-1 text-sm font-semibold text-gray-700 bg-transparent border-b border-gray-200 focus:border-primary focus:outline-none"
                    data-testid={"input-edit-section-name-" + sectionName}
                  />
-                 <button type="button" onClick={() => changeSectionType(sectionName, 'multiple')} className={`text-xs px-2 py-0.5 rounded-r-none rounded-l border transition-colors ${selType === 'multiple' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-500 border-gray-300 hover:border-primary/50'}`} data-testid={"btn-edit-sec-multi-" + sectionName}>☑ متعدد</button>
-                 <button type="button" onClick={() => changeSectionType(sectionName, 'single')} className={`text-xs px-2 py-0.5 rounded-l-none rounded-r border-t border-b border-r transition-colors ${selType === 'single' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-500 border-gray-300 hover:border-primary/50'}`} data-testid={"btn-edit-sec-single-" + sectionName}>◉ واحد</button>
+                 <button type="button" onClick={() => changeSectionType(sectionName, 'multiple')} className={`text-xs px-2 py-0.5 rounded-r-none rounded-l border transition-colors ${selType === 'multiple' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-500 border-gray-300 hover:border-primary/50'}`} data-testid={"btn-edit-sec-multi-" + sectionName}>☑ {tc("متعدد", "Multiple")}</button>
+                 <button type="button" onClick={() => changeSectionType(sectionName, 'single')} className={`text-xs px-2 py-0.5 rounded-l-none rounded-r border-t border-b border-r transition-colors ${selType === 'single' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-500 border-gray-300 hover:border-primary/50'}`} data-testid={"btn-edit-sec-single-" + sectionName}>◉ {tc("واحد", "Single")}</button>
                  <button type="button" onClick={() => setEditableAddons(prev => prev.filter((_, i) => !indices.includes(i)))} className="text-red-400 hover:text-red-600 mr-0.5" data-testid={"btn-del-edit-section-" + sectionName}><X className="w-4 h-4" /></button>
                </div>
                <div className="space-y-1.5 pr-2">
@@ -2084,12 +2084,12 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
                        <Input type="text" placeholder="اسم الخيار (عربي)" value={addon.nameAr} onChange={(e) => { const n = [...editableAddons]; n[idx] = { ...n[idx], nameAr: e.target.value }; setEditableAddons(n); }} className="bg-white border-gray-300 text-gray-900 h-8 text-sm" data-testid={`input-edit-addon-name-${idx}`} />
                        <Input type="text" placeholder="Option name (English)" value={addon.nameEn || ''} onChange={(e) => { const n = [...editableAddons]; n[idx] = { ...n[idx], nameEn: e.target.value }; setEditableAddons(n); }} className="bg-white border-gray-200 text-gray-900 h-8 text-sm" dir="ltr" data-testid={`input-edit-addon-name-en-${idx}`} />
                      </div>
-                     <Input type="number" placeholder="السعر" value={addon.price} onChange={(e) => { const n = [...editableAddons]; n[idx] = { ...n[idx], price: parseFloat(e.target.value) || 0 }; setEditableAddons(n); }} className="bg-white border-gray-300 text-gray-900 w-20 h-8 text-sm" data-testid={`input-edit-addon-price-${idx}`} />
+                     <Input type="number" placeholder={tc("السعر", "Price")} value={addon.price} onChange={(e) => { const n = [...editableAddons]; n[idx] = { ...n[idx], price: parseFloat(e.target.value) || 0 }; setEditableAddons(n); }} className="bg-white border-gray-300 text-gray-900 w-20 h-8 text-sm" data-testid={`input-edit-addon-price-${idx}`} />
                      <button type="button" onClick={() => setEditableAddons(editableAddons.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 shrink-0" data-testid={`button-delete-addon-${idx}`}><X className="w-4 h-4" /></button>
                    </div>
                  ); })}
                </div>
-               <button type="button" onClick={() => setEditableAddons(prev => [...prev, { nameAr: '', price: 0, imageUrl: '', category: 'other', section: sectionName, selectionType: selType }])} className="text-xs text-primary hover:underline pr-2" data-testid={"btn-edit-add-option-" + sectionName}>+ إضافة خيار لهذا القسم</button>
+               <button type="button" onClick={() => setEditableAddons(prev => [...prev, { nameAr: '', price: 0, imageUrl: '', category: 'other', section: sectionName, selectionType: selType }])} className="text-xs text-primary hover:underline pr-2" data-testid={"btn-edit-add-option-" + sectionName}>+ {tc("إضافة خيار لهذا القسم", "Add option to this section")}</button>
              </div>
            );
          })}
@@ -2103,12 +2103,12 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
                  <Input type="text" placeholder="اسم الإضافة (عربي)" value={addon.nameAr} onChange={(e) => { const n = [...editableAddons]; n[idx] = { ...n[idx], nameAr: e.target.value }; setEditableAddons(n); }} className="bg-gray-50 border-gray-300 text-gray-900" data-testid={`input-edit-addon-name-${idx}`} />
                  <Input type="text" placeholder="Addon name (English)" value={addon.nameEn || ''} onChange={(e) => { const n = [...editableAddons]; n[idx] = { ...n[idx], nameEn: e.target.value }; setEditableAddons(n); }} className="bg-gray-50 border-gray-200 text-gray-900" dir="ltr" data-testid={`input-edit-addon-name-en-${idx}`} />
                </div>
-               <Input type="number" placeholder="السعر" value={addon.price} onChange={(e) => { const n = [...editableAddons]; n[idx] = { ...n[idx], price: parseFloat(e.target.value) || 0 }; setEditableAddons(n); }} className="bg-gray-50 border-gray-300 text-gray-900 w-20" data-testid={`input-edit-addon-price-${idx}`} />
+               <Input type="number" placeholder={tc("السعر", "Price")} value={addon.price} onChange={(e) => { const n = [...editableAddons]; n[idx] = { ...n[idx], price: parseFloat(e.target.value) || 0 }; setEditableAddons(n); }} className="bg-gray-50 border-gray-300 text-gray-900 w-20" data-testid={`input-edit-addon-price-${idx}`} />
                <Button type="button" size="sm" variant="outline" onClick={() => setEditableAddons(editableAddons.filter((_, i) => i !== idx))} className="border-red-500/30 text-red-500 shrink-0" data-testid={`button-delete-addon-${idx}`}><X className="w-4 h-4" /></Button>
              </div>
              <div className="flex gap-1">
-               <button type="button" onClick={() => { const n = [...editableAddons]; n[idx] = { ...n[idx], selectionType: 'multiple' }; setEditableAddons(n); }} className={`flex-1 text-xs py-1 rounded border transition-colors ${(addon.selectionType || 'multiple') === 'multiple' ? 'bg-primary text-primary-foreground border-primary' : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-400'}`} data-testid={`button-edit-addon-multi-${idx}`}>☑ اختيار متعدد</button>
-               <button type="button" onClick={() => { const n = [...editableAddons]; n[idx] = { ...n[idx], selectionType: 'single' }; setEditableAddons(n); }} className={`flex-1 text-xs py-1 rounded border transition-colors ${(addon.selectionType || 'multiple') === 'single' ? 'bg-primary text-primary-foreground border-primary' : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-400'}`} data-testid={`button-edit-addon-single-${idx}`}>◉ اختيار واحد فقط</button>
+               <button type="button" onClick={() => { const n = [...editableAddons]; n[idx] = { ...n[idx], selectionType: 'multiple' }; setEditableAddons(n); }} className={`flex-1 text-xs py-1 rounded border transition-colors ${(addon.selectionType || 'multiple') === 'multiple' ? 'bg-primary text-primary-foreground border-primary' : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-400'}`} data-testid={`button-edit-addon-multi-${idx}`}>☑ {tc("اختيار متعدد", "Multiple choice")}</button>
+               <button type="button" onClick={() => { const n = [...editableAddons]; n[idx] = { ...n[idx], selectionType: 'single' }; setEditableAddons(n); }} className={`flex-1 text-xs py-1 rounded border transition-colors ${(addon.selectionType || 'multiple') === 'single' ? 'bg-primary text-primary-foreground border-primary' : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-400'}`} data-testid={`button-edit-addon-single-${idx}`}>◉ {tc("اختيار واحد فقط", "Single choice only")}</button>
              </div>
            </div>
          ); })}
