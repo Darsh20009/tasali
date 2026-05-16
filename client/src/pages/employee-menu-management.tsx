@@ -64,10 +64,10 @@ export default function EmployeeMenuManagement() {
  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
  const [editingItem, setEditingItem] = useState<CoffeeItem | null>(null);
- const [editableSizes, setEditableSizes] = useState<Array<{nameAr: string; price: number}>>([]);
+ const [editableSizes, setEditableSizes] = useState<Array<{nameAr: string; nameEn?: string; price: number}>>([]);
  const [editableAddons, setEditableAddons] = useState<Array<{nameAr: string; nameEn?: string; price: number; imageUrl?: string; category?: string; section?: string; selectionType?: 'single' | 'multiple'}>>([]);
  const [addEditableAddons, setAddEditableAddons] = useState<Array<{nameAr: string; nameEn?: string; price: number; imageUrl?: string; category?: string; section?: string; selectionType?: 'single' | 'multiple'}>>([]);
-const [addEditableSizes, setAddEditableSizes] = useState<Array<{nameAr: string; price: number}>>([]);
+const [addEditableSizes, setAddEditableSizes] = useState<Array<{nameAr: string; nameEn?: string; price: number}>>([]);
 
 type BundledSection = {
   sectionTitle: string;
@@ -1142,41 +1142,58 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
   <Label className="text-gray-300">{tc("الأحجام المتاحة", "Available Sizes")}</Label>
   <div className="space-y-2">
     {addEditableSizes.map((size, idx) => (
-      <div key={idx} className="flex gap-2 items-end">
-        <Input
-          type="text"
-          placeholder={tc("اسم الحجم (مثال: صغير)", "Size name (e.g. Small)")}
-          value={size.nameAr}
-          onChange={(e) => {
-            const next = [...addEditableSizes];
-            next[idx].nameAr = e.target.value;
-            setAddEditableSizes(next);
-          }}
-          className="bg-gray-50 border-gray-300 text-gray-900 flex-1"
-          data-testid={`input-add-size-name-${idx}`}
-        />
-        <Input
-          type="number"
-          placeholder="السعر"
-          value={size.price}
-          onChange={(e) => {
-            const next = [...addEditableSizes];
-            next[idx].price = parseFloat(e.target.value) || 0;
-            setAddEditableSizes(next);
-          }}
-          className="bg-gray-50 border-gray-300 text-gray-900 w-24"
-          data-testid={`input-add-size-price-${idx}`}
-        />
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={() => setAddEditableSizes(addEditableSizes.filter((_, i) => i !== idx))}
-          className="border-red-500/30 text-red-500"
-          data-testid={`button-remove-size-${idx}`}
-        >
-          <X className="w-4 h-4" />
-        </Button>
+      <div key={idx} className="flex flex-col gap-1">
+        <div className="flex gap-2 items-center">
+          <div className="flex flex-col gap-1 flex-1">
+            <Input
+              type="text"
+              placeholder={tc("اسم الحجم (مثال: صغير)", "Arabic name (e.g. صغير)")}
+              value={size.nameAr}
+              onChange={(e) => {
+                const next = [...addEditableSizes];
+                next[idx] = { ...next[idx], nameAr: e.target.value };
+                setAddEditableSizes(next);
+              }}
+              className="bg-gray-50 border-gray-300 text-gray-900"
+              data-testid={`input-add-size-name-${idx}`}
+            />
+            <Input
+              type="text"
+              placeholder="English name (e.g. Small)"
+              value={size.nameEn || ''}
+              onChange={(e) => {
+                const next = [...addEditableSizes];
+                next[idx] = { ...next[idx], nameEn: e.target.value };
+                setAddEditableSizes(next);
+              }}
+              className="bg-gray-50 border-gray-200 text-gray-900"
+              dir="ltr"
+              data-testid={`input-add-size-name-en-${idx}`}
+            />
+          </div>
+          <Input
+            type="number"
+            placeholder={tc("السعر", "Price")}
+            value={size.price}
+            onChange={(e) => {
+              const next = [...addEditableSizes];
+              next[idx] = { ...next[idx], price: parseFloat(e.target.value) || 0 };
+              setAddEditableSizes(next);
+            }}
+            className="bg-gray-50 border-gray-300 text-gray-900 w-24"
+            data-testid={`input-add-size-price-${idx}`}
+          />
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => setAddEditableSizes(addEditableSizes.filter((_, i) => i !== idx))}
+            className="border-red-500/30 text-red-500 shrink-0"
+            data-testid={`button-remove-size-${idx}`}
+          >
+            <X className="w-4 h-4" />
+          </Button>
+        </div>
       </div>
     ))}
   </div>
@@ -1184,7 +1201,7 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
     type="button"
     size="sm"
     variant="outline"
-    onClick={() => setAddEditableSizes([...addEditableSizes, { nameAr: '', price: 0 }])}
+    onClick={() => setAddEditableSizes([...addEditableSizes, { nameAr: '', nameEn: '', price: 0 }])}
     className="border-green-500/30 text-green-400 w-full"
     data-testid="button-add-size"
   >
@@ -1988,41 +2005,58 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
    <Label className="text-gray-300">{tc("الأحجام المتاحة", "Available Sizes")}</Label>
    <div className="space-y-2">
      {editableSizes.map((size, idx) => (
-       <div key={idx} className="flex gap-2 items-end">
-         <Input
-           type="text"
-           placeholder="اسم الحجم"
-           value={size.nameAr}
-           onChange={(e) => {
-             const newSizes = [...editableSizes];
-             newSizes[idx].nameAr = e.target.value;
-             setEditableSizes(newSizes);
-           }}
-           className="bg-gray-50 border-gray-300 text-gray-900 flex-1"
-           data-testid={`input-edit-size-name-${idx}`}
-         />
-         <Input
-           type="number"
-           placeholder="السعر"
-           value={size.price}
-           onChange={(e) => {
-             const newSizes = [...editableSizes];
-             newSizes[idx].price = parseFloat(e.target.value) || 0;
-             setEditableSizes(newSizes);
-           }}
-           className="bg-gray-50 border-gray-300 text-gray-900 w-24"
-           data-testid={`input-edit-size-price-${idx}`}
-         />
-         <Button
-           type="button"
-           size="sm"
-           variant="outline"
-           onClick={() => setEditableSizes(editableSizes.filter((_, i) => i !== idx))}
-           className="border-red-500/30 text-red-500"
-           data-testid={`button-delete-size-${idx}`}
-         >
-           <X className="w-4 h-4" />
-         </Button>
+       <div key={idx} className="flex flex-col gap-1">
+         <div className="flex gap-2 items-center">
+           <div className="flex flex-col gap-1 flex-1">
+             <Input
+               type="text"
+               placeholder={tc("اسم الحجم (مثال: صغير)", "Arabic name (e.g. صغير)")}
+               value={size.nameAr}
+               onChange={(e) => {
+                 const newSizes = [...editableSizes];
+                 newSizes[idx] = { ...newSizes[idx], nameAr: e.target.value };
+                 setEditableSizes(newSizes);
+               }}
+               className="bg-gray-50 border-gray-300 text-gray-900"
+               data-testid={`input-edit-size-name-${idx}`}
+             />
+             <Input
+               type="text"
+               placeholder="English name (e.g. Small)"
+               value={size.nameEn || ''}
+               onChange={(e) => {
+                 const newSizes = [...editableSizes];
+                 newSizes[idx] = { ...newSizes[idx], nameEn: e.target.value };
+                 setEditableSizes(newSizes);
+               }}
+               className="bg-gray-50 border-gray-200 text-gray-900"
+               dir="ltr"
+               data-testid={`input-edit-size-name-en-${idx}`}
+             />
+           </div>
+           <Input
+             type="number"
+             placeholder={tc("السعر", "Price")}
+             value={size.price}
+             onChange={(e) => {
+               const newSizes = [...editableSizes];
+               newSizes[idx] = { ...newSizes[idx], price: parseFloat(e.target.value) || 0 };
+               setEditableSizes(newSizes);
+             }}
+             className="bg-gray-50 border-gray-300 text-gray-900 w-24"
+             data-testid={`input-edit-size-price-${idx}`}
+           />
+           <Button
+             type="button"
+             size="sm"
+             variant="outline"
+             onClick={() => setEditableSizes(editableSizes.filter((_, i) => i !== idx))}
+             className="border-red-500/30 text-red-500 shrink-0"
+             data-testid={`button-delete-size-${idx}`}
+           >
+             <X className="w-4 h-4" />
+           </Button>
+         </div>
        </div>
      ))}
    </div>
@@ -2030,7 +2064,7 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
      type="button"
      size="sm"
      variant="outline"
-     onClick={() => setEditableSizes([...editableSizes, {nameAr: '', price: 0}])}
+     onClick={() => setEditableSizes([...editableSizes, {nameAr: '', nameEn: '', price: 0}])}
      className="border-green-500/30 text-green-400 w-full"
      data-testid="button-add-edit-size"
    >

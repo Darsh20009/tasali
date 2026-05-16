@@ -2421,9 +2421,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (!addon.id) addon.id = nanoid();
           keepAddonIds.push(addon.id);
           try {
+            const { _id: _addonId, ...addonWithoutId } = addon;
             await ProductAddonModel.findOneAndUpdate(
               { id: addon.id },
-              { $set: { id: addon.id, ...addon, category: addon.category || 'other', createdAt: addon.createdAt || new Date() } },
+              { $set: { id: addon.id, ...addonWithoutId, category: addonWithoutId.category || 'other', createdAt: addonWithoutId.createdAt || new Date() } },
               { upsert: true, new: true }
             );
             await CoffeeItemAddonModel.findOneAndUpdate(
