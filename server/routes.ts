@@ -2409,7 +2409,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const itemId = req.params.id;
       const { addons, ...itemFields } = req.body || {};
 
-      const updated = await CoffeeItemModel.findOneAndUpdate({ id: itemId }, { $set: itemFields }, { new: true });
+      const embeddedAddons = Array.isArray(addons) ? addons.filter((a: any) => a?.nameAr) : undefined;
+      const fieldsToSet = embeddedAddons !== undefined ? { ...itemFields, addons: embeddedAddons } : itemFields;
+      const updated = await CoffeeItemModel.findOneAndUpdate({ id: itemId }, { $set: fieldsToSet }, { new: true });
 
       // Persist addons & link them to the coffee item (works for both food and drinks)
       if (Array.isArray(addons)) {
