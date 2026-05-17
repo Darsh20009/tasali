@@ -225,9 +225,16 @@ export function ReceiptInvoice({ order, variant = "button" }: ReceiptInvoiceProp
               <div key={index} className="flex items-start">
                 <div className="flex-1 text-right">
                   <div className="font-bold leading-relaxed">{itemNameAr}</div>
+                  {itemNameEn && itemNameEn !== itemNameAr && (
+                    <div className="text-[16px] mt-1 ltr text-right">{itemNameEn}</div>
+                  )}
                   {inlineAddons.length > 0 && (
                     <div className="text-[16px] mt-1 leading-relaxed">
-                      + {inlineAddons.map((a: any) => a.nameAr).join('، ')}
+                      {inlineAddons.map((a: any, i: number) => (
+                        <div key={i}>
+                          + {a.nameAr}{a.nameEn && a.nameEn !== a.nameAr ? ` / ${a.nameEn}` : ''}
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>

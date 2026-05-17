@@ -544,8 +544,14 @@ function parseNumber(val: any): number {
   return isNaN(parsed) ? 0 : parsed;
 }
 
-function renderItemName(nameAr: string, _nameEn?: string): string {
-  return `<span style="font-weight:600;">${nameAr}</span>`;
+function renderItemName(nameAr: string, nameEn?: string): string {
+  if (!nameEn || nameEn.trim() === '' || nameEn.trim() === nameAr.trim()) {
+    return `<span style="font-weight:600;">${nameAr}</span>`;
+  }
+  return `<div style="direction:rtl;text-align:right;">
+    <div style="font-weight:600;">${nameAr}</div>
+    <div style="font-size:10px;color:#444;">${nameEn}</div>
+  </div>`;
 }
 
 export async function printUnifiedReceipt(data: TaxInvoiceData): Promise<void> {
@@ -655,10 +661,14 @@ export async function buildReceiptPreviewHtml(data: TaxInvoiceData): Promise<str
     const up = parseNumber(item.coffeeItem.price);
     const itemDisc = parseNumber(item.itemDiscount);
     const lineTotal = item.quantity * up - itemDisc;
-    const addons = (item.customization?.selectedItemAddons || []).map((a: any) => a.nameAr).join('، ');
+    const nameEn = (item.coffeeItem as any).nameEn;
+    const addons = (item.customization?.selectedItemAddons || [])
+      .map((a: any) => a.nameAr + (a.nameEn && a.nameEn !== a.nameAr ? ` / ${a.nameEn}` : ''))
+      .join('، ');
     return `
       <div style="padding:8px 0;">
         <div style="font-weight:700;font-size:19px;">${item.coffeeItem.nameAr}${itemDisc > 0 ? ` <span style="font-size:14px;color:#16a34a;">(-${itemDisc.toFixed(2)})</span>` : ''}</div>
+        ${nameEn && nameEn !== item.coffeeItem.nameAr ? `<div style="font-size:13px;color:#555;margin-top:1px;">${nameEn}</div>` : ''}
         ${addons ? `<div style="font-size:15px;color:#444;margin-top:3px;">+ ${addons}</div>` : ''}
         <table style="width:100%;margin-top:5px;border-collapse:collapse;border:0;"><tr>
           <td style="font-size:17px;color:#222;border:0;">${item.quantity} × ${up.toFixed(2)} ر.س</td>
@@ -794,10 +804,14 @@ export function buildEmployeeReceiptPreviewHtml(data: TaxInvoiceData): string {
     orderTypeStr;
 
   const itemsHtml = data.items.map(item => {
-    const addons = (item.customization?.selectedItemAddons || []).map((a: any) => a.nameAr).join('، ');
+    const nameEn = (item.coffeeItem as any).nameEn;
+    const addons = (item.customization?.selectedItemAddons || [])
+      .map((a: any) => a.nameAr + (a.nameEn && a.nameEn !== a.nameAr ? ` / ${a.nameEn}` : ''))
+      .join('، ');
     return `
       <div style="padding:8px 0;">
         <div style="font-size:22px;font-weight:800;line-height:1.4;">${item.quantity} × ${item.coffeeItem.nameAr}</div>
+        ${nameEn && nameEn !== item.coffeeItem.nameAr ? `<div style="font-size:14px;color:#555;margin-top:2px;">${nameEn}</div>` : ''}
         ${addons ? `<div style="font-size:16px;color:#333;margin-top:3px;">+ ${addons}</div>` : ''}
       </div>`;
   }).join('');
