@@ -214,9 +214,6 @@ export const ReceiptPrint = forwardRef<HTMLDivElement, ReceiptProps>(
                     <tr key={index} className="border-b border-gray-200">
                       <td className="py-2">
                         <div className="font-medium text-gray-900">{item.coffeeItem.nameAr}</div>
-                        {item.coffeeItem.nameEn && (
-                          <div className="text-[10px] text-gray-500">{item.coffeeItem.nameEn}</div>
-                        )}
                         {itemDiscount > 0 && (
                           <div className="text-[10px] text-green-600">خصم: {itemDiscount.toFixed(2)}-</div>
                         )}

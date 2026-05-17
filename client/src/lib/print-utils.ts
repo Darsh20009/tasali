@@ -544,14 +544,8 @@ function parseNumber(val: any): number {
   return isNaN(parsed) ? 0 : parsed;
 }
 
-function renderItemName(nameAr: string, nameEn?: string): string {
-  if (!nameEn || nameEn.trim() === '' || nameEn.trim() === nameAr.trim()) {
-    return `<span style="font-weight:600;">${nameAr}</span>`;
-  }
-  return `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">
-    <span style="direction:ltr;text-align:left;font-size:10px;color:#444;flex:1;word-break:break-word;">${nameEn}</span>
-    <span style="direction:rtl;text-align:right;font-weight:600;flex:1;word-break:break-word;">${nameAr}</span>
-  </div>`;
+function renderItemName(nameAr: string, _nameEn?: string): string {
+  return `<span style="font-weight:600;">${nameAr}</span>`;
 }
 
 export async function printUnifiedReceipt(data: TaxInvoiceData): Promise<void> {
