@@ -900,6 +900,7 @@ export async function printTaxInvoice(data: TaxInvoiceData, config: PrintConfig 
           orderType: orderTypeThermal,
           items: data.items.map(item => ({
             name: item.coffeeItem.nameAr,
+            nameEn: (item.coffeeItem as any).nameEn || '',
             qty: item.quantity,
             price: parseNumber(item.coffeeItem.price),
             addons: (item.customization?.selectedItemAddons || []).map((a: any) => a.nameAr),
@@ -936,6 +937,7 @@ export async function printTaxInvoice(data: TaxInvoiceData, config: PrintConfig 
               cashierName: data.employeeName || '—',
               items: data.items.map(item => ({
                 name: item.coffeeItem.nameAr,
+                nameEn: (item.coffeeItem as any).nameEn || '',
                 qty: item.quantity,
                 addons: (item.customization?.selectedItemAddons || []).map((a: any) => a.nameAr),
               })),
@@ -1025,6 +1027,7 @@ export async function printTaxInvoice(data: TaxInvoiceData, config: PrintConfig 
     cashierName: data.employeeName || '—',
     items: data.items.map(item => ({
       name: item.coffeeItem.nameAr,
+      nameEn: (item.coffeeItem as any).nameEn || '',
       qty: item.quantity,
       addons: (item.customization?.selectedItemAddons || []).map((a: any) => a.nameAr),
     })),
@@ -1377,6 +1380,7 @@ export async function printAllReceipts(data: TaxInvoiceData & { deliveryType?: s
         orderType: orderTypeLabel || undefined,
         items: data.items.map(item => ({
           name: item.coffeeItem.nameAr,
+          nameEn: (item.coffeeItem as any).nameEn || '',
           qty: item.quantity,
           price: parseNumber(item.coffeeItem.price),
           addons: (item.customization?.selectedItemAddons || []).map((a: any) => a.nameAr),
@@ -1406,6 +1410,7 @@ export async function printAllReceipts(data: TaxInvoiceData & { deliveryType?: s
             cashierName: data.employeeName,
             items: data.items.map(item => ({
               name: item.coffeeItem.nameAr,
+              nameEn: (item.coffeeItem as any).nameEn || '',
               qty: item.quantity,
               addons: (item.customization?.selectedItemAddons || []).map((a: any) => a.nameAr),
             })),

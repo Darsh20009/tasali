@@ -556,7 +556,7 @@ export interface ReceiptBitmapOpts {
   customerName?: string;
   tableNumber?: string;
   orderType?: string;
-  items: Array<{ name: string; qty: number; price: number; addons?: string[] }>;
+  items: Array<{ name: string; nameEn?: string; qty: number; price: number; addons?: string[] }>;
   subtotal: number;
   vat: number;
   total: number;
@@ -656,6 +656,9 @@ export async function buildReceiptCanvas(opts: ReceiptBitmapOpts): Promise<HTMLC
   // Items
   for (const item of opts.items) {
     addText(item.name, 'right', FS, true);
+    if (item.nameEn && item.nameEn.trim() && item.nameEn.trim() !== item.name.trim()) {
+      addText(item.nameEn, 'right', Math.round(FS * 0.82), false, '#555');
+    }
     addRow(`${item.qty} × ${item.price.toFixed(2)} ر.س`, `${(item.qty * item.price).toFixed(2)} ر.س`, Math.round(FS * 0.9));
     if (item.addons?.length) {
       for (const a of item.addons) addText(`+ ${a}`, 'right', Math.round(FS * 0.82), false, '#555');
@@ -839,7 +842,7 @@ export interface EmployeeCopyOpts {
   tableNumber?: string;
   orderType?: string;
   cashierName: string;
-  items: Array<{ name: string; qty: number; addons?: string[] }>;
+  items: Array<{ name: string; nameEn?: string; qty: number; addons?: string[] }>;
   notes?: string;
   total?: number;
   orderDate?: string;
@@ -890,6 +893,9 @@ export async function buildEmployeeCopyCanvas(opts: EmployeeCopyOpts): Promise<H
   // ── Items: each on a single line "qty × name" ──
   for (const item of opts.items) {
     drawRight(`${item.qty} × ${item.name}`, Math.round(FS * 1.1), true);
+    if (item.nameEn && item.nameEn.trim() && item.nameEn.trim() !== item.name.trim()) {
+      drawRight(item.nameEn, Math.round(FS * 0.88));
+    }
     if (item.addons?.length) {
       for (const a of item.addons) {
         drawRight(`+ ${a}`, Math.round(FS * 0.9));
@@ -918,7 +924,7 @@ export async function buildEscPosKitchenTicketBitmap(data: {
   tableNumber?: string;
   orderType?: string;
   cashierName: string;
-  items: Array<{ name: string; qty: number; addons?: string[] }>;
+  items: Array<{ name: string; nameEn?: string; qty: number; addons?: string[] }>;
   notes?: string;
   paperWidth: '58mm' | '80mm';
 }): Promise<Uint8Array> {
