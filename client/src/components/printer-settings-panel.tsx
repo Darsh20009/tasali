@@ -317,9 +317,10 @@ export default function PrinterSettingsPanel() {
       const dateStr = now.toLocaleString('ar-SA', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 
       const escData = buildEscPosReceipt({
-        shopName: 'تسالي كرومش',
+        shopName: 'QIROX STUDIO | كيروكس استوديو',
         vatNumber: '312718675800003',
         branchName: 'اختبار الطابعة',
+        address: 'استمتع بتجربة فريدة مع نظامنا',
         orderNumber: 'TEST-001',
         date: dateStr,
         cashierName: 'النظام',
