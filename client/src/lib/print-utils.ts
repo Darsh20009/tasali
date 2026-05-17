@@ -707,6 +707,9 @@ body{font-family:'Cairo',Tahoma,Arial,sans-serif;direction:rtl;background:#e8e6e
 <div class="tape"></div>
 <div class="body">
 
+  <!-- 3 blank lines at the top -->
+  <div style="height:72px;"></div>
+
   <!-- Header -->
   <div class="c" style="padding-bottom:6px;">
     <img src="${logoSrc}" style="width:80px;height:80px;object-fit:contain;display:block;margin:0 auto 8px;"
@@ -838,6 +841,7 @@ body{font-family:'Cairo',Tahoma,Arial,sans-serif;direction:rtl;background:#e8e6e
 </style></head><body><div class="paper">
 <div class="tape"></div>
 <div class="body">
+  <div style="height:72px;"></div>
   <div class="c" style="font-size:24px;font-weight:900;">نسخة الموظف</div>
   <div class="gap"></div>
   <div class="c" style="font-size:48px;font-weight:900;letter-spacing:4px;">#${orderNumDisplay}</div>

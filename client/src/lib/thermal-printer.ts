@@ -620,7 +620,8 @@ export async function buildReceiptCanvas(opts: ReceiptBitmapOpts): Promise<HTMLC
   };
 
   // ── RECEIPT LAYOUT ────────────────────────────────────────────────────────
-  addGap(8);
+  // 3 blank lines at the very top before any content
+  addGap(Math.round(FS * 1.45 * 3));
 
   // Logo
   addImg(logoImg, Math.round(DW * 0.25));
@@ -861,7 +862,7 @@ export async function buildEmployeeCopyCanvas(opts: EmployeeCopyOpts): Promise<H
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, DW, 4000);
 
-  let y = 18;
+  let y = Math.round(FS * 1.6 * 3); // 3 blank lines at the top
   const lh = (fs: number) => Math.ceil(fs * 1.6);
 
   const drawCenter = (text: string, fs: number, bold = false) => {
