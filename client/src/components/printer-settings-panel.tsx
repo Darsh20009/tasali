@@ -20,7 +20,7 @@ import {
   getSavedDeviceInfo,
   clearSavedDevice,
   getPrinterStatus,
-  buildEscPosReceipt,
+  buildReceiptBitmapEscPos,
   thermalPrint,
   testNetworkPrinter,
   discoverNetworkPrinters,
@@ -316,24 +316,25 @@ export default function PrinterSettingsPanel() {
       const now = new Date();
       const dateStr = now.toLocaleString('ar-SA', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 
-      const escData = buildEscPosReceipt({
+      // استخدام Canvas 2D bitmap — يحل مشكلة الرموز الغريبة في العربية تماماً
+      const escData = await buildReceiptBitmapEscPos({
         shopName: 'QIROX STUDIO | كيروكس استوديو',
-        vatNumber: '312718675800003',
+        vatNumber: '',
         branchName: 'اختبار الطابعة',
-        address: 'استمتع بتجربة فريدة مع نظامنا',
-        orderNumber: 'TEST-001',
-        date: dateStr,
+        tagline: 'استمتع بتجربة فريدة مع نظامنا',
+        orderNumber: 'TEST',
+        orderDate: dateStr,
         cashierName: 'النظام',
         items: [
-          { name: 'وجبة تجريبية', qty: 1, price: 15.00 },
-          { name: 'كيك شوكولاتة', qty: 2, price: 12.00 },
+          { name: 'وجبة تجريبية', nameEn: 'Test Meal', qty: 1, price: 15.00 },
+          { name: 'كيك شوكولاتة', nameEn: 'Chocolate Cake', qty: 2, price: 12.00 },
         ],
         subtotal: 34.09,
         vat: 5.91,
         total: 40.00,
         paymentMethod: 'نقدي',
         paperWidth: settings.paperWidth,
-        feedLines: settings.feedLines,
+        feedLines: settings.feedLines ?? 3,
       });
 
       const result = await thermalPrint(escData, '', settings.paperWidth);
