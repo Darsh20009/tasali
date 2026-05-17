@@ -245,9 +245,12 @@ export const TaxInvoicePrint = forwardRef<HTMLDivElement, TaxInvoiceProps>(
               </p>
               <div className="text-right space-y-1">
                 {items.map((item, idx) => (
-                  <p key={idx} className="text-[11px] font-bold text-gray-800">
-                    {item.quantity} x {item.coffeeItem.nameAr}
-                  </p>
+                  <div key={idx} className="text-[11px] text-gray-800">
+                    <span className="font-bold">{item.quantity} x {item.coffeeItem.nameAr}</span>
+                    {item.coffeeItem.nameEn && (
+                      <span className="text-[10px] text-gray-500 mr-1">/ {item.coffeeItem.nameEn}</span>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>

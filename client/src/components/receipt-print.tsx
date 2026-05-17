@@ -115,7 +115,12 @@ export const ReceiptPrint = forwardRef<HTMLDivElement, ReceiptProps>(
                 <tbody>
                   {items.map((item, index) => (
                     <tr key={index} className="border-b border-gray-300">
-                      <td className="text-right py-2 font-bold">{item.coffeeItem.nameAr}</td>
+                      <td className="text-right py-2">
+                        <div className="font-bold">{item.coffeeItem.nameAr}</div>
+                        {item.coffeeItem.nameEn && (
+                          <div className="text-[10px] text-gray-500 font-normal">{item.coffeeItem.nameEn}</div>
+                        )}
+                      </td>
                       <td className="text-center py-2 text-2xl font-black">{item.quantity}</td>
                     </tr>
                   ))}
@@ -291,9 +296,12 @@ export const ReceiptPrint = forwardRef<HTMLDivElement, ReceiptProps>(
               </p>
               <div className="text-right space-y-1">
                 {items.map((item, idx) => (
-                  <p key={idx} className="text-[11px] font-bold text-gray-800">
-                    {item.quantity} x {item.coffeeItem.nameAr}
-                  </p>
+                  <div key={idx} className="text-[11px] text-gray-800">
+                    <span className="font-bold">{item.quantity} x {item.coffeeItem.nameAr}</span>
+                    {item.coffeeItem.nameEn && (
+                      <span className="text-[10px] text-gray-500 mr-1">/ {item.coffeeItem.nameEn}</span>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>

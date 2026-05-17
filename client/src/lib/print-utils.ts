@@ -1223,11 +1223,12 @@ export async function printCustomerPickupReceipt(data: TaxInvoiceData & { delive
 
     <div class="items-section">
       ${data.items.map(item => {
-        const addons = (item.customization?.selectedItemAddons || []).map((a: any) => a.nameAr).join('، ');
+        const addonsList = (item.customization?.selectedItemAddons || []);
+        const addons = addonsList.map((a: any) => a.nameAr + (a.nameEn && a.nameEn !== a.nameAr ? ` / ${a.nameEn}` : '')).join('، ');
         return `
         <div class="item-row" style="align-items:flex-start;">
           <div class="item-name" style="flex:1;">
-            ${renderItemName(item.coffeeItem.nameAr, item.coffeeItem.nameEn)}
+            ${renderItemName(item.coffeeItem.nameAr, (item.coffeeItem as any).nameEn)}
             ${addons ? `<div style="font-size:11px;color:#92400e;margin-top:2px;">+ ${addons}</div>` : ''}
           </div>
           <span class="item-qty">x${item.quantity}</span>
@@ -1307,11 +1308,12 @@ export async function printCashierReceipt(data: TaxInvoiceData & { deliveryType?
     <div class="items">
       ${data.items.map(item => {
         const price = parseNumber(item.coffeeItem.price);
-        const addons = (item.customization?.selectedItemAddons || []).map((a: any) => a.nameAr).join('، ');
+        const addons = (item.customization?.selectedItemAddons || [])
+          .map((a: any) => a.nameAr + (a.nameEn && a.nameEn !== a.nameAr ? ` / ${a.nameEn}` : '')).join('، ');
         return `
         <div class="item-row" style="align-items:flex-start;">
           <div style="flex:1;">
-            ${renderItemName(item.coffeeItem.nameAr, item.coffeeItem.nameEn)}<span style="font-size:11px;color:#555;"> x${item.quantity}</span>
+            ${renderItemName(item.coffeeItem.nameAr, (item.coffeeItem as any).nameEn)}<span style="font-size:11px;color:#555;"> x${item.quantity}</span>
             ${addons ? `<div style="font-size:10px;color:#777;margin-top:2px;">+ ${addons}</div>` : ''}
           </div>
           <span style="flex-shrink:0;">${(price * item.quantity).toFixed(2)}</span>
@@ -1428,11 +1430,12 @@ export async function printSimpleReceipt(data: TaxInvoiceData): Promise<void> {
   const itemsHtml = data.items.map(item => {
     const unitPrice = parseNumber(item.coffeeItem.price);
     const lineTotal = unitPrice * item.quantity;
-    const addons = (item.customization?.selectedItemAddons || []).map((a: any) => a.nameAr).join('، ');
+    const addons = (item.customization?.selectedItemAddons || [])
+      .map((a: any) => a.nameAr + (a.nameEn && a.nameEn !== a.nameAr ? ` / ${a.nameEn}` : '')).join('، ');
     return `
       <tr style="border-bottom: 1px solid #e5e5e5;">
         <td style="padding: 8px 4px;">
-          ${renderItemName(item.coffeeItem.nameAr, item.coffeeItem.nameEn)}
+          ${renderItemName(item.coffeeItem.nameAr, (item.coffeeItem as any).nameEn)}
           ${addons ? `<div style="font-size:11px;color:#666;margin-top:2px;">+ ${addons}</div>` : ''}
         </td>
         <td style="padding: 8px 4px; text-align: center;">${item.quantity}</td>
