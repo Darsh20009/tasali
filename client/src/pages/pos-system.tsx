@@ -883,6 +883,7 @@ export default function PosSystem() {
             coffeeItemId: item.coffeeItem.id,
             name: item.coffeeItem.nameAr,
             nameAr: item.coffeeItem.nameAr,
+            nameEn: item.coffeeItem.nameEn || '',
             price: Number(item.coffeeItem.price) + addonsPrice,
             quantity: item.quantity,
             customization: item.customization || {}
@@ -2879,16 +2880,35 @@ export default function PosSystem() {
                 </div>
               )}
 
-              <div className="space-y-1.5">
-                {lastOrder.items.map((item: any, idx: number) => (
-                  <div key={idx} className="flex justify-between items-center text-sm" data-testid={`receipt-item-${idx}`}>
-                    <div className="flex-1">
-                      <span className="font-medium">{item.coffeeItem.nameAr}</span>
-                      <span className="text-muted-foreground mr-1">x{item.quantity}</span>
+              <div className="space-y-2">
+                {lastOrder.items.map((item: any, idx: number) => {
+                  const addons = item.customization?.selectedItemAddons || [];
+                  const nameEn = item.coffeeItem?.nameEn || '';
+                  const nameAr = item.coffeeItem?.nameAr || '';
+                  return (
+                    <div key={idx} className="text-sm" data-testid={`receipt-item-${idx}`}>
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <span className="font-medium">{nameAr}</span>
+                          {nameEn && nameEn !== nameAr && (
+                            <span className="text-muted-foreground text-xs block">{nameEn}</span>
+                          )}
+                          {addons.length > 0 && (
+                            <div className="text-xs text-muted-foreground mt-0.5 space-y-0.5">
+                              {addons.map((a: any, ai: number) => (
+                                <div key={ai}>
+                                  + {a.nameAr}{a.nameEn && a.nameEn !== a.nameAr ? ` / ${a.nameEn}` : ''}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <span className="text-muted-foreground mr-1 shrink-0">x{item.quantity}</span>
+                        <span className="font-bold shrink-0 mr-2">{(Number(item.coffeeItem.price) * item.quantity).toFixed(2)} {t('pos.currency')}</span>
+                      </div>
                     </div>
-                    <span className="font-bold">{(Number(item.coffeeItem.price) * item.quantity).toFixed(2)} {t('pos.currency')}</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               <Separator />
