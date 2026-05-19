@@ -807,12 +807,14 @@ export default function PosSystem() {
     };
   };
 
-  const addToOrder = (product: CoffeeItem, customization?: { selectedItemAddons: Array<{nameAr: string; nameEn?: string; price: number}> }) => {
+  const addToOrder = (product: CoffeeItem, customization?: { selectedItemAddons?: Array<{nameAr: string; nameEn?: string; price: number}>; _selectedSize?: string }) => {
     const addonKey = JSON.stringify(customization?.selectedItemAddons || []);
+    const sizeKey = customization?._selectedSize || '';
     const isSameItem = (item: typeof orderItems[0]) =>
       item.coffeeItem.id === product.id &&
       Number(item.coffeeItem.price) === Number(product.price) &&
-      JSON.stringify(item.customization?.selectedItemAddons || []) === addonKey;
+      ((item.customization as any)?._selectedSize || '') === sizeKey &&
+      JSON.stringify((item.customization as any)?.selectedItemAddons || []) === addonKey;
     const existing = orderItems.find(isSameItem);
     const next = existing
       ? orderItems.map(item => isSameItem(item) ? { ...item, quantity: item.quantity + 1 } : item)
@@ -3073,10 +3075,12 @@ export default function PosSystem() {
           const targetItem = selectedVariant || posCustomizationItem?.item;
           if (!targetItem) return;
           let finalItem = targetItem;
+          let resolvedSize: string | undefined;
           if (customization.selectedSize && targetItem.availableSizes) {
             const sizeInfo = targetItem.availableSizes.find(s => s.nameAr === customization.selectedSize);
             if (sizeInfo) {
               finalItem = { ...targetItem, price: sizeInfo.price };
+              resolvedSize = sizeInfo.nameAr;
             }
           }
           const selectedItemAddons = customization.selectedAddons.map(addon => ({
@@ -3084,7 +3088,10 @@ export default function PosSystem() {
             nameEn: addon.nameAr,
             price: addon.price * addon.quantity,
           }));
-          addToOrder(finalItem, selectedItemAddons.length > 0 ? { selectedItemAddons } : undefined);
+          addToOrder(finalItem, {
+            ...(selectedItemAddons.length > 0 ? { selectedItemAddons } : {}),
+            ...(resolvedSize ? { _selectedSize: resolvedSize } : {}),
+          });
           setPosCustomizationItem(null);
         }}
       />
