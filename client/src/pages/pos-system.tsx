@@ -807,7 +807,7 @@ export default function PosSystem() {
     };
   };
 
-  const addToOrder = (product: CoffeeItem, customization?: { selectedItemAddons?: Array<{nameAr: string; nameEn?: string; price: number}>; _selectedSize?: string }) => {
+  const addToOrder = (product: CoffeeItem, customization?: { selectedItemAddons?: Array<{nameAr: string; nameEn?: string; price: number}>; _selectedSize?: string }, qty: number = 1) => {
     const addonKey = JSON.stringify(customization?.selectedItemAddons || []);
     const sizeKey = customization?._selectedSize || '';
     const isSameItem = (item: typeof orderItems[0]) =>
@@ -817,11 +817,11 @@ export default function PosSystem() {
       JSON.stringify((item.customization as any)?.selectedItemAddons || []) === addonKey;
     const existing = orderItems.find(isSameItem);
     const next = existing
-      ? orderItems.map(item => isSameItem(item) ? { ...item, quantity: item.quantity + 1 } : item)
+      ? orderItems.map(item => isSameItem(item) ? { ...item, quantity: item.quantity + qty } : item)
       : [...orderItems, {
           lineItemId: Math.random().toString(36).substr(2, 9),
           coffeeItem: product,
-          quantity: 1,
+          quantity: qty,
           customization: customization || {},
         }];
     setOrderItems(next);
@@ -3091,7 +3091,7 @@ export default function PosSystem() {
         open={!!posCustomizationItem}
         modal={false}
         onClose={() => setPosCustomizationItem(null)}
-        onConfirm={(customization: DrinkCustomization, _quantity: number, selectedVariant?: CoffeeItem) => {
+        onConfirm={(customization: DrinkCustomization, quantity: number, selectedVariant?: CoffeeItem) => {
           const targetItem = selectedVariant || posCustomizationItem?.item;
           if (!targetItem) return;
           let finalItem = targetItem;
@@ -3111,7 +3111,7 @@ export default function PosSystem() {
           addToOrder(finalItem, {
             ...(selectedItemAddons.length > 0 ? { selectedItemAddons } : {}),
             ...(resolvedSize ? { _selectedSize: resolvedSize } : {}),
-          });
+          }, quantity);
           setPosCustomizationItem(null);
         }}
       />
