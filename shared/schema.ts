@@ -1340,7 +1340,7 @@ const OrderSchema = new Schema<IOrder>({
   items: { type: Schema.Types.Mixed, required: true },
   totalAmount: { type: Number, required: true },
   dailyNumber: { type: Number },
-  paymentMethod: { type: String, enum: ["cash", "pos", "apple_pay", "pos-network", "alinma", "rajhi", "ur", "barq", "tasali-card", "stc-pay", "mada", "geidea", "neoleap", "neoleap-apple-pay", "bank_card", "paymob-card", "paymob-wallet", "loyalty-card"], required: true },
+  paymentMethod: { type: String, enum: ["cash", "pos", "apple_pay", "pos-network", "alinma", "rajhi", "ur", "barq", "tasali-card", "stc-pay", "mada", "geidea", "neoleap", "neoleap-apple-pay", "bank_card", "paymob-card", "paymob-wallet", "loyalty-card", "split"], required: true },
   paymentDetails: { type: String },
   paymentReceiptUrl: { type: String },
   paymentStatus: { type: String, enum: ['pending', 'paid', 'failed', 'refunded'], default: 'pending' },
@@ -1958,7 +1958,7 @@ const TaxInvoiceSchema = new Schema<ITaxInvoice>({
   taxAmount: { type: Number, required: true },
   totalAmount: { type: Number, required: true },
 
-  paymentMethod: { type: String, enum: ["cash", "pos", "apple_pay", "pos-network", "alinma", "rajhi", "ur", "barq", "tasali-card", "stc-pay", "mada", "geidea", "neoleap", "neoleap-apple-pay", "bank_card", "paymob-card", "paymob-wallet", "loyalty-card"], required: true },
+  paymentMethod: { type: String, enum: ["cash", "pos", "apple_pay", "pos-network", "alinma", "rajhi", "ur", "barq", "tasali-card", "stc-pay", "mada", "geidea", "neoleap", "neoleap-apple-pay", "bank_card", "paymob-card", "paymob-wallet", "loyalty-card", "split"], required: true },
   paymentMeans: { type: String },
 
   invoiceCounter: { type: Number, required: true },
@@ -2020,7 +2020,7 @@ const RevenueSchema = new Schema<IRevenue>({
   grossAmount: { type: Number, required: true },
   vatAmount: { type: Number, required: true },
   netAmount: { type: Number, required: true },
-  paymentMethod: { type: String, enum: ["cash", "pos", "apple_pay", "pos-network", "alinma", "rajhi", "ur", "barq", "tasali-card", "stc-pay", "mada", "geidea", "neoleap", "neoleap-apple-pay", "bank_card", "paymob-card", "paymob-wallet", "loyalty-card"], required: true },
+  paymentMethod: { type: String, enum: ["cash", "pos", "apple_pay", "pos-network", "alinma", "rajhi", "ur", "barq", "tasali-card", "stc-pay", "mada", "geidea", "neoleap", "neoleap-apple-pay", "bank_card", "paymob-card", "paymob-wallet", "loyalty-card", "split"], required: true },
   employeeId: { type: String },
   notes: { type: String },
   createdAt: { type: Date, default: Date.now },
