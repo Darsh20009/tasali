@@ -819,6 +819,13 @@ export function buildEmployeeReceiptPreviewHtml(data: TaxInvoiceData): string {
       </div>`;
   }).join('');
 
+  const notesHtml = data.notes
+    ? `<div style="background:#fef3c7;border-right:4px solid #d97706;padding:10px 12px;margin-top:12px;border-radius:6px;">
+        <div style="font-size:14px;font-weight:700;color:#92400e;margin-bottom:4px;">ملاحظات:</div>
+        <div style="font-size:16px;color:#451a03;">${data.notes}</div>
+       </div>`
+    : '';
+
   return `<!DOCTYPE html><html dir="rtl"><head><meta charset="UTF-8">
 <style>
 *{margin:0;padding:0;box-sizing:border-box;border:0!important;}
@@ -847,6 +854,7 @@ body{font-family:'Cairo',Tahoma,Arial,sans-serif;direction:rtl;background:#e8e6e
   <div class="c" style="font-size:48px;font-weight:900;letter-spacing:4px;">#${orderNumDisplay}</div>
   <div class="gap"></div>
   ${itemsHtml}
+  ${notesHtml}
 </div>
 <div class="tape"></div>
 </div></body></html>`;
@@ -945,7 +953,7 @@ export async function printTaxInvoice(data: TaxInvoiceData, config: PrintConfig 
                 qty: item.quantity,
                 addons: (item.customization?.selectedItemAddons || []).map((a: any) => a.nameAr),
               })),
-              notes: undefined,
+              notes: data.notes || undefined,
               paperWidth: printerSettings.paperWidth,
             });
             for (let i = 0; i < kitchenCopies; i++) {
@@ -1035,6 +1043,7 @@ export async function printTaxInvoice(data: TaxInvoiceData, config: PrintConfig 
       qty: item.quantity,
       addons: (item.customization?.selectedItemAddons || []).map((a: any) => a.nameAr),
     })),
+    notes: data.notes || undefined,
     total: totalAmount,
     orderDate: `${fmtDate} ${fmtTime}`,
     paperWidth: '80mm',

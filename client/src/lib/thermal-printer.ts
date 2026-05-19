@@ -905,6 +905,25 @@ export async function buildEmployeeCopyCanvas(opts: EmployeeCopyOpts): Promise<H
     y += 4;
   }
 
+  // ── Notes section ──
+  if (opts.notes) {
+    y += 8;
+    // Amber background box for notes
+    const notesBoxH = lh(Math.round(FS * 0.95)) * 2 + 16;
+    ctx.fillStyle = '#fef3c7';
+    ctx.fillRect(PAD, y - 4, DW - PAD * 2, notesBoxH);
+    ctx.fillStyle = '#92400e';
+    ctx.font = `700 ${Math.round(FS * 0.85)}px Tahoma, Arial, sans-serif`;
+    ctx.direction = 'rtl';
+    ctx.textAlign = 'right';
+    ctx.fillText('ملاحظات:', DW - PAD - 4, y + Math.round(FS * 0.85));
+    y += lh(Math.round(FS * 0.85));
+    ctx.fillStyle = '#451a03';
+    ctx.font = `400 ${Math.round(FS * 0.95)}px Tahoma, Arial, sans-serif`;
+    ctx.fillText(opts.notes, DW - PAD - 4, y + Math.round(FS * 0.85));
+    y += lh(Math.round(FS * 0.95)) + 8;
+  }
+
   y += 32; // feed
 
   // Trim

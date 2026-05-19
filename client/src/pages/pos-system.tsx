@@ -1052,6 +1052,7 @@ export default function PosSystem() {
         employeeName: employee?.fullName || t('pos.employee_fallback'),
         tableNumber: orderType === "dine_in" ? tableNumber : undefined,
         orderType,
+        notes: orderNote || undefined,
       });
       // ✅ Defer print to avoid blocking the UI thread after checkout
       if (autoPrint) {
@@ -1090,6 +1091,7 @@ export default function PosSystem() {
           crNumber: businessConfig?.commercialRegistration,
           vatNumber: businessConfig?.vatNumber,
           splitPayment: splitPaymentData,
+          notes: orderNote || undefined,
         };
         // Delay print by 200ms so UI updates (clear cart, show receipt) render first
         setTimeout(() => {
@@ -1153,6 +1155,7 @@ export default function PosSystem() {
       date: lastOrder.date,
       crNumber: businessConfig?.commercialRegistration,
       vatNumber: businessConfig?.vatNumber,
+      notes: (lastOrder as any).notes || undefined,
     }, { autoPrint: true });
   };
 
@@ -2971,6 +2974,7 @@ export default function PosSystem() {
                         orderType: lastOrder.orderType,
                         date: lastOrder.date,
                         splitPayment: lastOrder.splitPayment,
+                        notes: (lastOrder as any).notes || undefined,
                       };
                       const [custHtml, empHtml] = await Promise.all([
                         buildReceiptPreviewHtml(previewData),
@@ -3068,12 +3072,19 @@ export default function PosSystem() {
         onConfirm={(customization: DrinkCustomization, _quantity: number, selectedVariant?: CoffeeItem) => {
           const targetItem = selectedVariant || posCustomizationItem?.item;
           if (!targetItem) return;
+          let finalItem = targetItem;
+          if (customization.selectedSize && targetItem.availableSizes) {
+            const sizeInfo = targetItem.availableSizes.find(s => s.nameAr === customization.selectedSize);
+            if (sizeInfo) {
+              finalItem = { ...targetItem, price: sizeInfo.price };
+            }
+          }
           const selectedItemAddons = customization.selectedAddons.map(addon => ({
             nameAr: addon.nameAr + (addon.quantity > 1 ? ` ×${addon.quantity}` : ''),
             nameEn: addon.nameAr,
             price: addon.price * addon.quantity,
           }));
-          addToOrder(targetItem, selectedItemAddons.length > 0 ? { selectedItemAddons } : undefined);
+          addToOrder(finalItem, selectedItemAddons.length > 0 ? { selectedItemAddons } : undefined);
           setPosCustomizationItem(null);
         }}
       />
