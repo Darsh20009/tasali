@@ -471,6 +471,7 @@ export function buildEscPosReceipt(data: EscPosReceiptData): Uint8Array {
   buf.push(...CMD.BOLD_OFF);
   buf.push(...textBytes('الاسعار شاملة ضريبة القيمة المضافة'), 0x0a);
   buf.push(...textBytes('تسالي كرومش'), 0x0a);
+  buf.push(...textBytes('Powered by Qirox Studio'), 0x0a);
 
   if (data.skipCut) {
     // Caller will append more data (e.g. QR raster) before cutting
@@ -706,6 +707,7 @@ export async function buildReceiptCanvas(opts: ReceiptBitmapOpts): Promise<HTMLC
   addText('الأسعار شاملة ضريبة القيمة المضافة 15%', 'center', Math.round(FS * 0.82), false, '#444');
   if (opts.tagline) addText(opts.tagline, 'center', Math.round(FS * 0.9), false, '#444');
   addText(opts.shopName, 'center', FS, true);
+  addText('Powered by Qirox Studio', 'center', Math.round(FS * 0.72), false, '#aaaaaa');
 
   // ZATCA QR — smaller (compliance only)
   if (zatcaImg && zatcaImg.naturalWidth > 0) {

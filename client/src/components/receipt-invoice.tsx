@@ -267,6 +267,7 @@ export function ReceiptInvoice({ order, variant = "button" }: ReceiptInvoiceProp
         <div className="text-center mt-4 text-[20px] space-y-1">
           <p className="font-bold text-[22px]">شكراً لزيارتكم</p>
           <p className="font-bold mt-2 tracking-tight">www.tasaliqurmash.com.sa</p>
+          <p className="text-[11px] text-gray-400 mt-3 tracking-wide">Powered by Qirox Studio</p>
         </div>
       </div>
 

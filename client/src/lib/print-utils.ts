@@ -786,6 +786,7 @@ body{font-family:'Cairo',Tahoma,Arial,sans-serif;direction:rtl;background:#e8e6e
   <div class="c" style="font-size:14px;color:#333;">الأسعار شاملة ضريبة القيمة المضافة 15%</div>
   <div class="c" style="font-size:14px;color:#444;font-style:italic;margin-top:3px;">${TAGLINE}</div>
   <div class="c" style="font-size:18px;font-weight:700;margin-top:4px;">${COMPANY_NAME}</div>
+  <div class="c" style="font-size:11px;color:#aaa;margin-top:10px;letter-spacing:0.5px;">Powered by Qirox Studio</div>
 
 
 </div>
