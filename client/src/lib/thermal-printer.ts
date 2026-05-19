@@ -485,6 +485,120 @@ export function buildEscPosReceipt(data: EscPosReceiptData): Uint8Array {
   return new Uint8Array(buf);
 }
 
+export interface ShiftReportData {
+  shopName: string;
+  shiftNumber: string;
+  employeeName: string;
+  branchName?: string;
+  isAuto?: boolean;
+  openedAt: string;
+  closedAt?: string;
+  totalSales: number;
+  totalOrders: number;
+  totalVAT: number;
+  totalDiscounts: number;
+  totalRefunds: number;
+  netRevenue: number;
+  totalCashSales: number;
+  expectedCash?: number;
+  closingCash?: number;
+  cashDifference?: number;
+  openingCash?: number;
+  paymentBreakdown?: Record<string, number>;
+  cashMovements?: Array<{ type: string; amount: number; reason: string; timestamp: string }>;
+  closingNotes?: string;
+  paperWidth: '58mm' | '80mm';
+}
+
+export function buildShiftReportEscPos(data: ShiftReportData): Uint8Array {
+  const w = data.paperWidth === '58mm' ? 32 : 48;
+  const buf: number[] = [];
+  const pb = data.paymentBreakdown || {};
+
+  const cashIn = (data.cashMovements || [])
+    .filter(m => m.type === 'cash_in' || m.type === 'paid_in')
+    .reduce((s, m) => s + m.amount, 0);
+  const cashOut = (data.cashMovements || [])
+    .filter(m => m.type === 'cash_out' || m.type === 'paid_out')
+    .reduce((s, m) => s + m.amount, 0);
+
+  const fmtAmt = (n: number) => `${(n || 0).toFixed(2)} ر.س`;
+  const fmtTime = (d: string) => new Date(d).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
+
+  buf.push(...CMD.INIT);
+  buf.push(...CMD.CHARSET_UTF8);
+  buf.push(ESC, 0x52, 0x28);
+
+  buf.push(...CMD.ALIGN_CENTER, ...CMD.BOLD_ON, ...CMD.DOUBLE_SIZE);
+  buf.push(...textBytes(data.shopName), 0x0a);
+  buf.push(...CMD.NORMAL_SIZE, ...CMD.BOLD_OFF);
+  buf.push(...centerLine(data.isAuto ? 'وردية تلقائية' : 'تقرير Z — إغلاق الوردية', w));
+  buf.push(...centerLine(data.shiftNumber, w));
+  buf.push(...dottedLine(w));
+
+  buf.push(...CMD.ALIGN_LEFT);
+  buf.push(...line(`الكاشير : ${data.employeeName}`));
+  if (data.branchName) buf.push(...line(`الفرع   : ${data.branchName}`));
+  buf.push(...line(`البداية : ${fmtTime(data.openedAt)}`));
+  buf.push(...line(`النهاية : ${data.closedAt ? fmtTime(data.closedAt) : 'مفتوحة'}`));
+  buf.push(...thinLine(w));
+
+  buf.push(...CMD.BOLD_ON);
+  buf.push(...line('ملخص المبيعات'));
+  buf.push(...CMD.BOLD_OFF);
+  buf.push(...padRow('إجمالي المبيعات :', fmtAmt(data.totalSales), w));
+  buf.push(...padRow('عدد الطلبات     :', String(data.totalOrders), w));
+  buf.push(...padRow('ضريبة 15%       :', fmtAmt(data.totalVAT), w));
+  if (data.totalDiscounts > 0) buf.push(...padRow('الخصومات        :', fmtAmt(data.totalDiscounts), w));
+  if (data.totalRefunds > 0)   buf.push(...padRow('المرتجعات       :', fmtAmt(data.totalRefunds), w));
+  buf.push(...CMD.BOLD_ON);
+  buf.push(...padRow('صافي الإيرادات  :', fmtAmt(data.netRevenue), w));
+  buf.push(...CMD.BOLD_OFF);
+  buf.push(...thinLine(w));
+
+  buf.push(...CMD.BOLD_ON);
+  buf.push(...line('طرق الدفع'));
+  buf.push(...CMD.BOLD_OFF);
+  buf.push(...padRow('نقدي  :', fmtAmt(pb.cash || 0), w));
+  buf.push(...padRow('شبكة  :', fmtAmt(pb.card || pb['pos-network'] || 0), w));
+  if ((pb.split || 0) > 0)   buf.push(...padRow('مشترك :', fmtAmt(pb.split), w));
+  if ((pb.loyalty || 0) > 0) buf.push(...padRow('ولاء  :', fmtAmt(pb.loyalty), w));
+
+  if (!data.isAuto && data.closedAt) {
+    buf.push(...thinLine(w));
+    buf.push(...CMD.BOLD_ON);
+    buf.push(...line('تسوية الصندوق'));
+    buf.push(...CMD.BOLD_OFF);
+    buf.push(...padRow('رصيد الافتتاح :', fmtAmt(data.openingCash || 0), w));
+    if (cashIn > 0)  buf.push(...padRow('إيداعات       :', fmtAmt(cashIn), w));
+    if (cashOut > 0) buf.push(...padRow('سحوبات        :', fmtAmt(cashOut), w));
+    buf.push(...padRow('مبيعات نقدية  :', fmtAmt(data.totalCashSales), w));
+    buf.push(...padRow('الرصيد المتوقع:', fmtAmt(data.expectedCash || 0), w));
+    buf.push(...padRow('الرصيد الفعلي :', fmtAmt(data.closingCash || 0), w));
+    const diff = data.cashDifference || 0;
+    buf.push(...CMD.BOLD_ON);
+    buf.push(...padRow('الفرق         :', `${diff >= 0 ? '+' : ''}${fmtAmt(diff)}`, w));
+    buf.push(...CMD.BOLD_OFF);
+  }
+
+  if (data.closingNotes) {
+    buf.push(...thinLine(w));
+    buf.push(...CMD.BOLD_ON, ...line('ملاحظات'), ...CMD.BOLD_OFF);
+    buf.push(...line(data.closingNotes));
+  }
+
+  buf.push(...dottedLine(w));
+  buf.push(...CMD.ALIGN_CENTER);
+  buf.push(...CMD.BOLD_ON, ...textBytes('TASALI QURUMSH'), 0x0a, ...CMD.BOLD_OFF);
+  buf.push(...textBytes(new Date().toLocaleString('ar-SA')), 0x0a);
+  buf.push(...textBytes('Powered by Qirox Studio'), 0x0a);
+
+  buf.push(ESC, 0x64, 4);
+  buf.push(...CMD.CUT_PAPER);
+
+  return new Uint8Array(buf);
+}
+
 /**
  * Convert a QR/image data URL to ESC/POS GS v 0 raster bytes.
  * Draws the image centered on paper, returns ESC/POS bytes (no init, no cut).

@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { buildShiftReportEscPos, thermalPrint, loadPrinterSettings } from "@/lib/thermal-printer";
 import {
   Play, Square, Clock, DollarSign, CreditCard, TrendingUp,
   ArrowUpCircle, ArrowDownCircle, FileText, Printer, Calendar,
@@ -152,14 +153,38 @@ export default function ShiftManagement() {
     },
   });
 
-  const handlePrintShift = useCallback((shift: CashierShift) => {
-    const printWindow = window.open('', '_blank', 'width=400,height=800');
-    if (!printWindow) return;
+  const handlePrintShift = useCallback(async (shift: CashierShift) => {
+    const settings = loadPrinterSettings();
+    const escData = buildShiftReportEscPos({
+      shopName: 'تسالي كرومش',
+      shiftNumber: shift.shiftNumber,
+      employeeName: shift.employeeName,
+      branchName: shift.branchName,
+      isAuto: shift.isAuto,
+      openedAt: shift.openedAt,
+      closedAt: shift.closedAt,
+      totalSales: shift.totalSales,
+      totalOrders: shift.totalOrders,
+      totalVAT: shift.totalVAT,
+      totalDiscounts: shift.totalDiscounts,
+      totalRefunds: shift.totalRefunds,
+      netRevenue: shift.netRevenue,
+      totalCashSales: shift.totalCashSales,
+      expectedCash: shift.expectedCash,
+      closingCash: shift.closingCash,
+      cashDifference: shift.cashDifference,
+      openingCash: shift.openingCash,
+      paymentBreakdown: shift.paymentBreakdown,
+      cashMovements: shift.cashMovements,
+      closingNotes: shift.closingNotes,
+      paperWidth: settings.paperWidth,
+    });
+
     const pb = shift.paymentBreakdown || {};
     const cashIn = (shift.cashMovements || []).filter(m => m.type === 'cash_in' || m.type === 'paid_in').reduce((s, m) => s + m.amount, 0);
     const cashOut = (shift.cashMovements || []).filter(m => m.type === 'cash_out' || m.type === 'paid_out').reduce((s, m) => s + m.amount, 0);
 
-    printWindow.document.write(`<html dir="rtl"><head><title>تقرير الوردية</title>
+    const fallbackHtml = `<html dir="rtl"><head><title>تقرير الوردية</title>
       <style>
         body{font-family:Arial,sans-serif;padding:12px;max-width:340px;margin:0 auto;font-size:13px}
         .hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:8px;margin-bottom:8px}
@@ -181,8 +206,6 @@ export default function ShiftManagement() {
       ${shift.branchName ? `<div class="row"><span>الفرع:</span><span>${shift.branchName}</span></div>` : ''}
       <div class="row"><span>بداية الوردية:</span><span>${fmtTime(shift.openedAt)}</span></div>
       <div class="row"><span>نهاية الوردية:</span><span>${shift.closedAt ? fmtTime(shift.closedAt) : 'مفتوحة'}</span></div>
-      <div class="row"><span>المدة:</span><span>${fmtDuration(shift.openedAt, shift.closedAt)}</span></div>
-
       <div class="sec">
         <div class="sec-t">ملخص المبيعات</div>
         <div class="row"><span>إجمالي المبيعات:</span><span>${fmt(shift.totalSales)}</span></div>
@@ -192,14 +215,12 @@ export default function ShiftManagement() {
         <div class="row"><span>المرتجعات:</span><span>${fmt(shift.totalRefunds)}</span></div>
         <div class="bold row"><span>صافي الإيرادات:</span><span>${fmt(shift.netRevenue)}</span></div>
       </div>
-
       <div class="sec">
         <div class="sec-t">طرق الدفع</div>
         <div class="row"><span>نقدي:</span><span>${fmt(pb.cash || 0)}</span></div>
         <div class="row"><span>شبكة:</span><span>${fmt(pb.card || 0)}</span></div>
         ${(pb.loyalty || 0) > 0 ? `<div class="row"><span>بطاقة ولاء:</span><span>${fmt(pb.loyalty)}</span></div>` : ''}
       </div>
-
       ${!shift.isAuto && shift.status === 'closed' ? `
       <div class="sec">
         <div class="sec-t">تسوية الصندوق</div>
@@ -214,17 +235,15 @@ export default function ShiftManagement() {
           <span class="${(shift.cashDifference || 0) >= 0 ? 'pos' : 'neg'}">${(shift.cashDifference || 0) >= 0 ? '+' : ''}${fmt(shift.cashDifference || 0)}</span>
         </div>
       </div>` : ''}
-
       ${shift.closingNotes ? `<div class="sec"><div class="sec-t">ملاحظات</div><p>${shift.closingNotes}</p></div>` : ''}
+      <div class="foot"><div>TASALI QURUMSH SYSTEMS</div><div>${new Date().toLocaleString('ar-SA')}</div></div>
+    </body></html>`;
 
-      <div class="foot">
-        <div>TASALI QURUMSH SYSTEMS</div>
-        <div>${new Date().toLocaleString('ar-SA')}</div>
-      </div>
-    </body></html>`);
-    printWindow.document.close();
-    setTimeout(() => printWindow.print(), 500);
-  }, []);
+    const result = await thermalPrint(escData, fallbackHtml, settings.paperWidth);
+    if (!result.success) {
+      toast({ title: 'خطأ في الطباعة', description: result.error || 'فشل إرسال التقرير للطابعة', variant: 'destructive' });
+    }
+  }, [toast]);
 
   if (loadingShift) {
     return (
