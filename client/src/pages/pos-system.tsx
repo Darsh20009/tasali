@@ -809,13 +809,13 @@ export default function PosSystem() {
 
   const addToOrder = (product: CoffeeItem, customization?: { selectedItemAddons: Array<{nameAr: string; nameEn?: string; price: number}> }) => {
     const addonKey = JSON.stringify(customization?.selectedItemAddons || []);
-    const existing = orderItems.find(item => item.coffeeItem.id === product.id && JSON.stringify(item.customization?.selectedItemAddons || []) === addonKey);
+    const isSameItem = (item: typeof orderItems[0]) =>
+      item.coffeeItem.id === product.id &&
+      Number(item.coffeeItem.price) === Number(product.price) &&
+      JSON.stringify(item.customization?.selectedItemAddons || []) === addonKey;
+    const existing = orderItems.find(isSameItem);
     const next = existing
-      ? orderItems.map(item =>
-          item.coffeeItem.id === product.id && JSON.stringify(item.customization?.selectedItemAddons || []) === addonKey
-            ? { ...item, quantity: item.quantity + 1 }
-            : item
-        )
+      ? orderItems.map(item => isSameItem(item) ? { ...item, quantity: item.quantity + 1 } : item)
       : [...orderItems, {
           lineItemId: Math.random().toString(36).substr(2, 9),
           coffeeItem: product,
