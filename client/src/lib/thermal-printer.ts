@@ -1653,9 +1653,49 @@ const BT_DEVICE_KEY = 'qirox-bt-printer';
 let _btDevice: BluetoothDevice | null = null;
 let _btCharacteristic: BluetoothRemoteGATTCharacteristic | null = null;
 
-/** Is Web Bluetooth supported in this browser? */
+/**
+ * Quick synchronous check — true if the Bluetooth API object exists at all.
+ * Does NOT guarantee the device has Bluetooth hardware enabled.
+ * Use checkBluetoothAvailability() for a deeper async check.
+ */
 export function isBluetoothSupported(): boolean {
-  return typeof navigator !== 'undefined' && 'bluetooth' in navigator;
+  if (typeof navigator === 'undefined') return false;
+  // navigator.bluetooth exists in Chrome/Edge (desktop + Android).
+  // It may be present but blocked in iframes without Permissions-Policy: bluetooth=*
+  return 'bluetooth' in navigator && navigator.bluetooth != null;
+}
+
+/**
+ * Deep async check — calls navigator.bluetooth.getAvailability() which returns
+ * true only when the browser AND the OS Bluetooth adapter are ready.
+ * Returns { available, reason } so the UI can show a specific message.
+ */
+export async function checkBluetoothAvailability(): Promise<{ available: boolean; reason: string }> {
+  if (typeof navigator === 'undefined') {
+    return { available: false, reason: 'not-browser' };
+  }
+  if (!('bluetooth' in navigator) || navigator.bluetooth == null) {
+    // Check if we're likely in a context that blocks BT (non-HTTPS or wrong browser)
+    const isHttps = location.protocol === 'https:' || location.hostname === 'localhost';
+    if (!isHttps) {
+      return { available: false, reason: 'not-https' };
+    }
+    return { available: false, reason: 'no-api' };
+  }
+  try {
+    // getAvailability() = true → OS Bluetooth adapter present & on
+    const available = await (navigator.bluetooth as any).getAvailability();
+    if (!available) return { available: false, reason: 'adapter-off' };
+    return { available: true, reason: 'ok' };
+  } catch (e: any) {
+    // Permissions-Policy blocked (iframe without allow="bluetooth") throws SecurityError
+    const msg = (e?.message || '').toLowerCase();
+    if (msg.includes('permissions') || msg.includes('policy') || msg.includes('denied')) {
+      return { available: false, reason: 'permissions-policy' };
+    }
+    // getAvailability not implemented — still try requestDevice (older Chrome)
+    return { available: true, reason: 'ok' };
+  }
 }
 
 /** Save BT device name/id to localStorage */

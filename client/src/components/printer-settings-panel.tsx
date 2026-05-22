@@ -25,6 +25,7 @@ import {
   testNetworkPrinter,
   discoverNetworkPrinters,
   isBluetoothSupported,
+  checkBluetoothAvailability,
   connectBluetoothPrinter,
   reconnectBluetoothPrinter,
   testBluetoothPrinter,
@@ -74,8 +75,17 @@ export default function PrinterSettingsPanel() {
   const [btState, setBtState] = useState<{ connected: boolean; deviceName: string | null }>(() => getBluetoothState());
   const savedBtDevice = loadSavedBtDevice();
 
+  // Async BT availability: 'checking' | 'ok' | 'adapter-off' | 'no-api' | 'not-https' | 'permissions-policy'
+  const [btAvailReason, setBtAvailReason] = useState<string>('checking');
+
   useEffect(() => {
     refreshStatus();
+
+    // Deep async Bluetooth availability check
+    checkBluetoothAvailability().then(({ available, reason }) => {
+      setBtAvailReason(available ? 'ok' : reason);
+    });
+
     // Auto-try silent BT reconnect on load if mode is bluetooth and device not connected
     if (loadPrinterSettings().mode === 'bluetooth' && !getBluetoothState().connected) {
       reconnectBluetoothPrinter()
@@ -198,23 +208,38 @@ export default function PrinterSettingsPanel() {
   }
 
   async function handleConnectBluetooth() {
-    if (!isBluetoothSupported()) {
-      toast({ title: tc("غير مدعوم", "Not Supported"), description: tc("Web Bluetooth يتطلب Chrome أو Edge على سطح المكتب أو Android", "Web Bluetooth requires Chrome or Edge on desktop or Android"), variant: "destructive" });
-      return;
-    }
+    // Always run the deep async check right before connecting
     setBtConnecting(true);
     setBtStatus(null);
     try {
+      const { available, reason } = await checkBluetoothAvailability();
+      setBtAvailReason(available ? 'ok' : reason);
+
+      if (!available) {
+        const msgs: Record<string, string> = {
+          'adapter-off':        tc("شغّل البلوتوث في جهازك أولاً ثم حاول مجدداً", "Enable Bluetooth on your device first, then retry"),
+          'no-api':             tc("استخدم Chrome أو Edge — المتصفح الحالي لا يدعم Web Bluetooth", "Use Chrome or Edge — current browser doesn't support Web Bluetooth"),
+          'not-https':          tc("افتح التطبيق عبر رابط HTTPS الرسمي", "Open the app via the official HTTPS link"),
+          'permissions-policy': tc("افتح التطبيق في تبويب جديد مباشرةً (وليس داخل iframe)", "Open the app in a new direct browser tab (not inside an iframe)"),
+        };
+        const msg = msgs[reason] || tc("البلوتوث غير متاح في هذا السياق", "Bluetooth unavailable in this context");
+        setBtStatus({ connected: false, message: msg });
+        toast({ title: tc("البلوتوث غير متاح", "Bluetooth Unavailable"), description: msg, variant: "destructive" });
+        return;
+      }
+
       const deviceName = await connectBluetoothPrinter();
       savePrinterSettings({ mode: 'bluetooth', bluetoothDeviceName: deviceName });
       setSettings(loadPrinterSettings());
       const state = getBluetoothState();
       setBtState(state);
+      setBtAvailReason('ok');
       setBtStatus({ connected: true, message: `✅ ${tc("تم الاتصال بـ", "Connected to")} "${deviceName}"` });
       toast({ title: tc("✅ تم الاتصال بالبلوتوث", "✅ Bluetooth Connected"), description: `${tc("الطابعة", "Printer")}: ${deviceName}` });
     } catch (e: any) {
-      setBtStatus({ connected: false, message: e?.message || tc("فشل الاتصال", "Connection failed") });
-      toast({ title: tc("خطأ في البلوتوث", "Bluetooth Error"), description: e?.message || tc("فشل الاتصال بالطابعة", "Failed to connect to printer"), variant: "destructive" });
+      const msg = e?.message || tc("فشل الاتصال", "Connection failed");
+      setBtStatus({ connected: false, message: msg });
+      toast({ title: tc("خطأ في البلوتوث", "Bluetooth Error"), description: msg, variant: "destructive" });
     } finally {
       setBtConnecting(false);
     }
@@ -359,7 +384,8 @@ export default function PrinterSettingsPanel() {
   }
 
   const webUsbAvailable = isWebUSBSupported();
-  const btAvailable = isBluetoothSupported();
+  const btAvailable = isBluetoothSupported(); // sync quick check
+  const btReady = btAvailReason === 'ok'; // async deep check
   const isUsbConnected = status?.isDeviceConnected;
   const savedDevice = status?.savedDevice;
   const isNetworkMode = settings.mode === 'network';
@@ -431,22 +457,38 @@ export default function PrinterSettingsPanel() {
             </div>
           )}
 
-          {/* Bluetooth availability */}
+          {/* Bluetooth availability — async deep check */}
           {isBluetoothMode && (
             <div className="flex items-center gap-2 text-sm">
-              {btAvailable ? (
-                btState.connected
-                  ? <BluetoothConnected className="w-4 h-4 text-green-600" />
-                  : <Bluetooth className="w-4 h-4 text-blue-500" />
+              {btAvailReason === 'checking' ? (
+                <RefreshCw className="w-4 h-4 text-blue-400 animate-spin" />
+              ) : btState.connected ? (
+                <BluetoothConnected className="w-4 h-4 text-green-600" />
+              ) : btReady ? (
+                <Bluetooth className="w-4 h-4 text-blue-500" />
               ) : (
                 <BluetoothOff className="w-4 h-4 text-red-500" />
               )}
-              <span className={btAvailable ? (btState.connected ? 'text-green-700' : 'text-blue-600') : 'text-red-600'}>
-                {btAvailable
-                  ? btState.connected
+              <span className={
+                btAvailReason === 'checking' ? 'text-blue-400' :
+                btState.connected ? 'text-green-700' :
+                btReady ? 'text-blue-600' : 'text-red-600'
+              }>
+                {btAvailReason === 'checking'
+                  ? tc("جارٍ فحص دعم البلوتوث...", "Checking Bluetooth support...")
+                  : btState.connected
                     ? tc(`متصلة بـ "${btState.deviceName}"`, `Connected to "${btState.deviceName}"`)
-                    : tc("المتصفح يدعم Web Bluetooth — انقر للاقتران", "Browser supports Web Bluetooth — click to pair")
-                  : tc("Web Bluetooth غير مدعوم — استخدم Chrome أو Edge", "Web Bluetooth not supported — use Chrome or Edge")
+                  : btReady
+                    ? tc("البلوتوث جاهز — انقر للاقتران بالطابعة", "Bluetooth ready — click to pair printer")
+                  : btAvailReason === 'adapter-off'
+                    ? tc("البلوتوث مطفأ في الجهاز — شغّله أولاً ثم أعد المحاولة", "Bluetooth is off on this device — enable it first")
+                  : btAvailReason === 'no-api'
+                    ? tc("المتصفح لا يدعم Web Bluetooth — استخدم Chrome أو Edge", "Browser doesn't support Web Bluetooth — use Chrome or Edge")
+                  : btAvailReason === 'not-https'
+                    ? tc("يتطلب اتصال آمن (HTTPS) — افتح التطبيق عبر الرابط الرسمي", "Requires secure connection (HTTPS) — open app via official URL")
+                  : btAvailReason === 'permissions-policy'
+                    ? tc("البلوتوث محجوب في هذه البيئة — افتح التطبيق في تبويب جديد مباشرةً", "Bluetooth blocked in this context — open app in a new tab directly")
+                    : tc("البلوتوث غير متاح — تحقق من إعدادات المتصفح", "Bluetooth unavailable — check browser settings")
                 }
               </span>
             </div>
