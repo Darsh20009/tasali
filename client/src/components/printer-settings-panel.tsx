@@ -486,6 +486,19 @@ export default function PrinterSettingsPanel() {
             </div>
           )}
 
+          {/* Classic BT warning — shown when BT mode is selected and not yet connected */}
+          {isBluetoothMode && !btState.connected && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1 text-xs text-amber-800">
+              <p className="font-bold text-sm">⚠️ {tc("تنبيه مهم قبل الاتصال", "Important before connecting")}</p>
+              <p>{tc("Web Bluetooth يدعم طابعات BLE (Bluetooth Low Energy) فقط.", "Web Bluetooth supports BLE (Bluetooth Low Energy) printers only.")}</p>
+              <ul className="list-disc list-inside space-y-0.5 mr-2">
+                <li>{tc("✅ طابعات BLE: Xprinter XP-P300B، MUNBYN، iDPRT، Rongta BLE", "✅ BLE printers: Xprinter XP-P300B, MUNBYN, iDPRT, Rongta BLE")}</li>
+                <li>{tc("❌ طابعات Classic BT (SPP): لا تعمل مع المتصفح — استخدم LAN أو USB بدلاً منها", "❌ Classic BT (SPP) printers: won't work in browser — use LAN or USB instead")}</li>
+              </ul>
+              <p className="font-semibold">{tc("تأكد أن الطابعة تظهر في قائمة BLE (وليس Bluetooth العادي) قبل الاقتران.", "Make sure the printer appears in BLE device list (not Classic Bluetooth) before pairing.")}</p>
+            </div>
+          )}
+
           {/* Bluetooth device info */}
           {isBluetoothMode && (savedBtDevice || btState.connected) && (
             <div className={`flex items-center gap-2 text-sm rounded-lg px-3 py-2 border ${btState.connected ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>

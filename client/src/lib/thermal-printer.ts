@@ -1618,23 +1618,33 @@ export async function testNetworkPrinter(ip: string, port: number = 9100): Promi
 // ─── Bluetooth (BLE) Printer ──────────────────────────────────────────────────
 // Works with any ESC/POS BLE printer: Xprinter XP-P300BT, MUNBYN BT, Rongta, etc.
 // Uses Web Bluetooth API — Chrome/Edge desktop & Android only.
+// NOTE: Classic Bluetooth (SPP/RFCOMM) is NOT supported by Web Bluetooth API.
+//       Only BLE (GATT) printers are supported. If your printer only supports
+//       Classic BT, use the Network (LAN) or USB mode instead.
 
 /** Known BLE printer service UUIDs (ordered by prevalence) */
 const BT_SERVICE_UUIDS = [
-  '000018f0-0000-1000-8000-00805f9b34fb', // Generic BLE SPP (most common)
-  'e7810a71-73ae-499d-8c15-faa9aef0c3f2', // Bluetooth printer SP service
-  '49535343-fe7d-4ae5-8fa9-9fafd205e455', // ISSC Transparent UART
-  '0000ff00-0000-1000-8000-00805f9b34fb', // Generic custom FF00
-  '00001101-0000-1000-8000-00805f9b34fb', // SPP (classic, limited BLE support)
+  '000018f0-0000-1000-8000-00805f9b34fb', // Generic BLE SPP — Xprinter, MUNBYN, most common
+  'e7810a71-73ae-499d-8c15-faa9aef0c3f2', // Bluetooth printer SP service — Epson/Star clones
+  '49535343-fe7d-4ae5-8fa9-9fafd205e455', // ISSC Transparent UART — common on cheap BLE printers
+  '0000ff00-0000-1000-8000-00805f9b34fb', // Generic custom FF00 — Rongta, some Xprinter
+  '0000ffd0-0000-1000-8000-00805f9b34fb', // FFD0 — some Sewoo / Bixolon BLE
+  '0000fee7-0000-1000-8000-00805f9b34fb', // FEE7 — used by some HPRT / iDPRT printers
+  '000019f1-0000-1000-8000-00805f9b34fb', // 19F1 — common on Chinese BLE printer modules
+  'af0badb1-5b99-43cd-917a-a77bc549e3cc', // Peripage / mini BLE printers
+  '6e400001-b5a3-f393-e0a9-e50e24dcca9e', // Nordic UART Service (NUS) — some printers use this
 ];
 
 /** Known write characteristic UUIDs */
 const BT_CHAR_UUIDS = [
-  '00002af1-0000-1000-8000-00805f9b34fb', // Generic BLE write
-  'bef8d6c9-9c21-4c9e-b632-bd58c1009f9f', // BLE printer write
-  '49535343-8841-43f4-a8d4-ecbe34729bb3', // ISSC UART write
-  '0000ff02-0000-1000-8000-00805f9b34fb', // FF00 write char
-  '0000ff01-0000-1000-8000-00805f9b34fb', // FF00 write alt
+  '00002af1-0000-1000-8000-00805f9b34fb', // Generic BLE write — Xprinter 18F0 service
+  'bef8d6c9-9c21-4c9e-b632-bd58c1009f9f', // BLE printer write — Epson/Star clones
+  '49535343-8841-43f4-a8d4-ecbe34729bb3', // ISSC UART TX write
+  '0000ff02-0000-1000-8000-00805f9b34fb', // FF00 service write char
+  '0000ff01-0000-1000-8000-00805f9b34fb', // FF00 service write alt
+  '0000ffd9-0000-1000-8000-00805f9b34fb', // FFD0 service write
+  '6e400002-b5a3-f393-e0a9-e50e24dcca9e', // Nordic UART TX
+  '000019f2-0000-1000-8000-00805f9b34fb', // 19F1 service write
 ];
 
 const BT_DEVICE_KEY = 'qirox-bt-printer';
@@ -1720,7 +1730,14 @@ export async function reconnectBluetoothPrinter(): Promise<string> {
  * Returns the device name on success, or throws an error.
  */
 export async function connectBluetoothPrinter(): Promise<string> {
-  if (!isBluetoothSupported()) throw new Error('Web Bluetooth غير مدعوم في هذا المتصفح — استخدم Chrome أو Edge');
+  if (!isBluetoothSupported()) {
+    throw new Error(
+      'Web Bluetooth غير مدعوم في هذا المتصفح.\n' +
+      '• استخدم Chrome أو Edge على الكمبيوتر أو Android\n' +
+      '• Safari وFirefox لا يدعمان هذه الميزة\n' +
+      '• تأكد أن الطابعة تدعم BLE وليس Bluetooth Classic فقط'
+    );
+  }
 
   const bt = (navigator as any).bluetooth as Bluetooth;
 
@@ -1729,11 +1746,25 @@ export async function connectBluetoothPrinter(): Promise<string> {
     optionalServices: BT_SERVICE_UUIDS,
   });
 
-  if (!device.gatt) throw new Error('GATT غير متوفر لهذا الجهاز');
+  if (!device.gatt) throw new Error('GATT غير متوفر لهذا الجهاز — الطابعة لا تدعم BLE');
 
-  const server = await device.gatt.connect();
+  let server: BluetoothRemoteGATTServer;
+  try {
+    server = await device.gatt.connect();
+  } catch (e: any) {
+    throw new Error(`فشل الاتصال GATT: ${e?.message || e}\nتأكد أن الطابعة مشغّلة وقريبة، وأن بلوتوث الجهاز مفعّل`);
+  }
+
   const characteristic = await _findWriteCharacteristic(server);
-  if (!characteristic) throw new Error('لم يُعثر على طابعة BLE متوافقة — تأكد من دعم الطابعة لـ ESC/POS');
+  if (!characteristic) {
+    throw new Error(
+      'تم الاتصال بالجهاز لكن لم يُعثر على خدمة طباعة BLE متوافقة.\n' +
+      'الأسباب المحتملة:\n' +
+      '• الطابعة تستخدم Bluetooth Classic (SPP) فقط — غير مدعوم في المتصفح\n' +
+      '• UUID الخدمة غير معروف — جرّب وضع الشبكة (LAN) بدلاً من البلوتوث\n' +
+      '• تأكد أن الطابعة تدعم BLE (Bluetooth Low Energy)'
+    );
+  }
 
   _btDevice = device;
   _btCharacteristic = characteristic;
@@ -1751,6 +1782,7 @@ export async function connectBluetoothPrinter(): Promise<string> {
 async function _findWriteCharacteristic(
   server: BluetoothRemoteGATTServer,
 ): Promise<BluetoothRemoteGATTCharacteristic | null> {
+  // 1. Try known service UUIDs first (fast path)
   for (const svcUuid of BT_SERVICE_UUIDS) {
     try {
       const service = await server.getPrimaryService(svcUuid);
@@ -1761,7 +1793,7 @@ async function _findWriteCharacteristic(
           if (char.properties.write || char.properties.writeWithoutResponse) return char;
         } catch {}
       }
-      // Fall back: enumerate all characteristics
+      // Fall back: enumerate all characteristics in this service
       try {
         const chars = await service.getCharacteristics();
         for (const char of chars) {
@@ -1770,6 +1802,21 @@ async function _findWriteCharacteristic(
       } catch {}
     } catch {}
   }
+
+  // 2. Last resort: enumerate ALL primary services and look for any writable char
+  //    Only works for services declared in optionalServices at requestDevice time.
+  try {
+    const services = await server.getPrimaryServices();
+    for (const service of services) {
+      try {
+        const chars = await service.getCharacteristics();
+        for (const char of chars) {
+          if (char.properties.write || char.properties.writeWithoutResponse) return char;
+        }
+      } catch {}
+    }
+  } catch {}
+
   return null;
 }
 
@@ -1790,22 +1837,49 @@ async function _ensureBtConnected(): Promise<BluetoothRemoteGATTCharacteristic> 
 
 /**
  * Send ESC/POS bytes to connected BLE printer.
- * Automatically chunks data into 512-byte packets (BLE MTU limit).
+ * Chunks data into safe 200-byte packets (conservative BLE MTU).
+ * Uses writeValueWithoutResponse when available (faster, no ACK needed for printers).
+ * Falls back to writeValueWithResponse → writeValue for older browsers/firmware.
  */
 export async function bluetoothPrint(escData: Uint8Array): Promise<PrintResult> {
   try {
     const char = await _ensureBtConnected();
-    const useWriteWithoutResponse = char.properties.writeWithoutResponse && !char.properties.write;
-    const CHUNK = 512;
+
+    // Prefer writeWithoutResponse (faster, less overhead for printers)
+    // Fall back to writeValueWithResponse (modern API) then writeValue (deprecated but widely supported)
+    const canWriteNoResp = char.properties.writeWithoutResponse;
+    const canWriteResp   = char.properties.write;
+
+    // Use 200 bytes per chunk — safe default for most BLE printers.
+    // 512 is the theoretical BLE 4.2 MTU, but many printers buffer less.
+    const CHUNK = 200;
+    const DELAY_MS = 50; // 50ms between chunks — prevents buffer overflow on slower printers
+
     for (let i = 0; i < escData.length; i += CHUNK) {
       const chunk = escData.slice(i, i + CHUNK);
-      if (useWriteWithoutResponse) {
-        await char.writeValueWithoutResponse(chunk);
+
+      if (canWriteNoResp) {
+        // writeValueWithoutResponse: modern API, preferred for printers (no ACK = faster)
+        if (typeof char.writeValueWithoutResponse === 'function') {
+          await char.writeValueWithoutResponse(chunk);
+        } else {
+          await (char as any).writeValue(chunk);
+        }
+      } else if (canWriteResp) {
+        // writeValueWithResponse: modern API with ACK
+        if (typeof (char as any).writeValueWithResponse === 'function') {
+          await (char as any).writeValueWithResponse(chunk);
+        } else {
+          await (char as any).writeValue(chunk);
+        }
       } else {
-        await char.writeValue(chunk);
+        // Last resort — shouldn't happen if _findWriteCharacteristic did its job
+        await (char as any).writeValue(chunk);
       }
-      // Small delay between chunks to avoid buffer overflow
-      if (i + CHUNK < escData.length) await new Promise(r => setTimeout(r, 20));
+
+      if (i + CHUNK < escData.length) {
+        await new Promise(r => setTimeout(r, DELAY_MS));
+      }
     }
     return { success: true, mode: 'bluetooth' };
   } catch (err: any) {
