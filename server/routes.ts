@@ -19333,7 +19333,10 @@ ${existingIngredients ? `المكونات الحالية: ${existingIngredients}
   const httpServer = createServer(app);
   
   // Setup WebSocket for real-time order updates
-  wsManager.setup(httpServer);
+  // Skip in serverless environments (Vercel)
+  if (process.env.VERCEL !== '1') {
+    wsManager.setup(httpServer);
+  }
   
   return httpServer;
 }
