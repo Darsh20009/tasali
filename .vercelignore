@@ -1,5 +1,6 @@
-api/index.js
+api/index.ts
 api/handler.js
+api/handler.ts
 dist/
 node_modules/
 attached_assets/
