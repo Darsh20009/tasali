@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build && npx esbuild api/index.ts --bundle --platform=node --target=node18 --format=esm --packages=external --outfile=api/index.js",
+  "buildCommand": "npm run build",
   "outputDirectory": "dist/public",
   "installCommand": "npm install",
   "framework": null,
