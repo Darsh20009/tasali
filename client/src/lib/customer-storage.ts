@@ -69,11 +69,11 @@ export interface GuestInfo {
 const STORAGE_KEYS = {
  CUSTOMER_PROFILE: 'qahwa-customer-profile',
  CUSTOMER_ORDERS: 'qahwa-customer-orders',
- CARD_NUMBERS_POOL: 'tasali-card-numbers-pool',
+ CARD_NUMBERS_POOL: 'qahwa-card-numbers-pool',
  GUEST_MODE: 'qahwa-guest-mode',
  GUEST_INFO: 'qahwa-guest-info',
- CARD_DESIGN: 'tasali-card-design',
- CARD_PASSWORD: 'tasali-card-password',
+ CARD_DESIGN: 'qahwa-card-design',
+ CARD_PASSWORD: 'qahwa-card-password',
  ACTIVE_OFFER: 'qahwa-active-offer'
 };
 

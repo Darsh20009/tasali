@@ -6,10 +6,10 @@ export const defaultCoffeeMenu = [
 ];
 
 export const coffeeCategories = [
-  { id: "basic" as const, nameAr: "سناكس أساسية", nameEn: "Main Snacks", menuType: "drinks" as const },
-  { id: "hot" as const, nameAr: "وجبات ساخنة", nameEn: "Hot Snacks", menuType: "drinks" as const },
-  { id: "cold" as const, nameAr: "مشروبات باردة", nameEn: "Cold Drinks", menuType: "drinks" as const },
-  { id: "specialty" as const, nameAr: "الأطباق الإضافية", nameEn: "Specialty Items", menuType: "drinks" as const },
+  { id: "basic" as const, nameAr: "قهوة أساسية", nameEn: "Basic Coffee", menuType: "drinks" as const },
+  { id: "hot" as const, nameAr: "قهوة ساخنة", nameEn: "Hot Coffee", menuType: "drinks" as const },
+  { id: "cold" as const, nameAr: "قهوة باردة", nameEn: "Cold Coffee", menuType: "drinks" as const },
+  { id: "specialty" as const, nameAr: "المشروبات الإضافية", nameEn: "Specialty Drinks", menuType: "drinks" as const },
   { id: "desserts" as const, nameAr: "الحلويات", nameEn: "Desserts", menuType: "drinks" as const },
 ];
 
@@ -25,6 +25,6 @@ export const foodCategories = [
 export const allCategories = [...coffeeCategories, ...foodCategories];
 
 export function getCoffeeImage(coffeeId: string): string {
-  // Return TASALI QURUMSH logo as placeholder for all images
+  // Return BLACK ROSE logo as placeholder for all images
   return "/logo.png";
 }

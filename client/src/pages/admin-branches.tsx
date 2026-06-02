@@ -251,7 +251,7 @@ export default function AdminBranches() {
   }
 
   return (
-    <div className="p-6 space-y-6 bg-white dark:bg-background min-h-screen" dir="rtl">
+    <div className="p-6 space-y-6 bg-white dark:bg-background min-h-screen">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => navigate('/admin/dashboard')}>
@@ -356,7 +356,7 @@ export default function AdminBranches() {
 
       {/* ═══ Add Branch Dialog ═══ */}
       <Dialog open={isAddDialogOpen} onOpenChange={(v) => { setIsAddDialogOpen(v); if (!v) resetFormData(); }}>
-        <DialogContent className="max-w-2xl flex flex-col max-h-[92vh]" dir="rtl">
+        <DialogContent className="max-w-2xl flex flex-col max-h-[92vh]">
           <DialogHeader className="flex-shrink-0 border-b pb-4">
             <DialogTitle>{tc("إضافة فرع جديد", "Add New Branch")}</DialogTitle>
             <DialogDescription>
@@ -420,7 +420,7 @@ export default function AdminBranches() {
 
       {/* ═══ Edit Branch Dialog ═══ */}
       <Dialog open={isEditDialogOpen} onOpenChange={(open) => { setIsEditDialogOpen(open); if (!open) { setSelectedBranch(null); resetFormData(); } }}>
-        <DialogContent className="max-w-2xl flex flex-col max-h-[92vh]" dir="rtl">
+        <DialogContent className="max-w-2xl flex flex-col max-h-[92vh]">
           <DialogHeader className="flex-shrink-0 border-b pb-4">
             <DialogTitle>{tc("تعديل الفرع", "Edit Branch")}</DialogTitle>
             <DialogDescription>{tc("تعديل بيانات الفرع", "Update branch details")}</DialogDescription>
@@ -482,7 +482,7 @@ export default function AdminBranches() {
 
       {/* ═══ Map Dialog (Full Screen) ═══ */}
       <Dialog open={isMapDialogOpen} onOpenChange={setIsMapDialogOpen}>
-        <DialogContent className="max-w-3xl w-full flex flex-col" style={{ height: '90vh', maxHeight: '90vh' }} dir="rtl">
+        <DialogContent className="max-w-3xl w-full flex flex-col" style={{ height: '90vh', maxHeight: '90vh' }}>
           <DialogHeader className="flex-shrink-0 pb-2">
             <DialogTitle className="flex items-center gap-2">
               <Map className="w-5 h-5 text-accent" />
@@ -529,7 +529,7 @@ export default function AdminBranches() {
 
       {/* ═══ Delete Confirmation ═══ */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent dir="rtl">
+        <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{tc("تأكيد حذف الفرع", "Confirm Branch Deletion")}</AlertDialogTitle>
             <AlertDialogDescription>

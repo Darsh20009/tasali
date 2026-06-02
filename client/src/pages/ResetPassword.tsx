@@ -1,3 +1,4 @@
+import brand from "@/lib/brand";
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -5,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Lock, CheckCircle, Eye, EyeOff } from "lucide-react";
-import tasaliLogoStaff from "@assets/logo.png";
+import blackroseLogoStaff from "@assets/logo.png";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslate } from "@/lib/useTranslate";
@@ -25,9 +26,9 @@ export default function ResetPassword() {
   const [token, setToken] = useState("");
 
   useEffect(() => {
-    document.title = tc("إعادة تعيين كلمة المرور - تسالي كرومش", "Reset Password - تسالي كرومش");
+    document.title = tc("إعادة تعيين كلمة المرور - TASALI QURUMSH", "Reset Password - TASALI QURUMSH");
     const metaDesc = document.querySelector('meta[name="description"]');
-    if (metaDesc) metaDesc.setAttribute('content', tc('إعادة تعيين كلمة المرور على تسالي كرومش - أدخل كلمة مرور جديدة آمنة', 'Reset your تسالي كرومش password - enter a new secure password'));
+    if (metaDesc) metaDesc.setAttribute('content', tc('إعادة تعيين كلمة المرور على TASALI QURUMSH - أدخل كلمة مرور جديدة آمنة', 'Reset your TASALI QURUMSH password - enter a new secure password'));
   }, [tc]);
 
   useEffect(() => {
@@ -125,7 +126,7 @@ export default function ResetPassword() {
       <div
         className="min-h-screen flex items-center justify-center p-4"
         style={{ background: "linear-gradient(135deg, hsl(165, 15%, 97%) 0%, hsl(165, 12%, 88%) 50%, hsl(165, 15%, 97%) 100%)" }}
-        dir="rtl"
+       
       >
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-primary/30 border-t-primary rounded-full animate-spin mx-auto mb-4" />
@@ -143,7 +144,7 @@ export default function ResetPassword() {
     <div
       className="min-h-screen flex items-center justify-center p-4"
       style={{ background: "linear-gradient(135deg, hsl(165, 15%, 97%) 0%, hsl(165, 12%, 88%) 50%, hsl(165, 15%, 97%) 100%)" }}
-      dir="rtl"
+     
     >
       <Card className="w-full max-w-md border-primary/30 bg-card backdrop-blur shadow-xl">
         <CardHeader className="space-y-3 text-center pb-6">
@@ -153,7 +154,7 @@ export default function ResetPassword() {
                 <CheckCircle className="w-8 h-8 text-primary" />
               </div>
             ) : (
-              <img src={tasaliLogoStaff} alt="TASALI QURUMSH" className="h-12 object-contain" />
+              <img src={blackroseLogoStaff} alt={brand.shortNameEn} className="h-12 object-contain" />
             )}
           </div>
           <CardTitle className="text-3xl font-bold text-foreground">

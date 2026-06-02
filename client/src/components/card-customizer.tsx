@@ -282,7 +282,7 @@ export default function CardCustomizer({
                     className="absolute top-4 left-4 text-lg font-bold drop-shadow-lg"
                     style={{ color: previewDesign.preview.text }}
                   >
-                    ☕ تسالي كرومش
+                    ☕ TASALI QURUMSH
                   </div>
 
                   {/* Main Content */}

@@ -152,7 +152,7 @@ export default function EmployeeLoyalty() {
   const TierIcon = tierCfg?.icon;
 
   return (
-    <div dir="rtl" className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50">
       <div className="sticky top-0 z-10 bg-white border-b border-gray-200">
         <div className="max-w-2xl mx-auto flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
@@ -229,7 +229,7 @@ export default function EmployeeLoyalty() {
                     <div className="p-4 text-center">
                       <p className="text-2xl font-black text-primary" data-testid="text-points">{(card.points || 0).toLocaleString()}</p>
                       <p className="text-xs text-muted-foreground mt-0.5">{tc("نقطة", "Points")}</p>
-                      <p className="text-[10px] text-muted-foreground">{((card.points || 0) * pointsValueInSar).toFixed(2)} {tc("ر.س", "SAR")}</p>
+                      <p className="text-[10px] text-muted-foreground">{((card.points || 0) * pointsValueInSar).toFixed(2)} <SarIcon size={10} /></p>
                     </div>
                     <div className="p-4 text-center">
                       <p className="text-2xl font-black text-amber-600" data-testid="text-stamps">{card.stamps || 0} / 6</p>
@@ -245,7 +245,7 @@ export default function EmployeeLoyalty() {
                 </div>
 
                 <div className="bg-card border rounded-2xl p-4">
-                  <p className="text-xs font-semibold text-muted-foreground mb-3">{tc("طوابع الأطباق (6 طوابع = مشروب مجاني)", "Drink stamps (6 stamps = free drink)")}</p>
+                  <p className="text-xs font-semibold text-muted-foreground mb-3">{tc("طوابع المشروبات (6 طوابع = مشروب مجاني)", "Drink stamps (6 stamps = free drink)")}</p>
                   <div className="flex gap-2 justify-center">
                     {Array.from({ length: 6 }).map((_, i) => (
                       <div
@@ -333,7 +333,7 @@ export default function EmployeeLoyalty() {
       </div>
 
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="max-w-sm" dir="rtl" data-testid="dialog-create-card">
+        <DialogContent className="max-w-sm" data-testid="dialog-create-card">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <UserPlus className="w-5 h-5" />
@@ -377,7 +377,7 @@ export default function EmployeeLoyalty() {
       </Dialog>
 
       <Dialog open={showAddPointsDialog} onOpenChange={setShowAddPointsDialog}>
-        <DialogContent className="max-w-sm" dir="rtl" data-testid="dialog-add-points">
+        <DialogContent className="max-w-sm" data-testid="dialog-add-points">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Coins className="w-5 h-5" />

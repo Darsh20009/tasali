@@ -19,7 +19,7 @@ export const generatePDF = async (
  paymentMethod: PaymentMethod
 ): Promise<Blob> => {
  // Generate QR code for website URL
- const websiteUrl = 'https://www.tasaliqurmash.com.sa';
+ const websiteUrl = 'https://www.blackrose.com.sa';
  const qrCodeDataURL = await QRCode.toDataURL(websiteUrl, {
  width: 120,
  margin: 2,
@@ -43,38 +43,65 @@ export const generatePDF = async (
  `;
 
   const paymentMethodNames: any = {
-    cash: 'الدفع نقداً',
-    pos: 'جهاز نقاط البيع (POS)',
+    cash: 'نقدي',
+    pos: 'شبكة',
+    'pos-network': 'شبكة',
+    card: 'شبكة',
+    network: 'شبكة',
     delivery: 'الدفع عند التوصيل',
     stc: 'STC Pay',
     alinma: 'Alinma Pay',
     ur: 'Ur Pay',
     barq: 'Barq',
     rajhi: 'بنك الراجحي',
-    'tasali-card': 'بطاقة تسالي (مجاني)'
+    mada: 'تحويل بنكي (مدى)',
+    bank_transfer: 'تحويل بنكي',
+    apple_pay: 'Apple Pay',
+    'neoleap-apple-pay': 'Apple Pay',
+    'paymob-apple-pay': 'Apple Pay',
+    geidea: 'بطاقة ائتمان',
+    paymob: 'بطاقة ائتمان',
+    'paymob-card': 'بطاقة ائتمان',
+    split: 'نقدي + شبكة',
+    'qahwa-card': 'بطاقة ولاء',
+    'qirox-card': 'بطاقة ولاء',
+    loyalty: 'بطاقة ولاء',
   };
 
   const paymentDetails: any = {
-    cash: 'الدفع عند الاستلام',
-    pos: 'الدفع عبر جهاز POS',
+    cash: 'دفع نقدي',
+    pos: 'جهاز نقاط البيع',
+    'pos-network': 'جهاز نقاط البيع',
+    card: 'جهاز نقاط البيع',
     delivery: 'ادفع عند استلام الطلب',
     stc: '+966566507666',
     alinma: '+966566507666',
     ur: '+966566507666',
     barq: '+966566507666',
     rajhi: 'SA78 8000 0539 6080 1942 4738',
-    'tasali-card': 'مشروب مجاني من بطاقة الولاء'
+    mada: 'تحويل بنكي',
+    bank_transfer: 'تحويل بنكي',
+    apple_pay: 'Apple Pay',
+    'neoleap-apple-pay': 'Apple Pay',
+    'paymob-apple-pay': 'Apple Pay',
+    geidea: 'بطاقة ائتمان إلكترونية',
+    paymob: 'بطاقة ائتمان إلكترونية',
+    'paymob-card': 'بطاقة ائتمان إلكترونية',
+    split: 'دفع مختلط',
+    'qahwa-card': 'مشروب مجاني من بطاقة الولاء',
+    'qirox-card': 'بطاقة ولاء',
+    loyalty: 'بطاقة ولاء',
   };
 
  content.innerHTML = `
  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; border-bottom: 4px solid #D4AF37; padding-bottom: 25px; background: linear-gradient(135deg, #FFF8DC, #FFFBEB); border-radius: 15px 15px 0 0; padding: 25px 20px;">
  <div style="flex: 1; text-align: center;">
  <h1 style="font-family: 'Amiri', serif; font-size: 42px; color: #B8860B; margin: 0; font-weight: bold; text-shadow: 2px 2px 4px rgba(184, 134, 11, 0.2);">
-  تسالي كرومش 
+  TASALI QURUMSH 
  </h1>
- <p style="color: #8B6F47; font-size: 18px; margin: 12px 0 8px 0; font-weight: 600;"> تجربة مطعم استثنائية </p>
+ <p style="color: #8B6F47; font-size: 18px; margin: 12px 0 8px 0; font-weight: 600;"> تجربة قهوة استثنائية </p>
  <p style="color: #666; font-size: 16px; margin: 8px 0 0 0; font-style: italic; font-weight: 500;">
- "لكل وجبة قصة، ولكل طبق نكهة"
+ "لكل لحظة قهوة ، لحظة نجاح"
  </p>
  </div>
  <div style="text-align: center; padding: 0 25px;">
@@ -156,27 +183,27 @@ export const generatePDF = async (
  <h3 style="color: #D4AF37; font-size: 18px; margin-bottom: 15px; font-weight: bold;">معلومات التواصل</h3>
  <div style="text-align: center; font-size: 14px;">
  <p style="margin: 0 0 10px 0;"><span style="font-weight: bold;">الهاتف:</span> +966566507666</p>
- <p style="margin: 0 0 10px 0;"><span style="font-weight: bold;">الموقع الإلكتروني:</span> www.tasaliqurmash.com.sa</p>
+ <p style="margin: 0 0 10px 0;"><span style="font-weight: bold;">الموقع الإلكتروني:</span> www.blackrose.com.sa</p>
  </div>
  </div>
 
  <!-- QR Code Information with Slogan -->
  <div style="margin-bottom: 20px; padding: 20px; background: linear-gradient(135deg, #FFF8DC, #FFFFE0); border-radius: 12px; border: 2px solid #D4AF37; box-shadow: 0 4px 8px rgba(212, 175, 55, 0.2);">
  <p style="margin: 0 0 15px 0; font-size: 18px; text-align: center; color: #B8860B; font-weight: bold; font-family: 'Amiri', serif;">
-  "لكل وجبة قصة، ولكل طبق نكهة" 
+  "لكل لحظة قهوة ، لحظة نجاح" 
  </p>
  <p style="margin: 0; font-size: 13px; text-align: center; color: #666; font-weight: 600;">
- <span style="font-weight: bold;"> رمز الاستجابة السريع:</span> يحتوي على رابط موقع تسالي كرومش
+ <span style="font-weight: bold;"> رمز الاستجابة السريع:</span> يحتوي على رابط موقع TASALI QURUMSH
  </p>
  <p style="margin: 8px 0 0 0; font-size: 12px; text-align: center; color: #8B6F47;">
- امسح الرمز للوصول إلى <span style="font-weight: bold; color: #D4AF37;">www.tasaliqurmash.com.sa</span> وطلب المزيد من منتجاتنا اللذيذة 
+ امسح الرمز للوصول إلى <span style="font-weight: bold; color: #D4AF37;">www.blackrose.com.sa</span> وطلب المزيد من منتجاتنا اللذيذة 
  </p>
  </div>
 
  <!-- Creative Footer -->
  <div style="text-align: center; margin-top: 35px; padding: 25px; border-top: 4px solid #D4AF37; background: linear-gradient(135deg, #FFF8DC, #FFFBEB); border-radius: 0 0 15px 15px; color: #8B6F47;">
- <p style="margin: 0; font-size: 20px; font-weight: bold; color: #B8860B;"> شكراً لاختياركم تسالي كرومش </p>
- <p style="margin: 8px 0; font-size: 16px; font-style: italic; color: #8B6F47;"> "لكل وجبة قصة، ولكل طبق نكهة" </p>
+ <p style="margin: 0; font-size: 20px; font-weight: bold; color: #B8860B;"> شكراً لاختياركم TASALI QURUMSH </p>
+ <p style="margin: 8px 0; font-size: 16px; font-style: italic; color: #8B6F47;"> "لكل لحظة قهوة ، لحظة نجاح" </p>
  <p style="margin: 15px 0 5px 0; font-size: 13px; color: #666; font-weight: 500;">
   تم إنشاء فاتورة الاستلام هذه إلكترونياً
  </p>
@@ -237,7 +264,7 @@ export const generatePDF = async (
  const lineHeight = 7;
  
  // Header
- pdf.text('تسالي كرومش - Restaurant Invoice', 105, yPosition, { align: 'center' });
+ pdf.text('TASALI QURUMSH - Coffee Invoice', 105, yPosition, { align: 'center' });
  yPosition += lineHeight * 2;
  
  // Order details

@@ -1,3 +1,4 @@
+import brand from "@/lib/brand";
 import { useState, useEffect } from "react";
 import { PlanGate } from "@/components/plan-gate";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -240,7 +241,7 @@ export default function ZATCAInvoicesPage() {
 
   return (
     <PlanGate feature="zatcaCompliance">
-    <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-background" dir="rtl">
+    <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-background">
       <div className="container mx-auto p-4 md:p-6 max-w-7xl">
         <div className="flex items-center justify-between gap-4 mb-6">
           <Button 
@@ -334,7 +335,7 @@ export default function ZATCAInvoicesPage() {
                 <div>
                   <p className="text-blue-100 text-sm">إجمالي الضريبة</p>
                   <p className="text-3xl font-bold mt-1">{totalVat.toFixed(2)}</p>
-                  <p className="text-blue-200 text-xs mt-1">ريال سعودي</p>
+                  <p className="text-blue-200 text-xs mt-1 flex items-center gap-1"><SarIcon size={12} className="brightness-0 invert opacity-80" /></p>
                 </div>
                 <Receipt className="w-12 h-12 text-blue-200" />
               </div>
@@ -813,7 +814,7 @@ export default function ZATCAInvoicesPage() {
                   <Input
                     value={settingsForm.tradeNameAr}
                     onChange={(e) => setSettingsForm(f => ({ ...f, tradeNameAr: e.target.value }))}
-                    placeholder="تسالي كرومش"
+                    placeholder={brand.nameEn}
                     data-testid="input-trade-name-ar"
                   />
                 </div>
@@ -822,7 +823,7 @@ export default function ZATCAInvoicesPage() {
                   <Input
                     value={settingsForm.tradeNameEn}
                     onChange={(e) => setSettingsForm(f => ({ ...f, tradeNameEn: e.target.value }))}
-                    placeholder="تسالي كرومش"
+                    placeholder={brand.nameEn}
                     data-testid="input-trade-name-en"
                   />
                 </div>

@@ -102,7 +102,7 @@ export function CoffeeStrengthIndicator({
  <div className="flex items-center gap-2">
  <IconComponent className="w-5 h-5" />
  <span className={cn("font-bold text-lg", config.textColor)}>
- مستوى الحرارة 
+ قوة القهوة 
  </span>
  </div>
  <Badge 

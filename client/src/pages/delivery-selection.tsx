@@ -1,5 +1,7 @@
+import brand from "@/lib/brand";
 import { useState, useEffect } from 'react';
 import { tc } from '@/lib/useTranslate';
+import SarIcon from "@/components/sar-icon";
 import { useQuery } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import { Card, CardContent } from '@/components/ui/card';
@@ -232,7 +234,12 @@ export default function DeliverySelectionPage() {
   const { setDeliveryInfo, cartItems } = useCartStore();
   const { toast } = useToast();
   const [selectedBranchId, setSelectedBranchId] = useState<string>('');
-  const [selectedMethod, setSelectedMethod] = useState<OrderMethod>('takeaway');
+
+  const isCarPickupMode = (() => {
+    try { return sessionStorage.getItem("qirox_car_pickup_mode") === "1"; } catch { return false; }
+  })();
+
+  const [selectedMethod, setSelectedMethod] = useState<OrderMethod>(isCarPickupMode ? 'car-pickup' : 'takeaway');
 
   const isReservationCart = cartItems.some(ci => (ci.coffeeItem as any)?.isReservation);
 
@@ -249,7 +256,7 @@ export default function DeliverySelectionPage() {
   const [reservationToTime, setReservationToTime] = useState<string>('');
 
   useEffect(() => {
-    document.title = `${t("nav.branch_selection")} - تسالي كرومش`;
+    document.title = `${t("nav.branch_selection")} - TASALI QURUMSH`;
     const metaDesc = document.querySelector('meta[name="description"]');
     if (metaDesc) metaDesc.setAttribute('content', t("delivery.subtitle"));
   }, [t]);
@@ -544,6 +551,17 @@ export default function DeliverySelectionPage() {
       bg: 'bg-amber-50 dark:bg-amber-950/20',
       badge: '🗓️ حجز',
     },
+  ] : isCarPickupMode ? [
+    {
+      id: 'car-pickup' as OrderMethod,
+      icon: Car,
+      label: 'استلام من السيارة',
+      desc: 'لا تنزل من سيارتك - سنوصل الطلب إليك',
+      color: 'from-purple-500 to-purple-600',
+      ring: 'ring-purple-500',
+      bg: 'bg-purple-50 dark:bg-purple-950/20',
+      badge: '🚗 منيو السيارات',
+    },
   ] : [
     enableTakeaway && {
       id: 'takeaway' as OrderMethod,
@@ -602,7 +620,9 @@ export default function DeliverySelectionPage() {
             <ChevronLeft className="w-5 h-5" />
           </Button>
           <div>
-            <h1 className="text-lg font-bold">{t("delivery.title") || "اختر طريقة الاستلام"}</h1>
+            <h1 className="text-lg font-bold" data-testid="text-delivery-page-title">
+              {isCarPickupMode ? 'منيو السيارات 🚗' : (t("delivery.title") || "اختر طريقة الاستلام")}
+            </h1>
             <p className="text-xs text-muted-foreground">{cartItems.length} منتج في السلة</p>
           </div>
         </div>
@@ -633,7 +653,7 @@ export default function DeliverySelectionPage() {
                 <SelectContent>
                   {branches.map((branch) => (
                     <SelectItem key={branch.id} value={branch.id}>
-                      <div className="flex flex-col items-start gap-0.5 py-1" dir="rtl">
+                      <div className="flex flex-col items-start gap-0.5 py-1">
                         <span className="font-semibold">{branch.nameAr}</span>
                         <span className="text-xs text-muted-foreground">{branch.city} — {branch.address}</span>
                       </div>
@@ -1148,7 +1168,7 @@ export default function DeliverySelectionPage() {
                       <p className="text-xs text-green-700 dark:text-green-400">رسوم التوصيل</p>
                     </div>
                     <p className="text-sm font-bold text-green-700 dark:text-green-400">
-                      {deliveryFeeAmount > 0 ? `${deliveryFeeAmount} ريال` : 'مجاني'}
+                      {deliveryFeeAmount > 0 ? <>{deliveryFeeAmount} <SarIcon size={11} /></> : 'مجاني'}
                     </p>
                   </div>
                   <div className="flex items-start gap-2 p-3 bg-muted/30 rounded-lg">

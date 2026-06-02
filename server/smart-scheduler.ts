@@ -1,5 +1,5 @@
 /**
- * تسالي كرومش — Smart Notification Scheduler
+ * BLACK ROSE CAFE — Smart Notification Scheduler
  * نظام الإشعارات الذكي والتروجي
  *
  * يعمل كل دقيقة ويتحقق من الوقت السعودي (UTC+3)
@@ -9,6 +9,7 @@
 import mongoose from "mongoose";
 import { PushSubscriptionModel, sendPushBySubscriptions, PushPayload } from "./push-service";
 import { fireNotifyAdmins } from "./notification-engine";
+import { wsManager } from "./websocket";
 
 // ───────────────────────────────────────────────
 // Helpers: Saudi time & Hijri calendar
@@ -81,8 +82,8 @@ function detectOccasion(): Occasion | null {
     return {
       name: "اليوم الوطني السعودي",
       emoji: "🇸🇦",
-      morningMsg: "كل عام وأنتم بخير بمناسبة اليوم الوطني! 🇸🇦 احتفل بيوم وطنك مع وجبة دافئ من تسالي",
-      eveningMsg: "ليلة وطنية سعيدة! 🎆 سهرتك في ليلة اليوم الوطني ما تكتمل إلا بوجبتك المفضلة من تسالي",
+      morningMsg: "كل عام وأنتم بخير بمناسبة اليوم الوطني! 🇸🇦 احتفل بيوم وطنك مع كوب قهوة دافئ من بلاك روز",
+      eveningMsg: "ليلة وطنية سعيدة! 🎆 سهرتك في ليلة اليوم الوطني ما تكتمل إلا بمشروبك المفضل من بلاك روز",
     };
   }
 
@@ -91,8 +92,8 @@ function detectOccasion(): Occasion | null {
     return {
       name: "يوم التأسيس",
       emoji: "🌟",
-      morningMsg: "يوم التأسيس مبارك! 🌟 اشرب وجبتك مع فخر الانتماء لهذه الأرض الطيبة ☕",
-      eveningMsg: "تمسّك بجذورك وتذكّر عراقة هذه الأرض 🌿 وسهرتك ما تكتمل إلا بكوب دافئ من تسالي",
+      morningMsg: "يوم التأسيس مبارك! 🌟 اشرب قهوتك مع فخر الانتماء لهذه الأرض الطيبة ☕",
+      eveningMsg: "تمسّك بجذورك وتذكّر عراقة هذه الأرض 🌿 وسهرتك ما تكتمل إلا بكوب دافئ من بلاك روز",
     };
   }
 
@@ -105,8 +106,8 @@ function detectOccasion(): Occasion | null {
     return {
       name: "عيد الفطر المبارك",
       emoji: "🌙",
-      morningMsg: "عيد فطر مبارك! 🌙✨ كل عام وأنتم بأتم الصحة والسعادة، زورونا واحتفلوا معنا بأجمل الأطباق",
-      eveningMsg: "مساء العيد فرحة ومسرة ✨ لا تنسوا زيارتنا وتحلية سهرتكم بكوب رائع من تسالي 🥤",
+      morningMsg: "عيد فطر مبارك! 🌙✨ كل عام وأنتم بأتم الصحة والسعادة، زورونا واحتفلوا معنا بأجمل المشروبات",
+      eveningMsg: "مساء العيد فرحة ومسرة ✨ لا تنسوا زيارتنا وتحلية سهرتكم بكوب رائع من بلاك روز 🥤",
     };
   }
 
@@ -115,8 +116,8 @@ function detectOccasion(): Occasion | null {
     return {
       name: "عيد الأضحى المبارك",
       emoji: "🐑",
-      morningMsg: "عيد أضحى مبارك! 🐑 كل عام وأنتم بخير، استقبلوا يوم العيد بقهوة صافية من تسالي ☕",
-      eveningMsg: "سهرة العيد أجمل مع العيلة والأهل 💛 ووجبتكم المفضل من تسالي في انتظاركم 🥤",
+      morningMsg: "عيد أضحى مبارك! 🐑 كل عام وأنتم بخير، استقبلوا يوم العيد بقهوة صافية من بلاك روز ☕",
+      eveningMsg: "سهرة العيد أجمل مع العيلة والأهل 💛 ومشروبكم المفضل من بلاك روز في انتظاركم 🥤",
     };
   }
 
@@ -128,33 +129,33 @@ function detectOccasion(): Occasion | null {
 // ───────────────────────────────────────────────
 
 const MORNING_MESSAGES = [
-  { title: "☀️ صباح أحلى", body: "صباح الخير! يومك يبدأ بشكل أفضل مع وجبتك المفضلة ☕ — تسالي في انتظارك" },
-  { title: "🌅 صباح النور", body: "صباحك نور ووجبتك أنور 🌟 ابدأ يومك بنشاط مع كوب مميز من تسالي" },
-  { title: "☕ وقت القهوة", body: "لا تبدأ يومك بدون وجبتك! ☕ تسالي حاضر لك بأشهى الأطباق" },
-  { title: "🌸 صباح السعادة", body: "كل صباح جديد فرصة جديدة 💛 وقهوة من تسالي تجعله أجمل" },
-  { title: "✨ صباح مميز", body: "صباحك ما يكتمل إلا بوجبة مصنوع بحب من تسالي ☕" },
+  { title: "☀️ صباح أحلى", body: "صباح الخير! يومك يبدأ بشكل أفضل مع قهوتك المفضلة ☕ — بلاك روز في انتظارك" },
+  { title: "🌅 صباح النور", body: "صباحك نور وقهوتك أنور 🌟 ابدأ يومك بنشاط مع كوب مميز من بلاك روز" },
+  { title: "☕ وقت القهوة", body: "لا تبدأ يومك بدون قهوتك! ☕ بلاك روز حاضر لك بأشهى المشروبات" },
+  { title: "🌸 صباح السعادة", body: "كل صباح جديد فرصة جديدة 💛 وقهوة من بلاك روز تجعله أجمل" },
+  { title: "✨ صباح مميز", body: "صباحك ما يكتمل إلا بكوب قهوة مصنوع بحب من بلاك روز ☕" },
 ];
 
 const RAMADAN_SUHOOR_MESSAGES = [
-  { title: "🌙 وقت السحور", body: "لا تفوّت السحور! 🌙 تسالي يرحب بك في وقت السحور بأطباقنا الدافئة" },
-  { title: "⭐ تسحّر معنا", body: "السحور بركة ومشروب من تسالي يجعله أحلى 🌟 تعال تسحّر معنا" },
+  { title: "🌙 وقت السحور", body: "لا تفوّت السحور! 🌙 بلاك روز يرحب بك في وقت السحور بمشروباتنا الدافئة" },
+  { title: "⭐ تسحّر معنا", body: "السحور بركة ومشروب من بلاك روز يجعله أحلى 🌟 تعال تسحّر معنا" },
 ];
 
 const RAMADAN_IFTAR_MESSAGES = [
-  { title: "🌙 قرب وقت الإفطار", body: "بعد لحظات ينادي المؤذن 🌙 وتسالي جاهز بأجمل الأطباق لإفطارك" },
-  { title: "🌅 استعد للإفطار", body: "على مائدة الإفطار، لا ينقصها إلا وجبتك المفضلة من تسالي ✨" },
+  { title: "🌙 قرب وقت الإفطار", body: "بعد لحظات ينادي المؤذن 🌙 وبلاك روز جاهز بأجمل المشروبات لإفطارك" },
+  { title: "🌅 استعد للإفطار", body: "على مائدة الإفطار، لا ينقصها إلا مشروبك المفضل من بلاك روز ✨" },
 ];
 
 const EVENING_MESSAGES = [
-  { title: "🌙 مساء الخير", body: "ما جاك نوم؟ 😄 سهرتك ما تحلى إلا بوجبتك المفضلة من عندنا في تسالي 🥤" },
-  { title: "✨ سهرة حلوة", body: "الليل طويل والسهرة أحلى بكوب مميز من تسالي ☕ نحن في انتظارك" },
-  { title: "🌟 سهرتك ناقصة", body: "شعورك إن سهرتك ناقص شي؟ 😊 الجواب عندنا في تسالي — وجبتك المفضلة جاهز" },
-  { title: "🌙 الليل دا لك", body: "بعد يوم طويل، كافئ نفسك بوجبتك المفضلة 🥤 تسالي مفتوح لك الآن" },
+  { title: "🌙 مساء الخير", body: "ما جاك نوم؟ 😄 سهرتك ما تحلى إلا بمشروبك المفضل من عندنا في بلاك روز 🥤" },
+  { title: "✨ سهرة حلوة", body: "الليل طويل والسهرة أحلى بكوب مميز من بلاك روز ☕ نحن في انتظارك" },
+  { title: "🌟 سهرتك ناقصة", body: "شعورك إن سهرتك ناقص شي؟ 😊 الجواب عندنا في بلاك روز — مشروبك المفضل جاهز" },
+  { title: "🌙 الليل دا لك", body: "بعد يوم طويل، كافئ نفسك بمشروبك المفضل 🥤 بلاك روز مفتوح لك الآن" },
 ];
 
 const WEEKEND_MESSAGES = [
-  { title: "🎉 نهاية الأسبوع", body: "ويك إند سعيد! 🎉 زُر تسالي مع أهلك وأصحابك واستمتعوا بأجمل الأطباق" },
-  { title: "☕ يوم عطلة", body: "يوم إجازة ما يكتمل إلا بقهوة هادئة من تسالي ☕ — تعال وخذ وقتك" },
+  { title: "🎉 نهاية الأسبوع", body: "ويك إند سعيد! 🎉 زُر بلاك روز مع أهلك وأصحابك واستمتعوا بأجمل المشروبات" },
+  { title: "☕ يوم عطلة", body: "يوم إجازة ما يكتمل إلا بقهوة هادئة من بلاك روز ☕ — تعال وخذ وقتك" },
 ];
 
 function pickRandom<T>(arr: T[]): T {
@@ -184,7 +185,7 @@ async function buildPersonalizedMessage(
       const favDrink = result[0]._id as string;
       return {
         title: baseTitle,
-        body: baseBody.replace("وجبتك المفضلة", `${favDrink} المميز`) + ` 🎯`,
+        body: baseBody.replace("مشروبك المفضل", `${favDrink} المميز`) + ` 🎯`,
       };
     }
   } catch {
@@ -272,7 +273,7 @@ async function sendAdminDailySummary() {
       summaryBody += `\n⚠️ مخزون منخفض: ${lowStockItems.length} صنف`;
     }
 
-    await fireNotifyAdmins("📊 تقرير اليوم — تسالي", summaryBody, {
+    await fireNotifyAdmins("📊 تقرير اليوم — بلاك روز", summaryBody, {
       type: "info",
       icon: "📊",
       link: "/employee/admin/reports",
@@ -403,7 +404,7 @@ export function startSmartScheduler() {
         if (isWeekend) {
           msg = pickRandom(WEEKEND_MESSAGES);
         } else if (ramadan) {
-          msg = { title: "🌙 صباح رمضان المبارك", body: "رمضان كريم! صباحك مبارك 🌙 تسالي يرحب بك بأطباق رمضانية مميزة" };
+          msg = { title: "🌙 صباح رمضان المبارك", body: "رمضان كريم! صباحك مبارك 🌙 بلاك روز يرحب بك بمشروبات رمضانية مميزة" };
         } else {
           msg = pickRandom(MORNING_MESSAGES);
         }
@@ -417,7 +418,7 @@ export function startSmartScheduler() {
         if (!isWeekend) {
           await broadcastToCustomers({
             title: "☕ وقتك الآن!",
-            body: "الساعة العاشرة والنص — وقت مثالي لوجبتك المفضلة من تسالي ☕",
+            body: "الساعة العاشرة والنص — وقت مثالي لمشروبك المفضل من بلاك روز ☕",
             url: "/menu",
             tag: "midmorning-nudge",
             type: "promo",
@@ -448,7 +449,7 @@ export function startSmartScheduler() {
       else if (hour === 21 && minute === 0 && !alreadySent("evening") && !occasion) {
         markSent("evening");
         const msg = ramadan
-          ? { title: "🌙 ليلة رمضانية", body: "ليلة رمضان تستحق مشروباً مميزاً ✨ زُر تسالي واستمتع بأجواء رمضان" }
+          ? { title: "🌙 ليلة رمضانية", body: "ليلة رمضان تستحق مشروباً مميزاً ✨ زُر بلاك روز واستمتع بأجواء رمضان" }
           : pickRandom(EVENING_MESSAGES);
         await broadcastToCustomers({ ...msg, url: "/menu", tag: "evening-greeting", type: "promo" }, true);
       }
@@ -465,8 +466,65 @@ export function startSmartScheduler() {
         await checkAndAlertLowStock();
       }
 
+      // ─── CAR ORDER PREPARATION ALERT (every minute) ───────────────────────
+      await checkCarOrderPreparationAlerts();
+
     } catch (err) {
       console.error("[SCHEDULER] Tick error:", err);
     }
   }, 60_000); // every minute
+}
+
+// ── Car Order 10-Minute Preparation Alert ────────────────────────────────────
+async function checkCarOrderPreparationAlerts() {
+  try {
+    const OrderModel = mongoose.models["Order"] || mongoose.model("Order", new mongoose.Schema({}, { strict: false }));
+    const now = new Date();
+    const nowSaudi = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Riyadh" }));
+    const currentHHMM = `${nowSaudi.getHours().toString().padStart(2, "0")}:${nowSaudi.getMinutes().toString().padStart(2, "0")}`;
+
+    // Find car_pickup orders with an arrivalTime set, not yet alerted, still active
+    const pendingCarOrders = await OrderModel.find({
+      $or: [{ orderType: "car_pickup" }, { orderType: "car-pickup" }, { carPickup: true }],
+      arrivalTime: { $exists: true, $nin: [null, ""] },
+      preparationAlertSent: { $ne: true },
+      status: { $in: ["pending", "payment_confirmed", "confirmed", "in_progress"] },
+    }).lean();
+
+    for (const order of pendingCarOrders) {
+      const arrivalTime = (order as any).arrivalTime as string;
+      if (!arrivalTime || !/^\d{2}:\d{2}$/.test(arrivalTime)) continue;
+
+      const [arrH, arrM] = arrivalTime.split(":").map(Number);
+      const arrivalToday = new Date(nowSaudi);
+      arrivalToday.setHours(arrH, arrM, 0, 0);
+
+      const diffMs = arrivalToday.getTime() - nowSaudi.getTime();
+      const diffMin = Math.floor(diffMs / 60000);
+
+      // Trigger when 10 minutes or less before arrival (but not past it)
+      if (diffMin <= 10 && diffMin >= -5) {
+        await OrderModel.updateOne({ _id: (order as any)._id }, { $set: { preparationAlertSent: true } });
+
+        // Broadcast via WebSocket manager
+        wsManager.broadcastCarPreparationAlert({
+          _id: String((order as any)._id),
+          orderNumber: (order as any).orderNumber,
+          dailyNumber: (order as any).dailyNumber,
+          customerName: (order as any).customerName,
+          customerPhone: (order as any).customerPhone,
+          arrivalTime,
+          carType: (order as any).carType,
+          carColor: (order as any).carColor,
+          plateNumber: (order as any).plateNumber || (order as any).carPlate,
+          items: (order as any).items,
+          totalAmount: (order as any).totalAmount,
+          diffMin,
+        });
+        console.log(`[SCHEDULER] 🚗 Car order prep alert sent: #${(order as any).orderNumber} arrives at ${arrivalTime} (${diffMin} min)`);
+      }
+    }
+  } catch (err) {
+    console.error("[SCHEDULER] Car prep alert error:", err);
+  }
 }

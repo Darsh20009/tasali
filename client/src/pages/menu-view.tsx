@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import { useTranslate } from "@/lib/useTranslate";
+import SarIcon from "@/components/sar-icon";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import QRCodeComponent from "@/components/qr-code";
-import tasaliLogo from "@assets/logo.png";
+import blackroseLogo from "@assets/logo.png";
 import {
   Tv, Grid3X3, Star, ArrowLeft, ChevronLeft, ChevronRight,
   Pause, Play, Layers, Sparkles, Coffee
@@ -120,7 +121,7 @@ export default function MenuView() {
   // ─── Portrait TV Mode ────────────────────────────────────────────────
   if (mode === "portrait") {
     return (
-      <div className="relative w-full min-h-screen bg-black overflow-hidden select-none" dir="rtl">
+      <div className="relative w-full min-h-screen bg-black overflow-hidden select-none">
 
         {/* Ambient glow behind image */}
         {current?.imageUrl && (
@@ -138,10 +139,10 @@ export default function MenuView() {
         {/* ── Top Bar ── */}
         <div className="relative z-20 flex items-center justify-between px-6 pt-6 pb-2">
           <div className="flex items-center gap-3">
-            <img src={tasaliLogo} alt="Tasali Qurumsh" className="w-10 h-10 rounded-xl" />
+            <img src={blackroseLogo} alt="Black Rose" className="w-10 h-10 rounded-xl" />
             <div>
-              <p className="text-white font-black text-base leading-tight tracking-wide">تسالي كرومش</p>
-              <p className="text-amber-400 text-xs font-medium tracking-widest uppercase">قائمة الأطباق</p>
+              <p className="text-white font-black text-base leading-tight tracking-wide">TASALI QURUMSH</p>
+              <p className="text-amber-400 text-xs font-medium tracking-widest uppercase">قائمة المشروبات</p>
             </div>
           </div>
 
@@ -236,7 +237,7 @@ export default function MenuView() {
           <div className="flex items-center justify-between">
             <div className="flex items-baseline gap-2">
               <span className="text-5xl font-black text-amber-400 leading-none">{current?.price}</span>
-              <span className="text-white/40 text-lg font-medium">ر.س</span>
+              <SarIcon size={16} className="opacity-40 invert" />
             </div>
             <div className="flex items-center gap-0.5">
               {[...Array(5)].map((_, i) => (
@@ -299,7 +300,7 @@ export default function MenuView() {
           <div className="flex-1 min-w-0">
             <p className="text-white font-bold text-base mb-1">اطلب الآن من هاتفك</p>
             <p className="text-white/40 text-xs leading-relaxed">
-              امسح الكود وتصفح قائمتنا الكاملة واطلب وجبتك المفضلة بسهولة
+              امسح الكود وتصفح قائمتنا الكاملة واطلب مشروبك المفضل بسهولة
             </p>
             <div className="mt-2 text-amber-400 text-xs font-mono opacity-60">
               {window.location.origin}/menu
@@ -320,12 +321,12 @@ export default function MenuView() {
   // ─── Grid Mode ───────────────────────────────────────────────────────
   if (mode === "grid") {
     return (
-      <div className="min-h-screen bg-black" dir="rtl">
+      <div className="min-h-screen bg-black">
         {/* Header */}
         <div className="sticky top-0 z-30 bg-black/90 backdrop-blur border-b border-white/5 px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <img src={tasaliLogo} alt="Tasali Qurumsh" className="w-8 h-8 rounded-lg" />
-            <span className="text-white font-black text-sm">تسالي كرومش</span>
+            <img src={blackroseLogo} alt="Black Rose" className="w-8 h-8 rounded-lg" />
+            <span className="text-white font-black text-sm">TASALI QURUMSH</span>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -370,7 +371,7 @@ export default function MenuView() {
                 <p className="text-white font-bold text-sm leading-tight mb-1">{item.nameAr}</p>
                 <div className="flex items-center justify-between">
                   <span className="text-amber-400 font-black text-base">{item.price}</span>
-                  <span className="text-white/30 text-xs">ر.س</span>
+                  <SarIcon size={10} className="opacity-30 invert" />
                 </div>
               </div>
             </div>
@@ -382,11 +383,11 @@ export default function MenuView() {
 
   // ─── Showcase Mode ────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-black" dir="rtl">
+    <div className="min-h-screen bg-black">
       <div className="sticky top-0 z-30 bg-black/90 backdrop-blur border-b border-white/5 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <img src={tasaliLogo} alt="Tasali Qurumsh" className="w-8 h-8 rounded-lg" />
-          <span className="text-white font-black text-sm">تسالي كرومش</span>
+          <img src={blackroseLogo} alt="Black Rose" className="w-8 h-8 rounded-lg" />
+          <span className="text-white font-black text-sm">TASALI QURUMSH</span>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setMode("portrait")} className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 rounded-full text-black text-xs font-semibold" data-testid="button-portrait">
@@ -414,7 +415,7 @@ export default function MenuView() {
               )}
               <div className="flex items-center gap-1">
                 <span className="text-amber-400 font-black text-lg">{item.price}</span>
-                <span className="text-white/30 text-xs">ر.س</span>
+                <SarIcon size={10} className="opacity-30 invert" />
               </div>
             </div>
           </div>

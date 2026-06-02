@@ -109,8 +109,8 @@ export function PlanGate({ feature, children, fallback }: PlanGateProps) {
 
         <p className="text-xs text-muted-foreground">
           {tc(
-            "للترقية أو الاستفسار، تواصل مع فريق TASALI QURUMSH",
-            "To upgrade or inquire, contact the TASALI QURUMSH team"
+            "للترقية أو الاستفسار، تواصل مع فريق تسالي",
+            "To upgrade or inquire, contact the TASALI team"
           )}
         </p>
       </div>

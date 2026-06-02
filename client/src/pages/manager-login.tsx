@@ -1,3 +1,4 @@
+import brand from "@/lib/brand";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useMutation } from "@tanstack/react-query";
@@ -6,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { AtSign, Lock, Loader2, Eye, EyeOff } from "lucide-react";
 import type { Employee } from "@shared/schema";
-import tasaliLogoStaff from "@assets/logo.png";
+import blackroseLogoStaff from "@assets/logo.png";
 import { useTranslate } from "@/lib/useTranslate";
 
 export default function ManagerLogin() {
@@ -89,13 +90,13 @@ export default function ManagerLogin() {
   };
 
   return (
-    <div dir="rtl" className="min-h-screen bg-background flex items-center justify-center p-4">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-4 sm:mb-6">
           <div className="inline-flex items-center justify-center w-20 h-14 sm:w-32 sm:h-20 mb-2 sm:mb-3">
-            <img src={tasaliLogoStaff} alt="TASALI QURUMSH SYSTEMS" className="w-full h-full object-contain" />
+            <img src={blackroseLogoStaff} alt={brand.shortNameEn} className="w-full h-full object-contain" />
           </div>
-          <h1 className="text-xl sm:text-2xl font-bold font-playfair text-foreground mb-1">تسالي كرومش</h1>
+          <h1 className="text-xl sm:text-2xl font-bold font-playfair text-foreground mb-1">TASALI QURUMSH</h1>
           <p className="text-muted-foreground text-sm font-cairo">{tc("تسجيل دخول المدير", "Manager Login")}</p>
         </div>
 

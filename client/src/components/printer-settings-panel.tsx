@@ -10,6 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   Printer, Usb, Wifi, Network, CheckCircle2, XCircle,
   AlertCircle, RefreshCw, Trash2, TestTube2, Settings2, Bluetooth, BluetoothConnected, BluetoothOff,
+  Plus, ChevronDown, ChevronUp, PlugZap, Edit2,
 } from "lucide-react";
 import {
   loadPrinterSettings,
@@ -20,12 +21,11 @@ import {
   getSavedDeviceInfo,
   clearSavedDevice,
   getPrinterStatus,
-  buildReceiptBitmapEscPos,
+  buildEscPosReceipt,
   thermalPrint,
   testNetworkPrinter,
   discoverNetworkPrinters,
   isBluetoothSupported,
-  checkBluetoothAvailability,
   connectBluetoothPrinter,
   reconnectBluetoothPrinter,
   testBluetoothPrinter,
@@ -34,8 +34,13 @@ import {
   getBluetoothState,
   isQZTrayAvailable,
   testRelayAgent,
+  loadPrinterProfiles,
+  savePrinterProfiles,
+  testPrinterProfile,
   type PrinterSettings,
   type PrinterStatus,
+  type PrinterProfile,
+  type PrinterRole,
 } from "@/lib/thermal-printer";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslate } from "@/lib/useTranslate";
@@ -67,6 +72,64 @@ export default function PrinterSettingsPanel() {
   const [relayTesting, setRelayTesting] = useState(false);
   const [relayStatus, setRelayStatus] = useState<{ connected: boolean; message: string } | null>(null);
 
+  // ── Multi-Printer Profiles state ──────────────────────────────────────────
+  const [profiles, setProfiles] = useState<PrinterProfile[]>(() => loadPrinterProfiles());
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
+  const [profileTestStatus, setProfileTestStatus] = useState<Record<string, { connected: boolean; message: string } | 'testing'>>({});
+  const [newProfile, setNewProfile] = useState<Omit<PrinterProfile, 'id'>>({
+    name: '',
+    role: 'all',
+    enabled: true,
+    mode: 'network',
+    networkIp: '',
+    networkPort: 9100,
+    paperWidth: '80mm',
+    relayAgentUrl: '',
+  });
+
+  function saveProfilesState(updated: PrinterProfile[]) {
+    savePrinterProfiles(updated);
+    setProfiles(updated);
+  }
+
+  function addOrUpdateProfile() {
+    if (!newProfile.name.trim() || !newProfile.networkIp.trim()) {
+      toast({ title: tc("خطأ", "Error"), description: tc("الاسم و IP الطابعة مطلوبان", "Name and printer IP are required"), variant: "destructive" });
+      return;
+    }
+    if (editingProfileId) {
+      saveProfilesState(profiles.map(p => p.id === editingProfileId ? { ...newProfile, id: editingProfileId } : p));
+      setEditingProfileId(null);
+    } else {
+      const prof: PrinterProfile = { ...newProfile, id: Date.now().toString() };
+      saveProfilesState([...profiles, prof]);
+    }
+    setNewProfile({ name: '', role: 'all', enabled: true, mode: 'network', networkIp: '', networkPort: 9100, paperWidth: '80mm', relayAgentUrl: '' });
+    setShowAddForm(false);
+  }
+
+  function startEditProfile(p: PrinterProfile) {
+    setNewProfile({ name: p.name, role: p.role, enabled: p.enabled, mode: p.mode, networkIp: p.networkIp, networkPort: p.networkPort, paperWidth: p.paperWidth, relayAgentUrl: p.relayAgentUrl || '' });
+    setEditingProfileId(p.id);
+    setShowAddForm(true);
+  }
+
+  function deleteProfile(id: string) {
+    saveProfilesState(profiles.filter(p => p.id !== id));
+  }
+
+  function toggleProfileEnabled(id: string) {
+    saveProfilesState(profiles.map(p => p.id === id ? { ...p, enabled: !p.enabled } : p));
+  }
+
+  async function testProfile(p: PrinterProfile) {
+    setProfileTestStatus(prev => ({ ...prev, [p.id]: 'testing' }));
+    const result = await testPrinterProfile(p);
+    setProfileTestStatus(prev => ({ ...prev, [p.id]: result }));
+    toast({ title: result.connected ? tc("✅ متصلة", "✅ Connected") : tc("❌ فشل الاتصال", "❌ Connection Failed"), description: result.message.split('\n')[0], variant: result.connected ? 'default' : 'destructive' });
+  }
+
   // Bluetooth state
   const [btConnecting, setBtConnecting] = useState(false);
   const [btReconnecting, setBtReconnecting] = useState(false);
@@ -75,17 +138,8 @@ export default function PrinterSettingsPanel() {
   const [btState, setBtState] = useState<{ connected: boolean; deviceName: string | null }>(() => getBluetoothState());
   const savedBtDevice = loadSavedBtDevice();
 
-  // Async BT availability: 'checking' | 'ok' | 'adapter-off' | 'no-api' | 'not-https' | 'permissions-policy'
-  const [btAvailReason, setBtAvailReason] = useState<string>('checking');
-
   useEffect(() => {
     refreshStatus();
-
-    // Deep async Bluetooth availability check
-    checkBluetoothAvailability().then(({ available, reason }) => {
-      setBtAvailReason(available ? 'ok' : reason);
-    });
-
     // Auto-try silent BT reconnect on load if mode is bluetooth and device not connected
     if (loadPrinterSettings().mode === 'bluetooth' && !getBluetoothState().connected) {
       reconnectBluetoothPrinter()
@@ -208,38 +262,23 @@ export default function PrinterSettingsPanel() {
   }
 
   async function handleConnectBluetooth() {
-    // Always run the deep async check right before connecting
+    if (!isBluetoothSupported()) {
+      toast({ title: tc("غير مدعوم", "Not Supported"), description: tc("Web Bluetooth يتطلب Chrome أو Edge على سطح المكتب أو Android", "Web Bluetooth requires Chrome or Edge on desktop or Android"), variant: "destructive" });
+      return;
+    }
     setBtConnecting(true);
     setBtStatus(null);
     try {
-      const { available, reason } = await checkBluetoothAvailability();
-      setBtAvailReason(available ? 'ok' : reason);
-
-      if (!available) {
-        const msgs: Record<string, string> = {
-          'adapter-off':        tc("شغّل البلوتوث في جهازك أولاً ثم حاول مجدداً", "Enable Bluetooth on your device first, then retry"),
-          'no-api':             tc("استخدم Chrome أو Edge — المتصفح الحالي لا يدعم Web Bluetooth", "Use Chrome or Edge — current browser doesn't support Web Bluetooth"),
-          'not-https':          tc("افتح التطبيق عبر رابط HTTPS الرسمي", "Open the app via the official HTTPS link"),
-          'permissions-policy': tc("افتح التطبيق في تبويب جديد مباشرةً (وليس داخل iframe)", "Open the app in a new direct browser tab (not inside an iframe)"),
-        };
-        const msg = msgs[reason] || tc("البلوتوث غير متاح في هذا السياق", "Bluetooth unavailable in this context");
-        setBtStatus({ connected: false, message: msg });
-        toast({ title: tc("البلوتوث غير متاح", "Bluetooth Unavailable"), description: msg, variant: "destructive" });
-        return;
-      }
-
       const deviceName = await connectBluetoothPrinter();
       savePrinterSettings({ mode: 'bluetooth', bluetoothDeviceName: deviceName });
       setSettings(loadPrinterSettings());
       const state = getBluetoothState();
       setBtState(state);
-      setBtAvailReason('ok');
       setBtStatus({ connected: true, message: `✅ ${tc("تم الاتصال بـ", "Connected to")} "${deviceName}"` });
       toast({ title: tc("✅ تم الاتصال بالبلوتوث", "✅ Bluetooth Connected"), description: `${tc("الطابعة", "Printer")}: ${deviceName}` });
     } catch (e: any) {
-      const msg = e?.message || tc("فشل الاتصال", "Connection failed");
-      setBtStatus({ connected: false, message: msg });
-      toast({ title: tc("خطأ في البلوتوث", "Bluetooth Error"), description: msg, variant: "destructive" });
+      setBtStatus({ connected: false, message: e?.message || tc("فشل الاتصال", "Connection failed") });
+      toast({ title: tc("خطأ في البلوتوث", "Bluetooth Error"), description: e?.message || tc("فشل الاتصال بالطابعة", "Failed to connect to printer"), variant: "destructive" });
     } finally {
       setBtConnecting(false);
     }
@@ -338,31 +377,31 @@ export default function PrinterSettingsPanel() {
   async function handleTestPrint() {
     setTesting(true);
     try {
+      const { buildReceiptBitmapEscPos, thermalPrint } = await import('@/lib/thermal-printer');
       const now = new Date();
       const dateStr = now.toLocaleString('ar-SA', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+      const pw = settings.paperWidth;
 
-      // استخدام Canvas 2D bitmap — يحل مشكلة الرموز الغريبة في العربية تماماً
       const escData = await buildReceiptBitmapEscPos({
-        shopName: 'QIROX STUDIO | كيروكس استوديو',
-        vatNumber: '',
-        branchName: 'اختبار الطابعة',
-        tagline: 'استمتع بتجربة فريدة مع نظامنا',
+        shopName: 'Qirox | كيروكس',
+        vatNumber: '---',
+        branchName: 'مرحبا في نظام كيروكس',
         orderNumber: 'TEST',
         orderDate: dateStr,
         cashierName: 'النظام',
         items: [
-          { name: 'وجبة تجريبية', nameEn: 'Test Meal', qty: 1, price: 15.00 },
-          { name: 'كيك شوكولاتة', nameEn: 'Chocolate Cake', qty: 2, price: 12.00 },
+          { name: 'قهوة تجريبية', qty: 1, price: 15.00 },
+          { name: 'كيك شوكولاتة', qty: 2, price: 12.00 },
         ],
         subtotal: 34.09,
         vat: 5.91,
         total: 40.00,
         paymentMethod: 'نقدي',
-        paperWidth: settings.paperWidth,
-        feedLines: settings.feedLines ?? 3,
+        paperWidth: pw,
+        feedLines: settings.feedLines ?? 4,
       });
 
-      const result = await thermalPrint(escData, '', settings.paperWidth);
+      const result = await thermalPrint(escData, '', pw);
 
       if (result.success) {
         toast({
@@ -384,8 +423,7 @@ export default function PrinterSettingsPanel() {
   }
 
   const webUsbAvailable = isWebUSBSupported();
-  const btAvailable = isBluetoothSupported(); // sync quick check
-  const btReady = btAvailReason === 'ok'; // async deep check
+  const btAvailable = isBluetoothSupported();
   const isUsbConnected = status?.isDeviceConnected;
   const savedDevice = status?.savedDevice;
   const isNetworkMode = settings.mode === 'network';
@@ -418,8 +456,230 @@ export default function PrinterSettingsPanel() {
             ? tc("طباعة المتصفح", "Browser Print")
             : tc("غير متصلة", "Disconnected");
 
+  // ── Role helpers ──────────────────────────────────────────────────────────
+  const roleLabel = (r: PrinterRole) => tc(
+    r === 'receipt' ? 'فاتورة العميل' : r === 'kitchen' ? 'مطبخ' : r === 'bar' ? 'بار' : 'الكل',
+    r === 'receipt' ? 'Receipt'       : r === 'kitchen' ? 'Kitchen' : r === 'bar' ? 'Bar' : 'All'
+  );
+  const roleColor = (r: PrinterRole) =>
+    r === 'receipt' ? '#16a34a' : r === 'kitchen' ? '#ea580c' : r === 'bar' ? '#7c3aed' : '#2563eb';
+  const modeLabel = (m: string) => tc(
+    m === 'network' ? 'شبكة' : m === 'relay' ? 'وكيل' : 'طابور',
+    m === 'network' ? 'Network' : m === 'relay' ? 'Relay' : 'Queue'
+  );
+
   return (
     <div className="space-y-4">
+
+      {/* ══ Multi-Printer Management Card ══ */}
+      <Card className="border-2 border-primary/20">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <PlugZap className="w-5 h-5 text-primary" />
+            {tc("إدارة الطابعات المتعددة", "Multi-Printer Management")}
+            <Button
+              size="sm"
+              variant="outline"
+              className="mr-auto gap-1 h-7 text-xs"
+              onClick={() => {
+                setShowAddForm(v => !v);
+                setEditingProfileId(null);
+                setNewProfile({ name: '', role: 'all', enabled: true, mode: 'network', networkIp: '', networkPort: 9100, paperWidth: '80mm', relayAgentUrl: '' });
+              }}
+            >
+              {showAddForm && !editingProfileId ? <ChevronUp className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+              {showAddForm && !editingProfileId ? tc("إغلاق", "Close") : tc("إضافة طابعة", "Add Printer")}
+            </Button>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {/* Info note */}
+          <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-700 rounded-lg p-3 text-xs text-blue-700 dark:text-blue-300">
+            {tc(
+              "أضف طابعات بأدوار مختلفة: فاتورة العميل → تُرسل للطابعة الرئيسية | مطبخ → تُرسل لطابعة المطبخ | بار → طابعة البار | الكل → تستقبل كل أنواع الطباعة. إذا لم تضف أي طابعة هنا، يعمل النظام بالإعدادات الرئيسية أدناه.",
+              "Add printers with roles: Receipt → main printer | Kitchen → kitchen printer | Bar → bar printer | All → receives all print types. If no profiles are added, the system uses the primary settings below."
+            )}
+          </div>
+
+          {/* Existing profiles list */}
+          {profiles.length === 0 && !showAddForm && (
+            <div className="text-center text-sm text-muted-foreground py-6 border-2 border-dashed rounded-lg">
+              {tc("لا توجد طابعات مضافة — اضغط 'إضافة طابعة' لإضافة أول طابعة", "No printers added — press 'Add Printer' to add your first printer")}
+            </div>
+          )}
+
+          <div className="space-y-2">
+            {profiles.map(p => {
+              const ts = profileTestStatus[p.id];
+              return (
+                <div key={p.id} className={`border rounded-lg p-3 space-y-2 transition-opacity ${p.enabled ? '' : 'opacity-60'}`}>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Switch
+                      checked={p.enabled}
+                      onCheckedChange={() => toggleProfileEnabled(p.id)}
+                      data-testid={`switch-printer-${p.id}`}
+                    />
+                    <span className="font-semibold text-sm flex-1">{p.name}</span>
+                    <span
+                      className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white"
+                      style={{ backgroundColor: roleColor(p.role) }}
+                    >{roleLabel(p.role)}</span>
+                    <Badge variant="secondary" className="text-[10px]">{modeLabel(p.mode)}</Badge>
+                    <Badge variant="outline" className="text-[10px]">{p.paperWidth}</Badge>
+                  </div>
+                  <div className="text-xs text-muted-foreground font-mono">
+                    {p.networkIp}:{p.networkPort}
+                    {p.mode === 'relay' && p.relayAgentUrl && (
+                      <span className="ml-2 text-amber-600">via {p.relayAgentUrl}</span>
+                    )}
+                  </div>
+                  {ts && ts !== 'testing' && (
+                    <div className={`text-xs px-2 py-1 rounded ${ts.connected ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
+                      {ts.message.split('\n')[0]}
+                    </div>
+                  )}
+                  <div className="flex gap-1.5 flex-wrap">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs gap-1"
+                      disabled={ts === 'testing'}
+                      onClick={() => testProfile(p)}
+                      data-testid={`button-test-profile-${p.id}`}
+                    >
+                      {ts === 'testing' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <TestTube2 className="w-3 h-3" />}
+                      {tc("اختبار", "Test")}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs gap-1"
+                      onClick={() => startEditProfile(p)}
+                      data-testid={`button-edit-profile-${p.id}`}
+                    >
+                      <Edit2 className="w-3 h-3" />
+                      {tc("تعديل", "Edit")}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs gap-1 text-red-600 hover:bg-red-50"
+                      onClick={() => deleteProfile(p.id)}
+                      data-testid={`button-delete-profile-${p.id}`}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      {tc("حذف", "Delete")}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Add / Edit form */}
+          {showAddForm && (
+            <div className="border-2 border-primary/30 rounded-xl p-4 space-y-3 bg-primary/5">
+              <p className="text-sm font-bold text-primary">
+                {editingProfileId ? tc("تعديل الطابعة", "Edit Printer") : tc("إضافة طابعة جديدة", "Add New Printer")}
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">{tc("اسم الطابعة", "Printer Name")}</Label>
+                  <Input
+                    placeholder={tc("مثال: طابعة الكاشير", "e.g. Cashier Printer")}
+                    value={newProfile.name}
+                    onChange={e => setNewProfile(prev => ({ ...prev, name: e.target.value }))}
+                    className="h-8 text-sm"
+                    data-testid="input-profile-name"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">{tc("الدور", "Role")}</Label>
+                  <select
+                    value={newProfile.role}
+                    onChange={e => setNewProfile(prev => ({ ...prev, role: e.target.value as PrinterRole }))}
+                    className="w-full h-8 rounded-md border border-input bg-background text-sm px-2"
+                    data-testid="select-profile-role"
+                  >
+                    <option value="receipt">{tc("فاتورة العميل", "Customer Receipt")}</option>
+                    <option value="kitchen">{tc("مطبخ", "Kitchen")}</option>
+                    <option value="bar">{tc("بار", "Bar")}</option>
+                    <option value="all">{tc("الكل", "All Types")}</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">{tc("وضع الاتصال", "Connection Mode")}</Label>
+                  <select
+                    value={newProfile.mode}
+                    onChange={e => setNewProfile(prev => ({ ...prev, mode: e.target.value as any }))}
+                    className="w-full h-8 rounded-md border border-input bg-background text-sm px-2"
+                    data-testid="select-profile-mode"
+                  >
+                    <option value="network">{tc("شبكة (LAN/TCP)", "Network (LAN/TCP)")}</option>
+                    <option value="relay">{tc("وكيل محلي (Relay)", "Local Relay")}</option>
+                    <option value="queue">{tc("طابور السحابة", "Cloud Queue")}</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">{tc("عرض الورق", "Paper Width")}</Label>
+                  <select
+                    value={newProfile.paperWidth}
+                    onChange={e => setNewProfile(prev => ({ ...prev, paperWidth: e.target.value as any }))}
+                    className="w-full h-8 rounded-md border border-input bg-background text-sm px-2"
+                    data-testid="select-profile-paper"
+                  >
+                    <option value="80mm">80mm</option>
+                    <option value="58mm">58mm</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">{tc("IP الطابعة", "Printer IP")}</Label>
+                  <Input
+                    placeholder="192.168.1.100"
+                    value={newProfile.networkIp}
+                    onChange={e => setNewProfile(prev => ({ ...prev, networkIp: e.target.value }))}
+                    className="h-8 text-sm font-mono"
+                    data-testid="input-profile-ip"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">{tc("المنفذ", "Port")}</Label>
+                  <Input
+                    type="number"
+                    placeholder="9100"
+                    value={newProfile.networkPort}
+                    onChange={e => setNewProfile(prev => ({ ...prev, networkPort: Number(e.target.value) }))}
+                    className="h-8 text-sm font-mono"
+                    data-testid="input-profile-port"
+                  />
+                </div>
+              </div>
+              {newProfile.mode === 'relay' && (
+                <div className="space-y-1">
+                  <Label className="text-xs">{tc("رابط وكيل الطباعة", "Relay Agent URL")}</Label>
+                  <Input
+                    placeholder="http://192.168.1.50:8089"
+                    value={newProfile.relayAgentUrl || ''}
+                    onChange={e => setNewProfile(prev => ({ ...prev, relayAgentUrl: e.target.value }))}
+                    className="h-8 text-sm font-mono"
+                    data-testid="input-profile-relay-url"
+                  />
+                </div>
+              )}
+              <div className="flex gap-2">
+                <Button size="sm" className="gap-1" onClick={addOrUpdateProfile} data-testid="button-save-profile">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  {editingProfileId ? tc("حفظ التعديل", "Save Changes") : tc("إضافة", "Add")}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => { setShowAddForm(false); setEditingProfileId(null); }}>
+                  {tc("إلغاء", "Cancel")}
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Status Card */}
       <Card className="border-2" style={{ borderColor: statusBadgeColor }}>
         <CardHeader className="pb-3">
@@ -457,38 +717,22 @@ export default function PrinterSettingsPanel() {
             </div>
           )}
 
-          {/* Bluetooth availability — async deep check */}
+          {/* Bluetooth availability */}
           {isBluetoothMode && (
             <div className="flex items-center gap-2 text-sm">
-              {btAvailReason === 'checking' ? (
-                <RefreshCw className="w-4 h-4 text-blue-400 animate-spin" />
-              ) : btState.connected ? (
-                <BluetoothConnected className="w-4 h-4 text-green-600" />
-              ) : btReady ? (
-                <Bluetooth className="w-4 h-4 text-blue-500" />
+              {btAvailable ? (
+                btState.connected
+                  ? <BluetoothConnected className="w-4 h-4 text-green-600" />
+                  : <Bluetooth className="w-4 h-4 text-blue-500" />
               ) : (
                 <BluetoothOff className="w-4 h-4 text-red-500" />
               )}
-              <span className={
-                btAvailReason === 'checking' ? 'text-blue-400' :
-                btState.connected ? 'text-green-700' :
-                btReady ? 'text-blue-600' : 'text-red-600'
-              }>
-                {btAvailReason === 'checking'
-                  ? tc("جارٍ فحص دعم البلوتوث...", "Checking Bluetooth support...")
-                  : btState.connected
+              <span className={btAvailable ? (btState.connected ? 'text-green-700' : 'text-blue-600') : 'text-red-600'}>
+                {btAvailable
+                  ? btState.connected
                     ? tc(`متصلة بـ "${btState.deviceName}"`, `Connected to "${btState.deviceName}"`)
-                  : btReady
-                    ? tc("البلوتوث جاهز — انقر للاقتران بالطابعة", "Bluetooth ready — click to pair printer")
-                  : btAvailReason === 'adapter-off'
-                    ? tc("البلوتوث مطفأ في الجهاز — شغّله أولاً ثم أعد المحاولة", "Bluetooth is off on this device — enable it first")
-                  : btAvailReason === 'no-api'
-                    ? tc("المتصفح لا يدعم Web Bluetooth — استخدم Chrome أو Edge", "Browser doesn't support Web Bluetooth — use Chrome or Edge")
-                  : btAvailReason === 'not-https'
-                    ? tc("يتطلب اتصال آمن (HTTPS) — افتح التطبيق عبر الرابط الرسمي", "Requires secure connection (HTTPS) — open app via official URL")
-                  : btAvailReason === 'permissions-policy'
-                    ? tc("البلوتوث محجوب في هذه البيئة — افتح التطبيق في تبويب جديد مباشرةً", "Bluetooth blocked in this context — open app in a new tab directly")
-                    : tc("البلوتوث غير متاح — تحقق من إعدادات المتصفح", "Bluetooth unavailable — check browser settings")
+                    : tc("المتصفح يدعم Web Bluetooth — انقر للاقتران", "Browser supports Web Bluetooth — click to pair")
+                  : tc("Web Bluetooth غير مدعوم — استخدم Chrome أو Edge", "Web Bluetooth not supported — use Chrome or Edge")
                 }
               </span>
             </div>
@@ -525,19 +769,6 @@ export default function PrinterSettingsPanel() {
               <p className="font-semibold text-red-700">
                 {tc("أو بدلاً عن ذلك: بدّل وضع الطباعة إلى 'شبكة LAN' أو 'وكيل محلي' — أسهل وأكثر استقراراً.", "Or: Switch print mode to 'LAN Network' or 'Local Relay' — easier and more stable.")}
               </p>
-            </div>
-          )}
-
-          {/* Classic BT warning — shown when BT mode is selected and not yet connected */}
-          {isBluetoothMode && !btState.connected && (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1 text-xs text-amber-800">
-              <p className="font-bold text-sm">⚠️ {tc("تنبيه مهم قبل الاتصال", "Important before connecting")}</p>
-              <p>{tc("Web Bluetooth يدعم طابعات BLE (Bluetooth Low Energy) فقط.", "Web Bluetooth supports BLE (Bluetooth Low Energy) printers only.")}</p>
-              <ul className="list-disc list-inside space-y-0.5 mr-2">
-                <li>{tc("✅ طابعات BLE: Xprinter XP-P300B، MUNBYN، iDPRT، Rongta BLE", "✅ BLE printers: Xprinter XP-P300B, MUNBYN, iDPRT, Rongta BLE")}</li>
-                <li>{tc("❌ طابعات Classic BT (SPP): لا تعمل مع المتصفح — استخدم LAN أو USB بدلاً منها", "❌ Classic BT (SPP) printers: won't work in browser — use LAN or USB instead")}</li>
-              </ul>
-              <p className="font-semibold">{tc("تأكد أن الطابعة تظهر في قائمة BLE (وليس Bluetooth العادي) قبل الاقتران.", "Make sure the printer appears in BLE device list (not Classic Bluetooth) before pairing.")}</p>
             </div>
           )}
 
@@ -804,7 +1035,7 @@ export default function PrinterSettingsPanel() {
                 {/* Download pre-configured agent */}
                 <div className="bg-white border-2 border-green-300 rounded-xl p-3 space-y-2">
                   <p className="text-sm font-bold text-green-900">
-                    {tc("خطوة واحدة فقط — على أي جهاز ويندوز في المطعم:", "One step only — on any Windows PC in the restaurant:")}
+                    {tc("خطوة واحدة فقط — على أي جهاز ويندوز في الكافيه:", "One step only — on any Windows PC in the cafe:")}
                   </p>
                   <p className="text-xs text-green-700">
                     {tc("حمّل الملف التالي وشغّله بدبل كليك — يعمل تلقائياً بدون أي إعداد ويبدأ مع الويندوز", "Download this file and double-click — works automatically with no setup and starts with Windows")}
@@ -855,7 +1086,7 @@ export default function PrinterSettingsPanel() {
                   {/* Step 1 — Windows one-click */}
                   <div className="bg-white border-2 border-violet-300 rounded-xl p-3 space-y-2">
                     <p className="text-sm font-bold text-violet-900">
-                      {tc("الخطوة 1 — على أي كمبيوتر ويندوز في المطعم:", "Step 1 — On any Windows PC in the restaurant:")}
+                      {tc("الخطوة 1 — على أي كمبيوتر ويندوز في الكافيه:", "Step 1 — On any Windows PC in the cafe:")}
                     </p>
                     <p className="text-xs text-violet-700">
                       {tc("حمّل الملف التالي وشغّله بدبل كليك — سيعمل تلقائياً ويبدأ مع الويندوز كل مرة", "Download this file and double-click it — it runs automatically and starts with Windows every time")}
@@ -1250,6 +1481,46 @@ export default function PrinterSettingsPanel() {
 
           <Separator />
 
+          {/* Cash Drawer */}
+          <div className="flex items-center justify-between">
+            <div>
+              <Label className="text-sm font-medium">{tc("فتح درج النقود تلقائياً", "Auto-open cash drawer")}</Label>
+              <p className="text-xs text-muted-foreground mt-0.5">{tc("يفتح الدرج بعد الطباعة عبر منفذ RJ11 في الطابعة", "Opens drawer after printing via printer RJ11 port")}</p>
+            </div>
+            <Switch
+              checked={settings.cashDrawerEnabled ?? false}
+              onCheckedChange={(v) => updateSetting('cashDrawerEnabled', v)}
+              data-testid="switch-cash-drawer"
+            />
+          </div>
+
+          {settings.cashDrawerEnabled && (
+            <div className="rounded-xl border-2 border-primary/20 bg-primary/5 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🗄️</span>
+                <div>
+                  <p className="text-sm font-bold text-primary">{tc("إعدادات درج النقود", "Cash Drawer Settings")}</p>
+                  <p className="text-xs text-muted-foreground">{tc("يجب توصيل الدرج بمنفذ RJ11 في الطابعة", "Drawer must be connected to printer RJ11 port")}</p>
+                </div>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <Label className="text-sm">{tc("تأخير الفتح (ملي ثانية)", "Open delay (ms)")}</Label>
+                <input
+                  type="number"
+                  min={0}
+                  max={5000}
+                  step={100}
+                  value={settings.cashDrawerDelay ?? 500}
+                  onChange={(e) => updateSetting('cashDrawerDelay', Number(e.target.value))}
+                  className="w-24 h-8 rounded-md border border-input bg-background text-sm px-2 text-center"
+                  data-testid="input-cash-drawer-delay"
+                />
+              </div>
+            </div>
+          )}
+
+          <Separator />
+
           {/* Kitchen Copy */}
           <div className="flex items-center justify-between">
             <div>
@@ -1262,6 +1533,75 @@ export default function PrinterSettingsPanel() {
               data-testid="switch-auto-kitchen"
             />
           </div>
+
+          {/* ── Dedicated Kitchen Printer (wired) ── */}
+          {settings.autoKitchenCopy && (
+            <div className="rounded-xl border-2 border-orange-200 bg-orange-50 dark:bg-orange-950/20 dark:border-orange-800 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🍳</span>
+                <div>
+                  <p className="text-sm font-bold text-orange-800 dark:text-orange-300">{tc("طابعة المطبخ السلكية (مخصصة)", "Dedicated Kitchen Printer (Wired)")}</p>
+                  <p className="text-xs text-orange-600 dark:text-orange-400">{tc("طابعة منفصلة تستقبل نسخة المطبخ فقط — اتصال LAN مباشر", "Separate printer for kitchen tickets only — direct LAN connection")}</p>
+                </div>
+              </div>
+
+              {/* Show existing kitchen profiles */}
+              {profiles.filter(p => p.role === 'kitchen').length > 0 && (
+                <div className="space-y-2">
+                  {profiles.filter(p => p.role === 'kitchen').map(p => {
+                    const ts = profileTestStatus[p.id];
+                    return (
+                      <div key={p.id} className="bg-white dark:bg-zinc-900 border border-orange-200 dark:border-orange-700 rounded-lg p-2.5 space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <Switch checked={p.enabled} onCheckedChange={() => toggleProfileEnabled(p.id)} data-testid={`switch-kitchen-${p.id}`} />
+                          <span className="text-sm font-semibold flex-1">{p.name}</span>
+                          <span className="text-xs font-mono text-muted-foreground">{p.networkIp}:{p.networkPort}</span>
+                        </div>
+                        {ts && ts !== 'testing' && (
+                          <div className={`text-xs px-2 py-1 rounded ${ts.connected ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
+                            {ts.message.split('\n')[0]}
+                          </div>
+                        )}
+                        <div className="flex gap-1.5">
+                          <Button size="sm" variant="outline" className="h-7 text-xs gap-1" disabled={ts === 'testing'} onClick={() => testProfile(p)} data-testid={`button-test-kitchen-${p.id}`}>
+                            {ts === 'testing' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <TestTube2 className="w-3 h-3" />}
+                            {tc("اختبار", "Test")}
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => startEditProfile(p)} data-testid={`button-edit-kitchen-${p.id}`}>
+                            <Edit2 className="w-3 h-3" />{tc("تعديل", "Edit")}
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-7 text-xs gap-1 text-red-600 hover:bg-red-50" onClick={() => deleteProfile(p.id)} data-testid={`button-delete-kitchen-${p.id}`}>
+                            <Trash2 className="w-3 h-3" />{tc("حذف", "Delete")}
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Quick-add kitchen printer */}
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full h-8 text-xs gap-1.5 border-orange-300 text-orange-700 hover:bg-orange-100 dark:text-orange-300 dark:border-orange-700 dark:hover:bg-orange-900/30"
+                onClick={() => {
+                  setNewProfile({ name: tc('طابعة المطبخ', 'Kitchen Printer'), role: 'kitchen', enabled: true, mode: 'network', networkIp: '', networkPort: 9100, paperWidth: '80mm', relayAgentUrl: '' });
+                  setEditingProfileId(null);
+                  setShowAddForm(true);
+                  setTimeout(() => {
+                    const el = document.querySelector('[data-testid="input-profile-ip"]') as HTMLInputElement | null;
+                    el?.focus();
+                    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }, 100);
+                }}
+                data-testid="button-add-kitchen-printer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                {tc("إضافة طابعة مطبخ سلكية", "Add Wired Kitchen Printer")}
+              </Button>
+            </div>
+          )}
 
           <Separator />
 
@@ -1316,7 +1656,7 @@ export default function PrinterSettingsPanel() {
           <div className="flex flex-col gap-2">
             <div>
               <Label className="text-sm font-medium">{tc("رابط الموقع العام (لباركود التتبع)", "Public site URL (for tracking QR)")}</Label>
-              <p className="text-xs text-muted-foreground mt-0.5">{tc("الرابط الذي يستخدمه العملاء (مثل https://tasaliqurmash.com.sa). إذا تركته فارغاً، سيستخدم نفس عنوان المتصفح.", "Public URL customers use (e.g. https://tasaliqurmash.com.sa). If empty, uses the current browser URL.")}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{tc("الرابط الذي يستخدمه العملاء (مثل https://blackrose.com.sa). إذا تركته فارغاً، سيستخدم نفس عنوان المتصفح.", "Public URL customers use (e.g. https://blackrose.com.sa). If empty, uses the current browser URL.")}</p>
             </div>
             <Input
               type="url"

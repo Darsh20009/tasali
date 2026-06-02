@@ -60,7 +60,7 @@ const DEFAULT_CHART_OF_ACCOUNTS = [
   // الإيرادات - Revenue (4xxx)
   { accountNumber: "4000", nameAr: "الإيرادات", nameEn: "Revenue", accountType: "revenue" as const, normalBalance: "credit" as const, level: 1 },
   { accountNumber: "4100", nameAr: "إيرادات المبيعات", nameEn: "Sales Revenue", accountType: "revenue" as const, normalBalance: "credit" as const, level: 2, parentAccountNumber: "4000", isSystemAccount: 1 },
-  { accountNumber: "4110", nameAr: "مبيعات الأطباق", nameEn: "Beverage Sales", accountType: "revenue" as const, normalBalance: "credit" as const, level: 3, parentAccountNumber: "4100" },
+  { accountNumber: "4110", nameAr: "مبيعات المشروبات", nameEn: "Beverage Sales", accountType: "revenue" as const, normalBalance: "credit" as const, level: 3, parentAccountNumber: "4100" },
   { accountNumber: "4120", nameAr: "مبيعات الأطعمة", nameEn: "Food Sales", accountType: "revenue" as const, normalBalance: "credit" as const, level: 3, parentAccountNumber: "4100" },
   { accountNumber: "4200", nameAr: "إيرادات أخرى", nameEn: "Other Revenue", accountType: "revenue" as const, normalBalance: "credit" as const, level: 2, parentAccountNumber: "4000" },
   { accountNumber: "4210", nameAr: "رسوم التوصيل", nameEn: "Delivery Fees", accountType: "revenue" as const, normalBalance: "credit" as const, level: 3, parentAccountNumber: "4200" },

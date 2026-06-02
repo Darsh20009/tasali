@@ -220,7 +220,7 @@ import { useState } from "react";
         },
         {
           titleAr: "الأدوار والصلاحيات", titleEn: "Roles & Permissions",
-          contentAr: "اختر الدور المناسب: كاشير (POS فقط)، شيف (المطبخ)، مدير (كل الصلاحيات)، مالك (الإعدادات).", contentEn: "Choose the appropriate role: Cashier (POS only), Chef (Kitchen), Manager (full access), Owner (settings)."
+          contentAr: "اختر الدور المناسب: كاشير (POS فقط)، باريستا (المطبخ)، مدير (كل الصلاحيات)، مالك (الإعدادات).", contentEn: "Choose the appropriate role: Cashier (POS only), Barista (Kitchen), Manager (full access), Owner (settings)."
         },
         {
           titleAr: "تحديد ورديات العمل", titleEn: "Set Work Shifts",
@@ -311,7 +311,7 @@ import { useState } from "react";
     const currentSection = guideSections.find(s => s.id === activeSection);
 
     return (
-      <div className="min-h-screen bg-background" dir="rtl">
+      <div className="min-h-screen bg-background">
         <div className="container mx-auto p-4 md:p-6 max-w-7xl">
           <div className="flex items-center justify-between gap-4 mb-6">
             <Button 
@@ -324,7 +324,7 @@ import { useState } from "react";
             </Button>
             <h1 className="text-2xl md:text-3xl font-bold text-accent dark:text-accent flex items-center gap-2">
               <BookOpen className="w-8 h-8" />
-              {tc("دليل استخدام تسالي كرومش", "تسالي كرومش User Guide")}
+              {tc("دليل استخدام TASALI QURUMSH", "TASALI QURUMSH User Guide")}
             </h1>
             <div className="w-20"></div>
           </div>

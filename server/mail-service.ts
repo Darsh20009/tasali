@@ -177,7 +177,7 @@ export async function sendOrderNotificationEmail(
     orderStatus === "cancelled" ? "#f44336" : "#9C27B0";
 
   const message =
-    orderStatus === "completed" ? "شكراً لك! طلبك جاهز للاستلام الآن. نتمنى أن تستمتع بوجبتك!" :
+    orderStatus === "completed" ? "شكراً لك! طلبك جاهز للاستلام الآن. نتمنى أن تستمتع بقهوتك!" :
     orderStatus === "ready" ? "تمام! طلبك أصبح جاهزاً. تفضل للاستلام من الفرع." :
     orderStatus === "in_progress" || orderStatus === "preparing" ? "قيد الإعداد - فريقنا يحضر طلبك الآن بعناية." :
     orderStatus === "cancelled" ? "تم إلغاء طلبك. إذا كان لديك أي استفسار، تواصل معنا." :
@@ -186,7 +186,7 @@ export async function sendOrderNotificationEmail(
   return sendMail({
     to: customerEmail,
     subject: `تحديث طلبك - ${orderId}`,
-    text: `مرحباً ${customerName}\n\nرقم الطلب: ${orderId}\nالحالة: ${statusAr}\nالمبلغ: ${orderTotal} ريال\n\n${message}\n\nتسالي كرومش`,
+    text: `مرحباً ${customerName}\n\nرقم الطلب: ${orderId}\nالحالة: ${statusAr}\nالمبلغ: ${orderTotal} ريال\n\n${message}\n\nBLACK ROSE CAFE`,
     html: `
       <html dir="rtl" lang="ar">
       <head><meta charset="UTF-8">
@@ -203,7 +203,7 @@ export async function sendOrderNotificationEmail(
         .ftr{border-top:1px solid #e0e0e0;padding-top:15px;font-size:12px;color:#888;text-align:center;margin-top:20px;}
       </style></head>
       <body><div class="wrap"><div class="box">
-        <div class="hdr"><img src="https://raw.githubusercontent.com/Darsh20009/tasali-qurmash/main/client/public/logo.png" alt="تسالي كرومش" style="width:120px;height:auto;margin-bottom:8px;" /><h1 style="color:#7D3D0F;font-size:22px;margin:0;">تسالي كرومش</h1><p style="color:#666;font-size:13px;">تجربة تسالي كرومش</p></div>
+        <div class="hdr"><img src="https://raw.githubusercontent.com/Darsh20009/blackrose-cafe/main/client/public/logo.png" alt="BLACK ROSE" style="width:120px;height:auto;margin-bottom:8px;" /><h1 style="color:#BE1845;font-size:22px;margin:0;">BLACK ROSE CAFE</h1><p style="color:#666;font-size:13px;">تجربة القهوة الفاخرة</p></div>
         <p style="font-size:16px;color:#333;">مرحباً ${customerName}!</p>
         <div class="status">
           <div style="font-size:12px;margin-bottom:10px;">حالة الطلب</div>
@@ -214,7 +214,7 @@ export async function sendOrderNotificationEmail(
           <div style="padding:8px 0;margin-top:10px;"><div style="color:#888;font-size:12px;font-weight:bold;">المبلغ الإجمالي</div><div style="color:#333;font-size:16px;font-weight:bold;">${orderTotal} ريال</div></div>
         </div>
         <div class="msg">${message}</div>
-        <div class="ftr"><p>© 2025 تسالي كرومش - جميع الحقوق محفوظة</p><p>هذا البريد مرسل تلقائياً. يرجى عدم الرد.</p></div>
+        <div class="ftr"><p>© 2025 BLACK ROSE CAFE - جميع الحقوق محفوظة</p><p>هذا البريد مرسل تلقائياً. يرجى عدم الرد.</p></div>
       </div></div></body></html>
     `,
   });
@@ -284,7 +284,7 @@ export async function sendPromotionEmail(
           </div>
         ` : ""}
         <div style="margin-top:20px;border-top:1px solid #eee;padding-top:10px;font-size:12px;color:#888;">
-          تم الإرسال بواسطة نظام تسالي كرومش
+          تم الإرسال بواسطة نظام BLACK ROSE CAFE
         </div>
       </div>
     `,
@@ -309,7 +309,7 @@ export async function sendReservationConfirmationEmail(
     html: `
       <div style="font-family:Arial,sans-serif;direction:rtl;padding:20px;border:1px solid #eee;border-radius:10px;">
         <h2 style="color:#8B5A2B;">مرحباً ${customerName}</h2>
-        <p>تم تأكيد حجزك في تسالي كرومش!</p>
+        <p>تم تأكيد حجزك في BLACK ROSE CAFE!</p>
         <div style="background:#f9f9f9;padding:20px;border-radius:8px;margin:20px 0;border-right:5px solid #8B5A2B;">
           <p><strong>رقم الطاولة:</strong> ${tableNumber}</p>
           <p><strong>التاريخ:</strong> ${formattedDate}</p>
@@ -319,7 +319,7 @@ export async function sendReservationConfirmationEmail(
         </div>
         <p style="color:#666;font-size:14px;"><strong>ملاحظة:</strong> الطاولة محجوزة لمدة ساعة واحدة.</p>
         <hr style="border:0;border-top:1px solid #eee;margin:20px 0;">
-        <p style="font-size:12px;color:#999;">شكراً لاختيارك تسالي كرومش!</p>
+        <p style="font-size:12px;color:#999;">شكراً لاختيارك BLACK ROSE CAFE!</p>
       </div>
     `,
   });
@@ -354,12 +354,12 @@ export async function sendReservationExpiryWarningEmail(
 export async function sendWelcomeEmail(customerEmail: string, customerName: string) {
   return sendMail({
     to: customerEmail,
-    subject: "أهلاً بك في تسالي كرومش! ☕",
+    subject: "أهلاً بك في BLACK ROSE CAFE! ☕",
     html: `
       <div style="font-family:Arial,sans-serif;direction:rtl;padding:20px;">
         <h2 style="color:#8B5A2B;">مرحباً ${customerName}</h2>
-        <p>يسعدنا انضمامك إلينا في عائلة تسالي كرومش.</p>
-        <p>يمكنك الآن البدء في طلب وجبتك المفضلة وجمع النقاط مع كل طلب!</p>
+        <p>يسعدنا انضمامك إلينا في عائلة BLACK ROSE CAFE.</p>
+        <p>يمكنك الآن البدء في طلب قهوتك المفضلة وجمع النقاط مع كل طلب!</p>
         <p>نتطلع لخدمتك قريباً!</p>
       </div>
     `,
@@ -374,7 +374,7 @@ export async function sendAbandonedCartEmail(customerEmail: string, customerName
       <div style="font-family:Arial,sans-serif;direction:rtl;padding:20px;">
         <h2 style="color:#8B5A2B;">مرحباً ${customerName}</h2>
         <p>لاحظنا أنك تركت بعض الأصناف الرائعة في عربة التسوق الخاصة بك.</p>
-        <p>لا تدع وجبتك تبرد! عد الآن وأكمل طلبك.</p>
+        <p>لا تدع قهوتك تبرد! عد الآن وأكمل طلبك.</p>
       </div>
     `,
   });
@@ -413,7 +413,7 @@ export async function sendPointsVerificationEmail(
         </div>
         <p style="color:#666;font-size:13px;">إذا لم تطلب هذا الرمز، تجاهل هذا البريد.</p>
         <hr style="border:0;border-top:1px solid #eee;margin:20px 0;">
-        <p style="font-size:12px;color:#999;">© 2025 تسالي كرومش</p>
+        <p style="font-size:12px;color:#999;">© 2025 BLACK ROSE CAFE</p>
       </div>
     `,
   });
@@ -427,11 +427,11 @@ export async function sendPasswordResetEmail(
 ) {
   return sendMail({
     to: customerEmail,
-    subject: "إعادة تعيين كلمة المرور — تسالي كرومش",
+    subject: "إعادة تعيين كلمة المرور — BLACK ROSE CAFE",
     html: `
       <div style="font-family:Arial,sans-serif;direction:rtl;padding:20px;max-width:500px;margin:0 auto;">
         <h2 style="color:#8B5A2B;">مرحباً ${customerName} 👋</h2>
-        <p>تلقّينا طلباً لإعادة تعيين كلمة مرورك في تطبيق تسالي.</p>
+        <p>تلقّينا طلباً لإعادة تعيين كلمة مرورك في تطبيق بلاك روز.</p>
         <div style="text-align:center;margin:24px 0;">
           <a href="${resetUrl}" style="background:#8B5A2B;color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;">
             إعادة تعيين كلمة المرور
@@ -440,7 +440,7 @@ export async function sendPasswordResetEmail(
         <p style="color:#666;font-size:13px;">هذا الرابط صالح لمدة ساعة واحدة فقط.</p>
         <p style="color:#999;font-size:12px;">إذا لم تطلب إعادة التعيين، تجاهل هذا البريد الإلكتروني.</p>
         <hr style="border:0;border-top:1px solid #eee;margin:20px 0;">
-        <p style="font-size:12px;color:#999;">© 2025 تسالي كرومش</p>
+        <p style="font-size:12px;color:#999;">© 2025 BLACK ROSE CAFE</p>
       </div>
     `,
   });
@@ -453,11 +453,11 @@ export async function sendOTPEmail(
 ) {
   return sendMail({
     to: customerEmail,
-    subject: "رمز التحقق OTP — تسالي كرومش",
+    subject: "رمز التحقق OTP — BLACK ROSE CAFE",
     html: `
       <div style="font-family:Arial,sans-serif;direction:rtl;padding:20px;max-width:500px;margin:0 auto;">
         <h2 style="color:#8B5A2B;">مرحباً ${customerName} 👋</h2>
-        <p>رمز التحقق الخاص بك لتسجيل الدخول إلى تسالي:</p>
+        <p>رمز التحقق الخاص بك لتسجيل الدخول إلى بلاك روز:</p>
         <div style="background:#8B5A2B;color:#fff;padding:20px;border-radius:8px;text-align:center;margin:20px 0;">
           <p style="margin:0;font-size:13px;opacity:.8;">رمز OTP</p>
           <p style="font-size:40px;font-weight:bold;letter-spacing:10px;margin:10px 0;">${otp}</p>
@@ -465,7 +465,7 @@ export async function sendOTPEmail(
         </div>
         <p style="color:#999;font-size:12px;">إذا لم تطلب هذا الرمز، تجاهل هذا البريد الإلكتروني.</p>
         <hr style="border:0;border-top:1px solid #eee;margin:20px 0;">
-        <p style="font-size:12px;color:#999;">© 2025 تسالي كرومش</p>
+        <p style="font-size:12px;color:#999;">© 2025 BLACK ROSE CAFE</p>
       </div>
     `,
   });

@@ -1,3 +1,4 @@
+import brand from "@/lib/brand";
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -5,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { User, Phone, Zap, Star, ChevronRight } from "lucide-react";
-import tasaliLogo from "@assets/logo.png";
+import blackroseLogo from "@assets/logo.png";
 import { customerStorage } from "@/lib/customer-storage";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslate } from "@/lib/useTranslate";
@@ -22,9 +23,9 @@ export default function CustomerLogin() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    document.title = tc("تسالي كرومش — ادخل الآن", "تسالي كرومش — Enter Now");
+    document.title = tc("TASALI QURUMSH — ادخل الآن", "TASALI QURUMSH — Enter Now");
     const metaDesc = document.querySelector('meta[name="description"]');
-    if (metaDesc) metaDesc.setAttribute('content', tc('تسجيل دخول عملاء تسالي كرومش — سجّل أو اطلب بسرعة', 'تسالي كرومش customer login — sign up or order quickly'));
+    if (metaDesc) metaDesc.setAttribute('content', tc('تسجيل دخول عملاء TASALI QURUMSH — سجّل أو اطلب بسرعة', 'TASALI QURUMSH customer login — sign up or order quickly'));
   }, [tc]);
 
   const handleQuickOrder = () => {
@@ -43,19 +44,19 @@ export default function CustomerLogin() {
     setLoading(true);
     customerStorage.setGuestInfo(trimName, trimPhone);
     customerStorage.setGuestMode(true);
-    toast({ title: tc("أهلاً ", "Welcome ") + trimName, description: tc("اختر وجبتك وأكمل الطلب", "Choose your drink and complete your order") });
+    toast({ title: tc("أهلاً ", "Welcome ") + trimName, description: tc("اختر مشروبك وأكمل الطلب", "Choose your drink and complete your order") });
     setLocation("/menu");
   };
 
   if (mode === 'choice') {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-background via-primary/5 to-background flex flex-col items-center justify-center p-4" dir="rtl">
+      <div className="min-h-screen bg-gradient-to-b from-background via-primary/5 to-background flex flex-col items-center justify-center p-4">
         <div className="text-center mb-8">
           <div className="flex flex-col items-center gap-2 mb-2">
-            <img src={tasaliLogo} alt="تسالي كرومش" className="h-16 object-contain" />
-            <h1 className="text-3xl font-bold font-playfair text-foreground">تسالي كرومش</h1>
+            <img src={blackroseLogo} alt={brand.nameEn} className="h-16 object-contain" />
+            <h1 className="text-3xl font-bold font-playfair text-foreground">TASALI QURUMSH</h1>
           </div>
-          <p className="text-muted-foreground text-lg font-cairo">{tc("لكل وجبة قصة، ولكل طبق نكهة", "For every meal a story, for every dish a flavor")}</p>
+          <p className="text-muted-foreground text-lg font-cairo">{tc("لكل لحظة قهوة ، لحظة نجاح", "For every coffee moment, a moment of success")}</p>
         </div>
 
         <div className="w-full max-w-md space-y-3">
@@ -112,7 +113,7 @@ export default function CustomerLogin() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-background via-primary/5 to-background flex flex-col items-center justify-center p-4" dir="rtl">
+    <div className="min-h-screen bg-gradient-to-b from-background via-primary/5 to-background flex flex-col items-center justify-center p-4">
       <Card className="w-full max-w-md bg-card border-border/50 backdrop-blur shadow-lg">
         <CardHeader className="text-center">
           <div className="flex items-center justify-center gap-2 mb-1">

@@ -21,8 +21,8 @@ import { useLoyaltyCard } from "@/hooks/useLoyaltyCard";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { useTranslate, tc } from "@/lib/useTranslate";
 import { User, Gift, CheckCircle, Sparkles, Loader2, Ticket, Tag, Wrench, Coffee, Award, CreditCard, Star, Coins, X, ChevronLeft, Upload, Camera, Truck, Printer, Navigation, MapPin, PackageCheck, Bell, ClipboardList } from "lucide-react";
-import TasaliCard from "@/components/TasaliCard";
-import { printTaxInvoice } from "@/lib/print-utils";
+import BlackRoseCard from "@/components/BlackRoseCard";
+import { printTaxInvoice, printReceiptSection, openReceiptPreviewWindow } from "@/lib/print-utils";
 import { useTranslation } from "react-i18next";
 import type { PaymentMethodInfo, PaymentMethod } from "@shared/schema";
 import SarIcon from "@/components/sar-icon";
@@ -63,8 +63,8 @@ function LoyaltyCheckoutCard({
 
   return (
     <div className="space-y-3" data-testid="loyalty-checkout-section">
-      {/* Main card — Tasali Qurumsh Design */}
-      <TasaliCard
+      {/* Main card — Black Rose Design */}
+      <BlackRoseCard
         phone={loyaltyCard?.phoneNumber || loyaltyCard?.customerPhone}
         points={loyaltyPoints}
         sarValue={totalPointsValue}
@@ -79,7 +79,7 @@ function LoyaltyCheckoutCard({
             <div className="min-w-0">
               <p className="text-sm font-bold">{tc("تم تطبيق خصم النقاط ✓", "Points Discount Applied ✓")}</p>
               <p className="text-xs opacity-80">
-                {pointsToRedeem.toLocaleString()} نقطة = <span className="font-black">{appliedDiscount.toFixed(2)} ريال</span> خصم
+                {pointsToRedeem.toLocaleString()} نقطة = <span className="font-black">{appliedDiscount.toFixed(2)} <SarIcon size={12} /></span> خصم
                 {appliedDiscount >= baseTotal && <span className="text-green-600 font-bold mr-1">· يغطي المبلغ كاملاً!</span>}
               </p>
             </div>
@@ -125,7 +125,7 @@ function LoyaltyCheckoutCard({
             <div className="flex items-center justify-between text-xs px-1">
               <span className="text-muted-foreground">{minPointsForRedemption} (الحد الأدنى)</span>
               <span className="font-bold text-amber-700 dark:text-amber-400">
-                = {parseFloat((Math.min(inputVal, sliderMax) / pointsPerSar).toFixed(2)).toFixed(2)} ريال خصم
+                = {parseFloat((Math.min(inputVal, sliderMax) / pointsPerSar).toFixed(2)).toFixed(2)} <SarIcon size={11} /> خصم
               </span>
             </div>
             {canMakeOrderFree && loyaltyPoints > pointsNeededForFree && (
@@ -153,7 +153,7 @@ function LoyaltyCheckoutCard({
             data-testid="button-apply-points"
           >
             <Coins className="w-4 h-4" />
-            طبّق خصم {parseFloat((Math.min(inputVal, sliderMax) / pointsPerSar).toFixed(2)).toFixed(2)} ريال
+            طبّق خصم {parseFloat((Math.min(inputVal, sliderMax) / pointsPerSar).toFixed(2)).toFixed(2)} <SarIcon size={11} />
           </Button>
         </div>
       )}
@@ -171,12 +171,30 @@ function LoyaltyCheckoutCard({
         <div className="text-center px-3 py-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-dashed border-amber-300 dark:border-amber-700/50">
           <p className="text-sm text-amber-700 dark:text-amber-300 font-medium">اكسب نقاطك عند إتمام طلبك!</p>
           <p className="text-[11px] text-amber-600/70 mt-1">
-            ابدأ باكتساب {minPointsForRedemption} نقطة للحصول على أول خصم بقيمة {(minPointsForRedemption / pointsPerSar).toFixed(2)} ريال
+            ابدأ باكتساب {minPointsForRedemption} نقطة للحصول على أول خصم بقيمة {(minPointsForRedemption / pointsPerSar).toFixed(2)} <SarIcon size={11} />
           </p>
         </div>
       )}
     </div>
   );
+}
+
+// Helper: returns the correct unit price for a cart item, respecting the selected size and all addons
+function getCartItemUnitPrice(i: any): number {
+  let base = Number(i.coffeeItem?.price) || 0;
+  if (i.selectedSize && i.coffeeItem?.availableSizes) {
+    const size = i.coffeeItem.availableSizes.find((s: any) => s.nameAr === i.selectedSize);
+    if (size) base = Number(size.price) || 0;
+  }
+  const enrichedAddonsPrice = (i.selectedAddons || []).reduce((sum: number, addonId: string) => {
+    if (i.enrichedAddons) {
+      const addon = i.enrichedAddons.find((a: any) => a.id === addonId || a._id === addonId);
+      return sum + (Number(addon?.price) || 0);
+    }
+    return sum;
+  }, 0);
+  const inlineAddonsPrice = ((i as any).selectedItemAddons || []).reduce((s: number, a: any) => s + (Number(a.price) || 0), 0);
+  return base + enrichedAddonsPrice + inlineAddonsPrice;
 }
 
 export default function CheckoutPage() {
@@ -397,7 +415,7 @@ export default function CheckoutPage() {
 
   // Reset payment method if invalid selection
   useEffect(() => {
-    if (selectedPaymentMethod === 'tasali-card') {
+    if (selectedPaymentMethod === 'qahwa-card') {
       setSelectedPaymentMethod(null);
     }
     setReceiptFile(null);
@@ -775,13 +793,13 @@ export default function CheckoutPage() {
       customerEmail,
       items: cartItems.map(i => {
         const inlineAddons = (i as any).selectedItemAddons || [];
-        const addonsExtra = inlineAddons.reduce((s: number, a: any) => s + (Number(a.price) || 0), 0);
         return {
           coffeeItemId: i.coffeeItemId,
           quantity: i.quantity,
-          price: (i.coffeeItem?.price || 0) + addonsExtra,
+          price: getCartItemUnitPrice(i),
           nameAr: i.coffeeItem?.nameAr || "",
           nameEn: i.coffeeItem?.nameEn || "",
+          selectedSize: i.selectedSize,
           customization: inlineAddons.length > 0 ? { selectedItemAddons: inlineAddons } : undefined,
         };
       }),
@@ -912,13 +930,13 @@ export default function CheckoutPage() {
       customerEmail: customerEmail,
       items: cartItems.map(i => {
         const inlineAddons = (i as any).selectedItemAddons || [];
-        const addonsExtra = inlineAddons.reduce((s: number, a: any) => s + (Number(a.price) || 0), 0);
         return {
           coffeeItemId: i.coffeeItemId,
           quantity: i.quantity,
-          price: (i.coffeeItem?.price || 0) + addonsExtra,
+          price: getCartItemUnitPrice(i),
           nameAr: i.coffeeItem?.nameAr || "",
           nameEn: i.coffeeItem?.nameEn || "",
+          selectedSize: i.selectedSize,
           customization: inlineAddons.length > 0 ? { selectedItemAddons: inlineAddons } : undefined,
         };
       }),
@@ -1015,32 +1033,61 @@ export default function CheckoutPage() {
     const orderItems = orderDetails?.items || cartItems;
     const orderTotal = orderDetails?.totalAmount ?? getFinalAmount();
 
+    // Build a single invoice payload reused by every print/preview action below.
+    const buildInvoiceData = () => {
+      const mappedItems = orderItems.map((i: any) => ({
+        coffeeItem: {
+          nameAr: i.nameAr || i.coffeeItem?.nameAr || "منتج",
+          nameEn: i.nameEn || i.coffeeItem?.nameEn || "",
+          price: String(i.price ?? i.coffeeItem?.price ?? 0),
+        },
+        quantity: i.quantity,
+        customization: i.customization,
+      }));
+      return {
+        orderNumber: orderNum,
+        items: mappedItems,
+        subtotal: orderTotal.toFixed(2),
+        total: orderTotal.toFixed(2),
+        customerName: customerName || orderDetails?.customerName || "عميل",
+        customerPhone: customerPhone || orderDetails?.customerPhone || "",
+        paymentMethod: selectedPaymentMethod || orderDetails?.paymentMethod || "نقدي",
+        employeeName: "طلب إلكتروني",
+        notes: orderDetails?.notes || "",
+        date: orderDetails?.createdAt || new Date().toISOString(),
+        orderType: (orderDetails?.orderType === 'dine-in' ? 'dine_in' : orderDetails?.orderType === 'delivery' ? 'delivery' : 'takeaway') as any,
+      } as any;
+    };
+
     const handlePrintInvoice = async () => {
-      try {
-        const now = new Date();
-        const dateStr = now.toLocaleDateString('ar-SA', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-        const mappedItems = orderItems.map((i: any) => ({
-          coffeeItem: {
-            nameAr: i.nameAr || i.coffeeItem?.nameAr || "منتج",
-            nameEn: i.nameEn || i.coffeeItem?.nameEn || "",
-            price: String(i.price ?? i.coffeeItem?.price ?? 0),
-          },
-          quantity: i.quantity,
-          customization: i.customization,
-        }));
-        await printTaxInvoice({
-          orderNumber: orderNum,
-          items: mappedItems,
-          subtotal: orderTotal.toFixed(2),
-          total: orderTotal.toFixed(2),
-          customerName: customerName || orderDetails?.customerName || "عميل",
-          customerPhone: customerPhone || orderDetails?.customerPhone || "",
-          paymentMethod: selectedPaymentMethod || orderDetails?.paymentMethod || "نقدي",
-          employeeName: "طلب إلكتروني",
-          date: orderDetails?.createdAt || new Date().toISOString(),
-          orderType: (orderDetails?.orderType === 'dine-in' ? 'dine_in' : orderDetails?.orderType === 'delivery' ? 'delivery' : 'takeaway') as any,
-        }, { autoPrint: true });
-      } catch (e) { console.error("Print error:", e); }
+      try { await printTaxInvoice(buildInvoiceData(), { autoPrint: true }); }
+      catch (e) { console.error("Print error:", e); }
+    };
+
+    const handlePreviewInvoice = async () => {
+      try { await openReceiptPreviewWindow(buildInvoiceData()); }
+      catch (e) { console.error("Preview error:", e); }
+    };
+
+    const handlePrintCustomer = async () => {
+      try { await printReceiptSection(buildInvoiceData(), 'customer'); }
+      catch (e) { console.error("Print customer error:", e); }
+    };
+
+    const handlePrintKitchen = async () => {
+      try { await printReceiptSection(buildInvoiceData(), 'kitchen'); }
+      catch (e) { console.error("Print kitchen error:", e); }
+    };
+
+    const handlePrintBoth = async () => {
+      try { await printReceiptSection(buildInvoiceData(), 'both'); }
+      catch (e) { console.error("Print both error:", e); }
+    };
+
+    const handleEditOrder = () => {
+      // Clear success state and return the user to the cart to edit the order.
+      setShowSuccessPage(false);
+      setLocation("/cart");
     };
 
     const handleNavigateToBranch = () => {
@@ -1140,6 +1187,63 @@ export default function CheckoutPage() {
               <div className="pt-2 border-t flex items-center justify-between font-bold text-base">
                 <span>الإجمالي</span>
                 <span className="text-primary">{orderTotal.toFixed(2)} <SarIcon /></span>
+              </div>
+            </div>
+          </div>
+
+          {/* ─── Receipt actions panel ─── */}
+          <div className="bg-white dark:bg-card rounded-2xl shadow-md border border-border overflow-hidden">
+            <div className="bg-gradient-to-r from-slate-800 to-slate-900 px-4 py-2.5 flex items-center gap-2">
+              <Printer className="w-4 h-4 text-white" />
+              <p className="font-bold text-white text-sm">خيارات الفاتورة</p>
+            </div>
+            <div className="p-3 space-y-2">
+              {/* Row 1: Preview (full width, highlighted) */}
+              <button
+                onClick={handlePreviewInvoice}
+                className="w-full flex items-center justify-center gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-100 rounded-xl py-2.5 px-3 font-bold text-sm border-2 border-slate-300 dark:border-slate-700 transition-colors"
+                data-testid="button-preview-invoice"
+              >
+                <span className="text-base">👁️</span>
+                <span>معاينة الفواتير</span>
+              </button>
+              {/* Row 2: Customer + Kitchen side-by-side */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={handlePrintCustomer}
+                  className="flex flex-col items-center gap-1 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-blue-800 dark:text-blue-200 rounded-xl py-2.5 px-2 font-bold text-xs border border-blue-200 dark:border-blue-800 transition-colors"
+                  data-testid="button-print-customer"
+                >
+                  <span className="text-lg">🧾</span>
+                  <span>فاتورة العميل</span>
+                </button>
+                <button
+                  onClick={handlePrintKitchen}
+                  className="flex flex-col items-center gap-1 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-800 dark:text-amber-200 rounded-xl py-2.5 px-2 font-bold text-xs border border-amber-200 dark:border-amber-800 transition-colors"
+                  data-testid="button-print-kitchen"
+                >
+                  <span className="text-lg">🍳</span>
+                  <span>طلب المطبخ</span>
+                </button>
+              </div>
+              {/* Row 3: Print both + Edit order */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={handlePrintBoth}
+                  className="flex items-center justify-center gap-2 bg-slate-900 hover:bg-black text-white rounded-xl py-2.5 px-3 font-bold text-xs transition-colors shadow-sm"
+                  data-testid="button-print-both"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>طباعة الكل</span>
+                </button>
+                <button
+                  onClick={handleEditOrder}
+                  className="flex items-center justify-center gap-2 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 text-rose-800 dark:text-rose-200 rounded-xl py-2.5 px-3 font-bold text-xs border border-rose-200 dark:border-rose-800 transition-colors"
+                  data-testid="button-edit-order"
+                >
+                  <span className="text-base">✏️</span>
+                  <span>تعديل الطلب</span>
+                </button>
               </div>
             </div>
           </div>
@@ -1324,8 +1428,12 @@ export default function CheckoutPage() {
               <CardContent className="space-y-4">
                 {cartItems.map((item, index) => (
                   <div key={index} className="flex justify-between items-center gap-2 text-sm" data-testid={`cart-item-${index}`}>
-                    <span>{isAr ? item.coffeeItem?.nameAr : item.coffeeItem?.nameEn} × {item.quantity}</span>
-                    <span className="font-bold">{((item.coffeeItem?.price || 0) * item.quantity).toFixed(2)} <SarIcon /></span>
+                    <span>
+                      {isAr ? item.coffeeItem?.nameAr : item.coffeeItem?.nameEn}
+                      {item.selectedSize && item.selectedSize !== 'default' && <span className="text-muted-foreground text-xs"> ({item.selectedSize})</span>}
+                      {' '}× {item.quantity}
+                    </span>
+                    <span className="font-bold">{(getCartItemUnitPrice(item) * item.quantity).toFixed(2)} <SarIcon /></span>
                   </div>
                 ))}
                 {appliedDiscount && (
@@ -1520,7 +1628,7 @@ export default function CheckoutPage() {
                 )}
 
                 <PaymentMethods
-                  paymentMethods={paymentMethods.filter(m => m.id !== 'tasali-card')}
+                  paymentMethods={paymentMethods.filter(m => m.id !== 'qahwa-card')}
                   selectedMethod={selectedPaymentMethod}
                   onSelectMethod={setSelectedPaymentMethod}
                   comingSoon={false}
@@ -1680,7 +1788,7 @@ export default function CheckoutPage() {
                     <div className="flex items-center justify-between bg-primary/5 rounded-lg px-3 py-2">
                       <div>
                         <p className="text-sm font-bold text-primary">{appliedGiftCard.code}</p>
-                        <p className="text-xs text-muted-foreground">خصم {appliedGiftCard.applied.toFixed(2)} ريال من رصيد {appliedGiftCard.balance.toFixed(2)} ريال</p>
+                        <p className="text-xs text-muted-foreground">خصم {appliedGiftCard.applied.toFixed(2)} <SarIcon size={11} /> من رصيد {appliedGiftCard.balance.toFixed(2)} <SarIcon size={11} /></p>
                       </div>
                       <Button
                         variant="ghost"
@@ -1792,7 +1900,7 @@ export default function CheckoutPage() {
                     <div className="bg-primary rounded-xl px-4 py-3 text-white text-center">
                       <p className="text-xs opacity-75">{tc("إجمالي الطلب", "Order Total")}</p>
                       <p className="text-2xl font-black" data-testid="text-geidea-amount">
-                        {pendingGeideaOrderData.current?.totalAmount?.toFixed(2)} ريال
+                        {pendingGeideaOrderData.current?.totalAmount?.toFixed(2)} <SarIcon size={16} />
                       </p>
                       <p className="text-[10px] opacity-60 mt-0.5">🔒 دفع آمن مشفّر بواسطة Geidea</p>
                     </div>
@@ -1826,23 +1934,56 @@ export default function CheckoutPage() {
                     </Button>
                   </div>
                 ) : !showSimulatedCard && !showPaymobCheckout ? (
-                  <Button
-                    onClick={handleProceedPayment}
-                    className="w-full h-14 text-lg"
-                    data-testid="button-proceed-payment"
-                    disabled={
-                      (selectedPaymentMethod === 'cash' && !!cashDistanceError) ||
-                      (selectedPaymentMethod === 'cash' && cashDistanceChecking)
+                  (() => {
+                    const isApplePaySelected = (selectedPaymentMethod as string) === 'paymob-apple-pay' || (selectedPaymentMethod as string) === 'apple_pay' || (selectedPaymentMethod as string) === 'neoleap-apple-pay';
+                    if (isApplePaySelected) {
+                      return (
+                        <button
+                          onClick={handleProceedPayment}
+                          data-testid="button-proceed-payment"
+                          style={{
+                            width: "100%",
+                            height: "56px",
+                            borderRadius: "14px",
+                            background: "#000",
+                            border: "none",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: "8px",
+                            fontFamily: "-apple-system, 'SF Pro Display', 'Helvetica Neue', sans-serif",
+                          }}
+                        >
+                          <svg viewBox="0 0 170 170" style={{ height: "22px", width: "22px", fill: "#fff", flexShrink: 0 }}>
+                            <path d="M150.37 130.25c-2.45 5.66-5.35 10.87-8.71 15.66-4.58 6.53-8.33 11.05-11.22 13.56-4.48 4.12-9.28 6.23-14.42 6.35-3.69 0-8.14-1.05-13.32-3.18-5.197-2.12-9.973-3.17-14.34-3.17-4.58 0-9.492 1.05-14.746 3.17-5.262 2.13-9.501 3.24-12.742 3.35-4.929 0.21-9.842-1.96-14.746-6.52-3.13-2.73-7.045-7.41-11.735-14.04-5.032-7.08-9.169-15.29-12.41-24.65-3.471-10.11-5.211-19.9-5.211-29.378 0-10.857 2.346-20.21 7.045-28.143 3.687-6.52 8.594-11.672 14.73-15.466 6.136-3.294 12.759-5.277 19.88-5.375 3.906 0 9.022 1.211 15.366 3.597 6.326 2.394 10.387 3.605 12.172 3.605 1.331 0 5.838-1.419 13.49-4.247 7.23-2.618 13.326-3.701 18.31-3.273 13.54 1.093 23.71 6.43 30.52 16.05-12.1 7.33-18.09 17.6-17.96 30.78 0.12 10.26 3.83 18.79 11.12 25.55 3.31 3.14 7.01 5.57 11.12 7.29-0.89 2.58-1.83 5.05-2.83 7.42zM119.11 7.24c0 8.042-2.94 15.551-8.81 22.507-7.079 8.273-15.644 13.05-24.92 12.294-0.119-0.965-0.18-1.98-0.18-3.047 0-7.72 3.361-15.994 9.336-22.752 2.984-3.43 6.772-6.288 11.185-8.577 4.401-2.255 8.566-3.502 12.488-3.711 0.12 1.033 0.17 2.065 0.17 3.088z"/>
+                          </svg>
+                          <span style={{ color: "#fff", fontSize: "20px", fontWeight: 600, letterSpacing: "-0.3px", lineHeight: 1 }}>
+                            Pay
+                          </span>
+                        </button>
+                      );
                     }
-                  >
-                    {selectedPaymentMethod === 'cash' && cashDistanceChecking ? (
-                      <><Loader2 className="w-5 h-5 animate-spin ml-2" />جاري التحقق من الموقع...</>
-                    ) : isPaymobMethod(selectedPaymentMethod) ? (
-                      <><CreditCard className="w-5 h-5 ml-2" />اذهب للدفع</>
-                    ) : (isCardPaymentMethod(selectedPaymentMethod) || isOnlinePaymentMethod(selectedPaymentMethod)) ? (
-                      <><CreditCard className="w-5 h-5 ml-2" />ادفع الآن</>
-                    ) : t("checkout.confirm_order")}
-                  </Button>
+                    return (
+                      <Button
+                        onClick={handleProceedPayment}
+                        className="w-full h-14 text-lg"
+                        data-testid="button-proceed-payment"
+                        disabled={
+                          (selectedPaymentMethod === 'cash' && !!cashDistanceError) ||
+                          (selectedPaymentMethod === 'cash' && cashDistanceChecking)
+                        }
+                      >
+                        {selectedPaymentMethod === 'cash' && cashDistanceChecking ? (
+                          <><Loader2 className="w-5 h-5 animate-spin ml-2" />جاري التحقق من الموقع...</>
+                        ) : isPaymobMethod(selectedPaymentMethod) ? (
+                          <><CreditCard className="w-5 h-5 ml-2" />اذهب للدفع</>
+                        ) : (isCardPaymentMethod(selectedPaymentMethod) || isOnlinePaymentMethod(selectedPaymentMethod)) ? (
+                          <><CreditCard className="w-5 h-5 ml-2" />ادفع الآن</>
+                        ) : t("checkout.confirm_order")}
+                      </Button>
+                    );
+                  })()
                 ) : null}
               </CardContent>
             </Card>

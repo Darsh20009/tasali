@@ -38,6 +38,8 @@ const CMD = {
   CHARSET_UTF8:  [ESC, 0x74, 0x1a],  // UTF-8 (code page 26 — Xprinter/Epson modern)
   SET_WIDTH_58:  [GS,  0x57, 0xd2, 0x00], // 58mm = 210 dots
   SET_WIDTH_80:  [GS,  0x57, 0x50, 0x01], // 80mm = 576 dots
+  // Cash Drawer: ESC p m t1 t2 — pulse pin 2 (standard RJ11 drawer)
+  CASH_DRAWER:   [ESC, 0x70, 0x00, 0x19, 0xFA],
 };
 
 export interface PrinterSettings {
@@ -46,6 +48,10 @@ export interface PrinterSettings {
   paperWidth: '58mm' | '80mm';
   autoPrint: boolean;
   autoKitchenCopy: boolean;
+  /** فتح درج النقود تلقائياً بعد طباعة الفاتورة */
+  cashDrawerEnabled: boolean;
+  /** تأخير فتح الدرج بعد اكتمال الطباعة (ميلي ثانية) */
+  cashDrawerDelay: number;
   /** عدد نسخ فاتورة العميل (1-5) */
   customerCopies: number;
   /** عدد نسخ نسخة المطبخ/الموظف (1-5). يُستخدم فقط إذا autoKitchenCopy مفعّل */
@@ -67,7 +73,7 @@ export interface PrinterSettings {
   // Download: /print-relay.js  — run with: node print-relay.js
   relayAgentUrl?: string; // e.g. "http://192.168.8.10:8089"
   /** الرابط العام للمتجر (يُستخدم لباركود تتبع الطلب)
-   *  مثال: https://tasaliqurmash.com.sa
+   *  مثال: https://blackrose.com.sa
    *  إذا تُرك فارغاً يستخدم window.location.origin */
   publicBaseUrl?: string;
 }
@@ -78,6 +84,8 @@ const DEFAULT_SETTINGS: PrinterSettings = {
   paperWidth: '80mm',
   autoPrint: true,
   autoKitchenCopy: true,
+  cashDrawerEnabled: false,
+  cashDrawerDelay: 500,
   customerCopies: 1,
   kitchenCopies: 1,
   fontSize: 'normal',
@@ -115,6 +123,64 @@ export function savePrinterSettings(s: Partial<PrinterSettings>): PrinterSetting
   const merged = { ...loadPrinterSettings(), ...s };
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(merged));
   return merged;
+}
+
+// ─── Multi-Printer Profiles ───────────────────────────────────────────────────
+
+export type PrinterRole = 'receipt' | 'kitchen' | 'bar' | 'all';
+
+export interface PrinterProfile {
+  id: string;
+  name: string;
+  role: PrinterRole;
+  enabled: boolean;
+  mode: 'network' | 'relay' | 'queue';
+  networkIp: string;
+  networkPort: number;
+  paperWidth: '58mm' | '80mm';
+  relayAgentUrl?: string;
+}
+
+const PROFILES_KEY = 'qirox-printer-profiles';
+
+export function loadPrinterProfiles(): PrinterProfile[] {
+  try {
+    const raw = localStorage.getItem(PROFILES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+export function savePrinterProfiles(profiles: PrinterProfile[]): void {
+  localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles));
+}
+
+/** Returns enabled profiles matching the given role (role === target OR role === 'all'). */
+export function getProfilesForRole(role: 'receipt' | 'kitchen' | 'bar'): PrinterProfile[] {
+  return loadPrinterProfiles().filter(p => p.enabled && (p.role === role || p.role === 'all'));
+}
+
+/** Print ESC/POS bytes using a specific printer profile's connection settings. */
+export async function thermalPrintWithProfile(escData: Uint8Array, profile: PrinterProfile): Promise<PrintResult> {
+  if (!profile.enabled) return { success: false, mode: 'error', error: `الطابعة "${profile.name}" معطّلة` };
+  if (!profile.networkIp) return { success: false, mode: 'error', error: `لم يتم تحديد IP لطابعة "${profile.name}"` };
+
+  if (profile.mode === 'relay') {
+    if (!profile.relayAgentUrl) return { success: false, mode: 'error', error: `رابط وكيل الطباعة غير محدد لـ "${profile.name}"` };
+    return relayAgentPrint(escData, profile.relayAgentUrl, profile.networkIp, profile.networkPort || 9100);
+  }
+  if (profile.mode === 'queue') {
+    return queuePrint(escData, profile.networkIp, profile.networkPort || 9100);
+  }
+  // Default: network (LAN/TCP)
+  return networkPrint(escData, profile.networkIp, profile.networkPort || 9100);
+}
+
+/** Test connectivity for a printer profile. */
+export async function testPrinterProfile(profile: PrinterProfile): Promise<{ connected: boolean; message: string }> {
+  if (profile.mode === 'relay' && profile.relayAgentUrl) {
+    return testRelayAgent(profile.relayAgentUrl, profile.networkIp, profile.networkPort || 9100);
+  }
+  return testNetworkPrinter(profile.networkIp, profile.networkPort || 9100);
 }
 
 // ─── WebUSB helpers ──────────────────────────────────────────────────────────
@@ -390,6 +456,9 @@ export function buildEscPosReceipt(data: EscPosReceiptData): Uint8Array {
   // Also set Arabic international charset via ESC R 40 (for printers that use this instead)
   buf.push(ESC, 0x52, 0x28);
 
+  // ── 2 blank lines at start of every invoice ───────────────────────────────
+  buf.push(0x0a, 0x0a);
+
   // ── Shop header (centered) ────────────────────────────────────────────────
   buf.push(...CMD.ALIGN_CENTER);
   buf.push(...CMD.BOLD_ON, ...CMD.DOUBLE_SIZE);
@@ -398,8 +467,8 @@ export function buildEscPosReceipt(data: EscPosReceiptData): Uint8Array {
 
   if (data.branchName) buf.push(...centerLine(data.branchName, w));
   if (data.address)    buf.push(...centerLine(data.address, w));
-  if (data.vatNumber) buf.push(...CMD.ALIGN_CENTER, ...textBytes(`VAT: ${data.vatNumber}`), 0x0a);
-  buf.push(...dottedLine(w));
+  buf.push(...CMD.ALIGN_CENTER, ...textBytes(`VAT: ${data.vatNumber}`), 0x0a);
+  buf.push(0x0a, ...dottedLine(w), 0x0a);
 
   // ── Invoice label ─────────────────────────────────────────────────────────
   buf.push(...CMD.ALIGN_CENTER, ...CMD.BOLD_ON, ...CMD.DOUBLE_SIZE);
@@ -415,7 +484,7 @@ export function buildEscPosReceipt(data: EscPosReceiptData): Uint8Array {
   buf.push(...CMD.NORMAL_SIZE, ...CMD.BOLD_OFF);
   buf.push(0x0a);
 
-  buf.push(...thinLine(w));
+  buf.push(0x0a, ...thinLine(w), 0x0a);
 
   // ── Info block ────────────────────────────────────────────────────────────
   buf.push(...CMD.ALIGN_LEFT);
@@ -426,7 +495,7 @@ export function buildEscPosReceipt(data: EscPosReceiptData): Uint8Array {
   }
   if (data.tableNumber) buf.push(...line(`الطاولة : ${data.tableNumber}`));
   if (data.orderType)   buf.push(...line(`النوع   : ${data.orderType}`));
-  buf.push(...thinLine(w));
+  buf.push(0x0a, ...thinLine(w), 0x0a);
 
   // ── Items ─────────────────────────────────────────────────────────────────
   for (const item of data.items) {
@@ -442,7 +511,7 @@ export function buildEscPosReceipt(data: EscPosReceiptData): Uint8Array {
     }
   }
 
-  buf.push(...dottedLine(w));
+  buf.push(0x0a, ...dottedLine(w), 0x0a);
 
   // ── Totals ────────────────────────────────────────────────────────────────
   buf.push(...padRow('المجموع قبل الضريبة :', `${data.subtotal.toFixed(2)} ر.س`, w));
@@ -451,17 +520,34 @@ export function buildEscPosReceipt(data: EscPosReceiptData): Uint8Array {
     buf.push(...padRow('الخصم               :', `-${data.discount.toFixed(2)} ر.س`, w));
   }
 
-  buf.push(...dottedLine(w));
+  buf.push(0x0a, ...dottedLine(w), 0x0a);
   buf.push(...CMD.BOLD_ON, ...CMD.DOUBLE_SIZE, ...CMD.ALIGN_CENTER);
   buf.push(...textBytes(`الاجمالي : ${data.total.toFixed(2)} ر.س`), 0x0a);
   buf.push(...CMD.NORMAL_SIZE, ...CMD.BOLD_OFF);
-  buf.push(...dottedLine(w));
+  buf.push(0x0a, ...dottedLine(w), 0x0a);
 
   buf.push(...CMD.ALIGN_LEFT);
-  buf.push(...line(`طريقة الدفع : ${data.paymentMethod}`));
+  const _pmLabel = (() => {
+    const m = (data.paymentMethod || '').toLowerCase();
+    if (m === 'cash') return 'نقدي';
+    if (m === 'card' || m === 'network' || m === 'pos' || m === 'pos-network') return 'شبكة';
+    if (m === 'apple_pay' || m === 'neoleap-apple-pay' || m === 'paymob-apple-pay') return 'Apple Pay';
+    if (m === 'geidea' || m === 'paymob' || m === 'paymob-card') return 'بطاقة ائتمان';
+    if (m === 'mada' || m === 'bank_transfer') return 'تحويل بنكي';
+    if (m === 'rajhi') return 'بنك الراجحي';
+    if (m === 'alinma') return 'Alinma Pay';
+    if (m === 'split') return 'نقدي + شبكة';
+    if (m === 'loyalty' || m === 'qahwa-card' || m === 'qirox-card') return 'بطاقة ولاء';
+    return data.paymentMethod;
+  })();
+  buf.push(...line(`طريقة الدفع : ${_pmLabel}`));
   if (data.splitPayment) {
-    buf.push(...line(`  نقدي  : ${data.splitPayment.cash.toFixed(2)} ر.س`));
-    buf.push(...line(`  شبكة  : ${data.splitPayment.card.toFixed(2)} ر.س`));
+    if (data.splitPayment.cash > 0) buf.push(...line(`  💵 نقدي  : ${data.splitPayment.cash.toFixed(2)} ر.س`));
+    if (data.splitPayment.card > 0) buf.push(...line(`  💳 شبكة  : ${data.splitPayment.card.toFixed(2)} ر.س`));
+  }
+  if ((data as any).cashReceived && (data as any).cashReceived > 0 && !data.splitPayment) {
+    buf.push(...line(`  المستلم : ${((data as any).cashReceived as number).toFixed(2)} ر.س`));
+    buf.push(...line(`  الباقي  : ${Math.max(0, (data as any).cashReceived - data.total).toFixed(2)} ر.س`));
   }
 
   // ── Footer ────────────────────────────────────────────────────────────────
@@ -470,8 +556,7 @@ export function buildEscPosReceipt(data: EscPosReceiptData): Uint8Array {
   buf.push(...textBytes('** شكراً لزيارتكم **'), 0x0a);
   buf.push(...CMD.BOLD_OFF);
   buf.push(...textBytes('الاسعار شاملة ضريبة القيمة المضافة'), 0x0a);
-  buf.push(...textBytes('تسالي كرومش'), 0x0a);
-  buf.push(...textBytes('Powered by Qirox Studio'), 0x0a);
+  buf.push(...textBytes('TASALI QURUMSH'), 0x0a);
 
   if (data.skipCut) {
     // Caller will append more data (e.g. QR raster) before cutting
@@ -479,120 +564,6 @@ export function buildEscPosReceipt(data: EscPosReceiptData): Uint8Array {
   }
 
   // ── Feed then FULL CUT ────────────────────────────────────────────────────
-  buf.push(ESC, 0x64, 4);
-  buf.push(...CMD.CUT_PAPER);
-
-  return new Uint8Array(buf);
-}
-
-export interface ShiftReportData {
-  shopName: string;
-  shiftNumber: string;
-  employeeName: string;
-  branchName?: string;
-  isAuto?: boolean;
-  openedAt: string;
-  closedAt?: string;
-  totalSales: number;
-  totalOrders: number;
-  totalVAT: number;
-  totalDiscounts: number;
-  totalRefunds: number;
-  netRevenue: number;
-  totalCashSales: number;
-  expectedCash?: number;
-  closingCash?: number;
-  cashDifference?: number;
-  openingCash?: number;
-  paymentBreakdown?: Record<string, number>;
-  cashMovements?: Array<{ type: string; amount: number; reason: string; timestamp: string }>;
-  closingNotes?: string;
-  paperWidth: '58mm' | '80mm';
-}
-
-export function buildShiftReportEscPos(data: ShiftReportData): Uint8Array {
-  const w = data.paperWidth === '58mm' ? 32 : 48;
-  const buf: number[] = [];
-  const pb = data.paymentBreakdown || {};
-
-  const cashIn = (data.cashMovements || [])
-    .filter(m => m.type === 'cash_in' || m.type === 'paid_in')
-    .reduce((s, m) => s + m.amount, 0);
-  const cashOut = (data.cashMovements || [])
-    .filter(m => m.type === 'cash_out' || m.type === 'paid_out')
-    .reduce((s, m) => s + m.amount, 0);
-
-  const fmtAmt = (n: number) => `${(n || 0).toFixed(2)} ر.س`;
-  const fmtTime = (d: string) => new Date(d).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
-
-  buf.push(...CMD.INIT);
-  buf.push(...CMD.CHARSET_UTF8);
-  buf.push(ESC, 0x52, 0x28);
-
-  buf.push(...CMD.ALIGN_CENTER, ...CMD.BOLD_ON, ...CMD.DOUBLE_SIZE);
-  buf.push(...textBytes(data.shopName), 0x0a);
-  buf.push(...CMD.NORMAL_SIZE, ...CMD.BOLD_OFF);
-  buf.push(...centerLine(data.isAuto ? 'وردية تلقائية' : 'تقرير Z — إغلاق الوردية', w));
-  buf.push(...centerLine(data.shiftNumber, w));
-  buf.push(...dottedLine(w));
-
-  buf.push(...CMD.ALIGN_LEFT);
-  buf.push(...line(`الكاشير : ${data.employeeName}`));
-  if (data.branchName) buf.push(...line(`الفرع   : ${data.branchName}`));
-  buf.push(...line(`البداية : ${fmtTime(data.openedAt)}`));
-  buf.push(...line(`النهاية : ${data.closedAt ? fmtTime(data.closedAt) : 'مفتوحة'}`));
-  buf.push(...thinLine(w));
-
-  buf.push(...CMD.BOLD_ON);
-  buf.push(...line('ملخص المبيعات'));
-  buf.push(...CMD.BOLD_OFF);
-  buf.push(...padRow('إجمالي المبيعات :', fmtAmt(data.totalSales), w));
-  buf.push(...padRow('عدد الطلبات     :', String(data.totalOrders), w));
-  buf.push(...padRow('ضريبة 15%       :', fmtAmt(data.totalVAT), w));
-  if (data.totalDiscounts > 0) buf.push(...padRow('الخصومات        :', fmtAmt(data.totalDiscounts), w));
-  if (data.totalRefunds > 0)   buf.push(...padRow('المرتجعات       :', fmtAmt(data.totalRefunds), w));
-  buf.push(...CMD.BOLD_ON);
-  buf.push(...padRow('صافي الإيرادات  :', fmtAmt(data.netRevenue), w));
-  buf.push(...CMD.BOLD_OFF);
-  buf.push(...thinLine(w));
-
-  buf.push(...CMD.BOLD_ON);
-  buf.push(...line('طرق الدفع'));
-  buf.push(...CMD.BOLD_OFF);
-  buf.push(...padRow('نقدي  :', fmtAmt(pb.cash || 0), w));
-  buf.push(...padRow('شبكة  :', fmtAmt(pb.card || pb['pos-network'] || 0), w));
-  if ((pb.split || 0) > 0)   buf.push(...padRow('مشترك :', fmtAmt(pb.split), w));
-  if ((pb.loyalty || 0) > 0) buf.push(...padRow('ولاء  :', fmtAmt(pb.loyalty), w));
-
-  if (!data.isAuto && data.closedAt) {
-    buf.push(...thinLine(w));
-    buf.push(...CMD.BOLD_ON);
-    buf.push(...line('تسوية الصندوق'));
-    buf.push(...CMD.BOLD_OFF);
-    buf.push(...padRow('رصيد الافتتاح :', fmtAmt(data.openingCash || 0), w));
-    if (cashIn > 0)  buf.push(...padRow('إيداعات       :', fmtAmt(cashIn), w));
-    if (cashOut > 0) buf.push(...padRow('سحوبات        :', fmtAmt(cashOut), w));
-    buf.push(...padRow('مبيعات نقدية  :', fmtAmt(data.totalCashSales), w));
-    buf.push(...padRow('الرصيد المتوقع:', fmtAmt(data.expectedCash || 0), w));
-    buf.push(...padRow('الرصيد الفعلي :', fmtAmt(data.closingCash || 0), w));
-    const diff = data.cashDifference || 0;
-    buf.push(...CMD.BOLD_ON);
-    buf.push(...padRow('الفرق         :', `${diff >= 0 ? '+' : ''}${fmtAmt(diff)}`, w));
-    buf.push(...CMD.BOLD_OFF);
-  }
-
-  if (data.closingNotes) {
-    buf.push(...thinLine(w));
-    buf.push(...CMD.BOLD_ON, ...line('ملاحظات'), ...CMD.BOLD_OFF);
-    buf.push(...line(data.closingNotes));
-  }
-
-  buf.push(...dottedLine(w));
-  buf.push(...CMD.ALIGN_CENTER);
-  buf.push(...CMD.BOLD_ON, ...textBytes('TASALI QURUMSH'), 0x0a, ...CMD.BOLD_OFF);
-  buf.push(...textBytes(new Date().toLocaleString('ar-SA')), 0x0a);
-  buf.push(...textBytes('Powered by Qirox Studio'), 0x0a);
-
   buf.push(ESC, 0x64, 4);
   buf.push(...CMD.CUT_PAPER);
 
@@ -700,9 +671,10 @@ export async function buildReceiptCanvas(opts: ReceiptBitmapOpts): Promise<HTMLC
   const loadImg = (src: string): Promise<HTMLImageElement> =>
     new Promise(res => {
       const img = new Image();
+      if (img.complete && img.naturalWidth > 0) { res(img); return; }
       img.onload = () => res(img);
       img.onerror = () => res(img);
-      setTimeout(() => res(img), 4000);
+      setTimeout(() => res(img), 1500);
       img.src = src;
     });
 
@@ -724,8 +696,13 @@ export async function buildReceiptCanvas(opts: ReceiptBitmapOpts): Promise<HTMLC
   const ops: DrawOp[] = [];
 
   const addGap   = (h = 6) => ops.push({ type: 'gap', h });
-  // Lines/dividers removed per request — replaced with a small spacing gap
-  const addLine  = (_thick = false, _dashed = false) => ops.push({ type: 'gap', h: 6 });
+  // Separator line: 2 blank lines above + line + 2 blank lines below
+  const LINE_GAP = Math.round(FS * 1.45 * 2);   // ≈ 2 text-line heights
+  const addLine  = (thick = false, dashed = false) => {
+    ops.push({ type: 'gap', h: LINE_GAP });
+    ops.push({ type: 'line', thick, dashed });
+    ops.push({ type: 'gap', h: LINE_GAP });
+  };
   const addText  = (text: string, align: 'center'|'left'|'right' = 'center', fs = FS, bold = false, color?: string) =>
     ops.push({ type: 'text', text, align, fs, bold, color });
   const addRow   = (label: string, value: string, fs = FS, boldLabel = false, boldValue = false, color?: string) =>
@@ -734,103 +711,107 @@ export async function buildReceiptCanvas(opts: ReceiptBitmapOpts): Promise<HTMLC
     if (img && img.naturalWidth > 0) ops.push({ type: 'img', img, size });
   };
 
-  // ── RECEIPT LAYOUT ────────────────────────────────────────────────────────
-  // 3 blank lines at the very top before any content
-  addGap(Math.round(FS * 1.45 * 3));
+  // ── RECEIPT LAYOUT — 2 blank lines at the top of every invoice ────────────
+  addGap(Math.round(FS * 3.2));
 
-  // Logo
-  addImg(logoImg, Math.round(DW * 0.25));
+  // Logo — enlarged, centred. Logo image already contains the shop name.
+  addImg(logoImg, Math.round(DW * 0.55));
+  addGap(8);
+
+  // Branch / tagline / VAT — no repeated shop name (it's in the logo)
+  if (opts.branchName) addText(opts.branchName, 'center', Math.round(FS * 0.88));
+  if (opts.tagline)    addText(opts.tagline, 'center', Math.round(FS * 0.82), false, '#444');
+  addText(`VAT: ${opts.vatNumber}`, 'center', Math.round(FS * 0.78), false, '#555');
+
+  // ── ONE separator line after brand header ───────────────────────────────
+  addLine(true);
+
+  // Invoice title + order number
+  addText('فاتورة ضريبية مبسطة', 'center', Math.round(FS * 1.05), true);
+  addGap(Math.round(FS * 0.8));
+
+  const orderNumFmt = String(opts.orderNumber).replace(/\D/g, '').padStart(4, '0') || opts.orderNumber;
+  addText(`#${orderNumFmt}`, 'center', Math.round(FS * 2.4), true);
+  addGap(Math.round(FS * 0.4));
+
+  // Info block — no separator lines
+  addRow('التاريخ:', opts.orderDate, Math.round(FS * 0.88));
+  addRow('الكاشير:', opts.cashierName, Math.round(FS * 0.88));
+  if (opts.customerName && opts.customerName !== 'عميل نقدي') addRow('العميل:', opts.customerName, Math.round(FS * 0.88));
+  if (opts.tableNumber) addRow('الطاولة:', opts.tableNumber, Math.round(FS * 0.88));
+  if (opts.orderType)   addRow('نوع الطلب:', opts.orderType, Math.round(FS * 0.88));
+  addGap(6);
+
+  // Items — no separator lines, small gap between items
+  for (const item of opts.items) {
+    addText(item.name, 'right', Math.round(FS * 0.95), true);
+    if (item.nameEn && item.nameEn.trim() && item.nameEn !== item.name) {
+      addText(item.nameEn, 'right', Math.round(FS * 0.78), false, '#555');
+    }
+    addRow(`${item.qty} × ${item.price.toFixed(2)} ر.س`, `${(item.qty * item.price).toFixed(2)} ر.س`, Math.round(FS * 0.85));
+    if (item.addons?.length) {
+      for (const a of item.addons) addText(`+ ${a}`, 'right', Math.round(FS * 0.78), false, '#555');
+    }
+    addGap(5);
+  }
+
   addGap(4);
 
-  // Shop name
-  addText(opts.shopName, 'center', Math.round(FS * 1.5), true);
-  if (opts.branchName) addText(opts.branchName, 'center', FS);
-  if (opts.tagline)    addText(opts.tagline, 'center', Math.round(FS * 0.9), false, '#444');
-  if (opts.vatNumber) addText(`VAT: ${opts.vatNumber}`, 'center', Math.round(FS * 0.85), false, '#555');
-
-  addLine(true);
-
-  addText('فاتورة ضريبية مبسطة', 'center', Math.round(FS * 1.15), true);
-  addGap(Math.round(FS * 2.5));
-
-  // Order number (no label, just the number — large and bold)
-  const orderNumFmt = String(opts.orderNumber).replace(/\D/g, '').padStart(4, '0') || opts.orderNumber;
-  addText(`#${orderNumFmt}`, 'center', Math.round(FS * 2.8), true);
-  addGap(Math.round(FS * 0.6));
-
-  addLine(false, true);
-
-  // Info block
-  addRow('التاريخ:', opts.orderDate, FS);
-  addRow('الكاشير:', opts.cashierName, FS);
-  if (opts.customerName && opts.customerName !== 'عميل نقدي') addRow('العميل:', opts.customerName, FS);
-  if (opts.tableNumber) addRow('الطاولة:', opts.tableNumber, FS);
-  if (opts.orderType)   addRow('نوع الطلب:', opts.orderType, FS);
-
-  addLine(true);
-
-  // Items
-  for (const item of opts.items) {
-    addText(item.name, 'right', FS, true);
-    if (item.nameEn && item.nameEn.trim() && item.nameEn.trim() !== item.name.trim()) {
-      addText(item.nameEn, 'right', Math.round(FS * 0.82), false, '#555');
-    }
-    addRow(`${item.qty} × ${item.price.toFixed(2)} ر.س`, `${(item.qty * item.price).toFixed(2)} ر.س`, Math.round(FS * 0.9));
-    if (item.addons?.length) {
-      for (const a of item.addons) addText(`+ ${a}`, 'right', Math.round(FS * 0.82), false, '#555');
-    }
-    addLine(false, true);
-  }
-
-  addLine(false, true);
-
-  // Totals
-  addRow('قبل الضريبة:', `${opts.subtotal.toFixed(2)} ر.س`, FS);
-  addRow('ضريبة القيمة المضافة 15%:', `${opts.vat.toFixed(2)} ر.س`, FS);
+  // Totals — no separator lines
+  addRow('قبل الضريبة:', `${opts.subtotal.toFixed(2)} ر.س`, Math.round(FS * 0.88));
+  addRow('ضريبة القيمة المضافة 15%:', `${opts.vat.toFixed(2)} ر.س`, Math.round(FS * 0.88));
   if (opts.discount && opts.discount > 0)
-    addRow('الخصم:', `-${opts.discount.toFixed(2)} ر.س`, FS, false, false, '#16a34a');
+    addRow('الخصم:', `-${opts.discount.toFixed(2)} ر.س`, Math.round(FS * 0.88), false, false, '#16a34a');
+  addRow('الإجمالي:', `${opts.total.toFixed(2)} ر.س`, Math.round(FS * 1.05), false, true);
+  addGap(4);
 
-  addLine(true);
-
-  // Total — normal weight per user request
-  addRow('الإجمالي:', `${opts.total.toFixed(2)} ر.س`, Math.round(FS * 1.2));
-
-  addLine(false, true);
-
-  // Payment
-  addRow('طريقة الدفع:', opts.paymentMethod, FS);
+  // Payment — no separator
+  const _receiptPayLabel = (() => {
+    const m = (opts.paymentMethod || '').toLowerCase();
+    if (m === 'cash') return 'نقدي';
+    if (m === 'card' || m === 'network' || m === 'pos' || m === 'pos-network') return 'شبكة';
+    if (m === 'apple_pay' || m === 'neoleap-apple-pay' || m === 'paymob-apple-pay') return 'Apple Pay';
+    if (m === 'geidea' || m === 'paymob' || m === 'paymob-card') return 'بطاقة ائتمان';
+    if (m === 'mada' || m === 'bank_transfer') return 'تحويل بنكي';
+    if (m === 'rajhi') return 'بنك الراجحي';
+    if (m === 'alinma') return 'Alinma Pay';
+    if (m === 'split') return 'نقدي + شبكة';
+    if (m === 'loyalty' || m === 'qahwa-card' || m === 'qirox-card') return 'بطاقة ولاء';
+    return opts.paymentMethod;
+  })();
+  addRow('طريقة الدفع:', _receiptPayLabel, Math.round(FS * 0.88));
   if (opts.splitPayment) {
-    addRow('  نقدي:', `${opts.splitPayment.cash.toFixed(2)} ر.س`, Math.round(FS * 0.9));
-    addRow('  شبكة:', `${opts.splitPayment.card.toFixed(2)} ر.س`, Math.round(FS * 0.9));
+    if (opts.splitPayment.cash > 0) addRow('  💵 نقدي:', `${opts.splitPayment.cash.toFixed(2)} ر.س`, Math.round(FS * 0.82));
+    if (opts.splitPayment.card > 0) addRow('  💳 شبكة:', `${opts.splitPayment.card.toFixed(2)} ر.س`, Math.round(FS * 0.82));
+  }
+  if ((opts as any).cashReceived && (opts as any).cashReceived > 0 && !opts.splitPayment) {
+    const cr = (opts as any).cashReceived as number;
+    addRow('  المستلم:', `${cr.toFixed(2)} ر.س`, Math.round(FS * 0.82));
+    addRow('  الباقي:', `${Math.max(0, cr - opts.total).toFixed(2)} ر.س`, Math.round(FS * 0.82), false, false, '#16a34a');
   }
 
-  // Tracking QR — LARGE (primary action for the customer)
+  // ── QR codes: tracking then ZATCA, one below the other, no line between ──
+  addGap(10);
   if (trackImg && trackImg.naturalWidth > 0) {
-    addLine(true);
-    addGap(8);
-    addImg(trackImg, Math.round(DW * 0.60));   // large
-    addGap(Math.round(FS * 1.2));              // breathing room before label
-    addText('امسح للتتبع وتسجيل النقاط', 'center', Math.round(FS * 0.9), true, '#333');
-    addGap(Math.round(FS * 2));                // ~2 lines of empty space below the tracking QR block
+    addImg(trackImg, Math.round(DW * 0.50));
+    addGap(6);
+    addText('امسح للتتبع وتسجيل النقاط', 'center', Math.round(FS * 0.8), true, '#333');
+    addGap(Math.round(FS * 1.2));
+  }
+  if (zatcaImg && zatcaImg.naturalWidth > 0) {
+    addGap(6);
+    addImg(zatcaImg, Math.round(DW * 0.28));
+    addGap(6);
+    addText('ZATCA · باركود الضريبة', 'center', Math.round(FS * 0.72), false, '#555');
+    addGap(Math.round(FS * 1.2));
   }
 
+  // ── ONE separator line before footer ────────────────────────────────────
   addLine(true);
 
   // Footer
-  addText('** شكراً لزيارتكم **', 'center', Math.round(FS * 1.1), true);
-  addText('الأسعار شاملة ضريبة القيمة المضافة 15%', 'center', Math.round(FS * 0.82), false, '#444');
-  if (opts.tagline) addText(opts.tagline, 'center', Math.round(FS * 0.9), false, '#444');
-  addText(opts.shopName, 'center', FS, true);
-  addText('Powered by Qirox Studio', 'center', Math.round(FS * 0.72), false, '#aaaaaa');
-
-  // ZATCA QR — smaller (compliance only)
-  if (zatcaImg && zatcaImg.naturalWidth > 0) {
-    addLine(false, true);
-    addGap(6);
-    addImg(zatcaImg, Math.round(DW * 0.32));   // small
-    addText('ZATCA · باركود الضريبة', 'center', Math.round(FS * 0.75), false, '#555');
-    addGap(6);
-  }
+  addText('** شكراً لزيارتكم **', 'center', Math.round(FS * 1.0), true);
+  addText('الأسعار شاملة ضريبة القيمة المضافة 15%', 'center', Math.round(FS * 0.78), false, '#444');
 
   addGap(opts.feedLines ? opts.feedLines * 8 : 24);
 
@@ -951,6 +932,77 @@ export async function buildReceiptBitmapEscPos(opts: ReceiptBitmapOpts): Promise
 }
 
 /**
+ * Converts a receipt PNG data URL (from renderReceiptPreviewToPng) to ESC/POS raster bytes.
+ * This ensures the thermal printer output is PIXEL-PERFECT identical to the on-screen preview.
+ * The image is scaled to fit the paper dot width while preserving the full receipt height.
+ */
+export async function receiptPngToEscPos(
+  dataUrl: string,
+  paperWidth: '58mm' | '80mm' = '80mm',
+  feedLines: number = 4,
+): Promise<Uint8Array> {
+  const dotWidth = paperWidth === '58mm' ? 384 : 576;
+
+  // Load the PNG image
+  const img = new Image();
+  img.src = dataUrl;
+  await new Promise<void>(res => {
+    if (img.complete && img.naturalWidth > 0) { res(); return; }
+    img.onload = () => res();
+    img.onerror = () => res();
+    setTimeout(res, 5000);
+  });
+
+  if (!img.naturalWidth || !img.naturalHeight) {
+    throw new Error('[receiptPngToEscPos] Failed to load receipt PNG image');
+  }
+
+  // Scale image to fill exactly dotWidth pixels, preserve aspect ratio for height
+  const scale = dotWidth / img.naturalWidth;
+  const scaledH = Math.ceil(img.naturalHeight * scale);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = dotWidth;
+  canvas.height = scaledH;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, dotWidth, scaledH);
+  ctx.drawImage(img, 0, 0, dotWidth, scaledH);
+
+  const imgData = ctx.getImageData(0, 0, dotWidth, scaledH);
+  const bpl = Math.ceil(dotWidth / 8);
+
+  const raster: number[] = [];
+  // ESC @ — initialize printer
+  raster.push(0x1b, 0x40);
+  // GS v 0 — raster image header
+  raster.push(0x1d, 0x76, 0x30, 0x00);
+  raster.push(bpl & 0xff, (bpl >> 8) & 0xff);
+  raster.push(scaledH & 0xff, (scaledH >> 8) & 0xff);
+
+  for (let row = 0; row < scaledH; row++) {
+    for (let bx = 0; bx < bpl; bx++) {
+      let byte = 0;
+      for (let bit = 0; bit < 8; bit++) {
+        const px = bx * 8 + bit;
+        if (px < dotWidth) {
+          const i = (row * dotWidth + px) * 4;
+          const lum = 0.299 * imgData.data[i] + 0.587 * imgData.data[i + 1] + 0.114 * imgData.data[i + 2];
+          if (lum < 128) byte |= 1 << (7 - bit);
+        }
+      }
+      raster.push(byte);
+    }
+  }
+
+  // Feed + full cut
+  raster.push(0x1b, 0x64, Math.max(0, feedLines));
+  raster.push(0x1d, 0x56, 0x41, 0x03);
+
+  return new Uint8Array(raster);
+}
+
+/**
  * Renders a compact "Employee Copy" / kitchen ticket as a Canvas 2D bitmap.
  * Same Arabic-safe pipeline as the main receipt — no HTML, no encoding issues.
  */
@@ -978,8 +1030,9 @@ export async function buildEmployeeCopyCanvas(opts: EmployeeCopyOpts): Promise<H
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, DW, 4000);
 
-  let y = Math.round(FS * 1.6 * 3); // 3 blank lines at the top
   const lh = (fs: number) => Math.ceil(fs * 1.6);
+  // 2 blank lines at the very start of every kitchen invoice
+  let y = Math.round(lh(FS) * 2);
 
   const drawCenter = (text: string, fs: number, bold = false) => {
     ctx.font = `${bold ? '700' : '400'} ${fs}px Tahoma, Arial, sans-serif`;
@@ -989,55 +1042,66 @@ export async function buildEmployeeCopyCanvas(opts: EmployeeCopyOpts): Promise<H
     ctx.fillText(text, DW / 2, y);
     y += lh(fs);
   };
-  const drawRight = (text: string, fs: number, bold = false) => {
+  const drawRight = (text: string, fs: number, bold = false, color = '#000') => {
     ctx.font = `${bold ? '700' : '400'} ${fs}px Tahoma, Arial, sans-serif`;
-    ctx.fillStyle = '#000';
+    ctx.fillStyle = color;
     ctx.direction = 'rtl';
     ctx.textAlign = 'right';
     ctx.fillText(text, DW - PAD, y);
     y += lh(fs);
   };
+  // 2 blank lines above + line + 2 blank lines below
+  const LINE_GAP_K = Math.round(lh(FS) * 2);
+  const drawLine = (thick = false, dashed = false) => {
+    y += LINE_GAP_K;
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = thick ? 2.5 : 1;
+    ctx.setLineDash(dashed ? [6, 5] : []);
+    ctx.beginPath();
+    ctx.moveTo(PAD, y);
+    ctx.lineTo(DW - PAD, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    y += LINE_GAP_K;
+  };
 
   // ── HEADER: نسخة الموظف ──
   drawCenter('نسخة الموظف', Math.round(FS * 1.2), true);
-  y += 8;
 
-  // ── Order number (large, no box) ──
+  // ── Order number (large) ──
   const orderFmt = `#${String(opts.orderNumber).replace(/\D/g, '').padStart(4, '0') || opts.orderNumber}`;
   drawCenter(orderFmt, Math.round(FS * 2.2), true);
-  y += 12;
+  y += 6;
 
-  // ── Items: each on a single line "qty × name" ──
+  // ── Info rows — no lines ──
+  if (opts.cashierName) drawRight(`الكاشير: ${opts.cashierName}`, Math.round(FS * 0.9));
+  if (opts.orderType)   drawRight(`نوع الطلب: ${opts.orderType}`, Math.round(FS * 0.9));
+  if (opts.tableNumber) drawRight(`الطاولة: ${opts.tableNumber}`, Math.round(FS * 0.9));
+  if (opts.orderDate)   drawRight(`الوقت: ${opts.orderDate}`, Math.round(FS * 0.85));
+  y += 6;
+
+  // ── Items: no separator lines ──
   for (const item of opts.items) {
     drawRight(`${item.qty} × ${item.name}`, Math.round(FS * 1.1), true);
-    if (item.nameEn && item.nameEn.trim() && item.nameEn.trim() !== item.name.trim()) {
-      drawRight(item.nameEn, Math.round(FS * 0.88));
+    if (item.nameEn && item.nameEn.trim() && item.nameEn !== item.name) {
+      ctx.font = `400 ${Math.round(FS * 0.85)}px Tahoma, Arial, sans-serif`;
+      ctx.fillStyle = '#666';
+      ctx.direction = 'ltr';
+      ctx.textAlign = 'left';
+      ctx.fillText(item.nameEn, PAD, y);
+      y += lh(Math.round(FS * 0.85));
     }
     if (item.addons?.length) {
       for (const a of item.addons) {
-        drawRight(`+ ${a}`, Math.round(FS * 0.9));
+        drawRight(`+ ${a}`, Math.round(FS * 0.9), false, '#555');
       }
     }
     y += 4;
   }
 
-  // ── Notes section ──
   if (opts.notes) {
-    y += 8;
-    // Amber background box for notes
-    const notesBoxH = lh(Math.round(FS * 0.95)) * 2 + 16;
-    ctx.fillStyle = '#fef3c7';
-    ctx.fillRect(PAD, y - 4, DW - PAD * 2, notesBoxH);
-    ctx.fillStyle = '#92400e';
-    ctx.font = `700 ${Math.round(FS * 0.85)}px Tahoma, Arial, sans-serif`;
-    ctx.direction = 'rtl';
-    ctx.textAlign = 'right';
-    ctx.fillText('ملاحظات:', DW - PAD - 4, y + Math.round(FS * 0.85));
-    y += lh(Math.round(FS * 0.85));
-    ctx.fillStyle = '#451a03';
-    ctx.font = `400 ${Math.round(FS * 0.95)}px Tahoma, Arial, sans-serif`;
-    ctx.fillText(opts.notes, DW - PAD - 4, y + Math.round(FS * 0.85));
-    y += lh(Math.round(FS * 0.95)) + 8;
+    y += 4;
+    drawRight(`ملاحظات: ${opts.notes}`, Math.round(FS * 0.95), false, '#222');
   }
 
   y += 32; // feed
@@ -1049,6 +1113,205 @@ export async function buildEmployeeCopyCanvas(opts: EmployeeCopyOpts): Promise<H
   trimmed.height = finalH;
   trimmed.getContext('2d')!.drawImage(canvas, 0, 0);
   return trimmed;
+}
+
+// ── Shift Report Canvas ───────────────────────────────────────────────────────
+export interface ShiftReportOpts {
+  shopName: string;
+  reportTitle: string;
+  periodLabel?: string;
+  dateLabel?: string;
+  fromTime?: string;
+  toTime?: string;
+  cashierName?: string;
+  shiftNumber?: string;
+  totalOrders: number;
+  totalSales: number;
+  totalCash: number;
+  totalCard: number;
+  totalLoyalty?: number;
+  productsByCategory?: Array<{ categoryNameAr: string; items: Array<{ nameAr: string; quantity: number }> }>;
+  paperWidth: '58mm' | '80mm';
+}
+
+/**
+ * Renders a shift / Z-report to a Canvas 2D bitmap with native Arabic shaping.
+ * Same pipeline as buildReceiptCanvas — no HTML, no encoding issues.
+ */
+export async function buildShiftReportCanvas(opts: ShiftReportOpts): Promise<HTMLCanvasElement> {
+  const DW = opts.paperWidth === '58mm' ? 384 : 576;
+  const PAD = Math.round(DW * 0.04);
+  const FS = opts.paperWidth === '58mm' ? 22 : 28;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = DW;
+  canvas.height = 5000;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, DW, 5000);
+
+  let y = 16;
+  const lh = (fs: number) => Math.ceil(fs * 1.65);
+  const fmt = (n: number) => `${n.toFixed(2)} ر.س`;
+
+  const drawCenter = (text: string, fs: number, bold = false, color = '#000') => {
+    ctx.font = `${bold ? '700' : '400'} ${fs}px Tahoma, Arial, sans-serif`;
+    ctx.fillStyle = color;
+    ctx.direction = 'rtl';
+    ctx.textAlign = 'center';
+    ctx.fillText(text, DW / 2, y);
+    y += lh(fs);
+  };
+
+  const drawRow = (label: string, value: string, fs: number, boldVal = false) => {
+    ctx.direction = 'rtl';
+    ctx.fillStyle = '#000';
+    // label (right side)
+    ctx.font = `400 ${fs}px Tahoma, Arial, sans-serif`;
+    ctx.textAlign = 'right';
+    ctx.fillText(label, DW - PAD, y);
+    // value (left side)
+    ctx.font = `${boldVal ? '700' : '400'} ${fs}px Tahoma, Arial, sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.fillText(value, PAD, y);
+    y += lh(fs);
+  };
+
+  const drawDash = () => {
+    y += 16;
+    ctx.save();
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = '#aaa';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(PAD, y);
+    ctx.lineTo(DW - PAD, y);
+    ctx.stroke();
+    ctx.restore();
+    y += 16;
+  };
+
+  const drawSolid = () => {
+    y += 16;
+    ctx.save();
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(PAD, y);
+    ctx.lineTo(DW - PAD, y);
+    ctx.stroke();
+    ctx.restore();
+    y += 16;
+  };
+
+  const drawSectionTitle = (text: string) => {
+    ctx.font = `700 ${Math.round(FS * 0.95)}px Tahoma, Arial, sans-serif`;
+    ctx.fillStyle = '#2D9B6E';
+    ctx.direction = 'rtl';
+    ctx.textAlign = 'right';
+    ctx.fillText(text, DW - PAD, y);
+    y += lh(Math.round(FS * 0.95)) + 2;
+  };
+
+  // ── HEADER ────────────────────────────────────────────────────────────────
+  drawCenter(opts.shopName, Math.round(FS * 1.4), true);
+  drawCenter(opts.reportTitle, Math.round(FS * 0.95), false, '#444');
+  if (opts.shiftNumber) drawCenter(opts.shiftNumber, Math.round(FS * 0.85), false, '#666');
+  if (opts.dateLabel)   drawCenter(opts.dateLabel, Math.round(FS * 0.85), false, '#555');
+
+  drawSolid();
+
+  // ── PERIOD ────────────────────────────────────────────────────────────────
+  if (opts.periodLabel) drawRow('الفترة:', opts.periodLabel, FS);
+  if (opts.fromTime)    drawRow('من:', opts.fromTime, FS);
+  if (opts.toTime)      drawRow('إلى:', opts.toTime, FS);
+  if (opts.cashierName) drawRow('الكاشير:', opts.cashierName, FS);
+
+  drawDash();
+
+  // ── SALES SUMMARY ─────────────────────────────────────────────────────────
+  drawSectionTitle('ملخص المبيعات');
+  drawRow('عدد الطلبات:', String(opts.totalOrders), FS);
+  drawRow('الإجمالي:', fmt(opts.totalSales), Math.round(FS * 1.05), true);
+
+  drawDash();
+
+  // ── PAYMENT BREAKDOWN ────────────────────────────────────────────────────
+  drawSectionTitle('طرق الدفع');
+  drawRow('نقدي:', fmt(opts.totalCash), FS);
+  drawRow('شبكة / إلكتروني:', fmt(opts.totalCard), FS);
+  if ((opts.totalLoyalty || 0) > 0) drawRow('بطاقة ولاء:', fmt(opts.totalLoyalty!), FS);
+
+  // ── PRODUCTS BY CATEGORY ─────────────────────────────────────────────────
+  if (opts.productsByCategory && opts.productsByCategory.length > 0) {
+    drawDash();
+    drawSectionTitle('المنتجات المستهلكة');
+    for (const cat of opts.productsByCategory) {
+      ctx.font = `700 ${Math.round(FS * 0.9)}px Tahoma, Arial, sans-serif`;
+      ctx.fillStyle = '#333';
+      ctx.direction = 'rtl';
+      ctx.textAlign = 'right';
+      ctx.fillText(cat.categoryNameAr, DW - PAD, y);
+      y += lh(Math.round(FS * 0.9));
+      for (const item of cat.items) {
+        drawRow(item.nameAr, `× ${item.quantity}`, Math.round(FS * 0.88));
+      }
+      y += 4;
+    }
+  }
+
+  // ── FOOTER ────────────────────────────────────────────────────────────────
+  drawDash();
+  drawCenter(`QIROX Systems — ${new Date().toLocaleString('ar-SA')}`, Math.round(FS * 0.8), false, '#666');
+
+  y += 40; // feed before cut
+
+  // Trim canvas to content
+  const finalH = Math.min(y + 10, 5000);
+  const trimmed = document.createElement('canvas');
+  trimmed.width = DW;
+  trimmed.height = finalH;
+  trimmed.getContext('2d')!.drawImage(canvas, 0, 0);
+  return trimmed;
+}
+
+/**
+ * Convert shift report canvas to ESC/POS raster bytes with feed + full cut.
+ */
+export async function buildShiftReportEscPos(opts: ShiftReportOpts): Promise<Uint8Array> {
+  const canvas = await buildShiftReportCanvas(opts);
+  const DW = canvas.width;
+  const finalH = canvas.height;
+  const ctx = canvas.getContext('2d')!;
+
+  const imgData = ctx.getImageData(0, 0, DW, finalH);
+  const bpl = Math.ceil(DW / 8);
+  const raster: number[] = [];
+
+  raster.push(0x1b, 0x40);
+  raster.push(0x1d, 0x76, 0x30, 0x00);
+  raster.push(bpl & 0xff, (bpl >> 8) & 0xff);
+  raster.push(finalH & 0xff, (finalH >> 8) & 0xff);
+
+  for (let row = 0; row < finalH; row++) {
+    for (let bx = 0; bx < bpl; bx++) {
+      let byte = 0;
+      for (let bit = 0; bit < 8; bit++) {
+        const px = bx * 8 + bit;
+        if (px < DW) {
+          const i = (row * DW + px) * 4;
+          const lum = 0.299 * imgData.data[i] + 0.587 * imgData.data[i + 1] + 0.114 * imgData.data[i + 2];
+          if (lum < 128) byte |= 1 << (7 - bit);
+        }
+      }
+      raster.push(byte);
+    }
+  }
+
+  raster.push(0x1b, 0x64, 4);
+  raster.push(0x1d, 0x56, 0x41, 0x03);
+
+  return new Uint8Array(raster);
 }
 
 /**
@@ -1119,6 +1382,9 @@ export function buildEscPosKitchenTicket(data: {
   buf.push(...CMD.CHARSET_UTF8);
   buf.push(ESC, 0x52, 0x28);
 
+  // ── 2 blank lines at start of every invoice ────────────────────────────────
+  buf.push(0x0a, 0x0a);
+
   // ── Kitchen header ─────────────────────────────────────────────────────────
   buf.push(...CMD.ALIGN_CENTER, ...CMD.BOLD_ON, ...CMD.DOUBLE_SIZE);
   buf.push(...textBytes('*** نسخة المطبخ ***'), 0x0a);
@@ -1138,7 +1404,7 @@ export function buildEscPosKitchenTicket(data: {
     buf.push(...CMD.ALIGN_CENTER);
     buf.push(...textBytes(`[ ${data.orderType} ]`), 0x0a);
   }
-  buf.push(...dottedLine(w));
+  buf.push(0x0a, ...dottedLine(w), 0x0a);
 
   // ── Items (large text for kitchen readability) ─────────────────────────────
   buf.push(...CMD.ALIGN_LEFT);
@@ -1155,7 +1421,7 @@ export function buildEscPosKitchenTicket(data: {
 
   // ── Notes ──────────────────────────────────────────────────────────────────
   if (data.notes) {
-    buf.push(...dottedLine(w));
+    buf.push(0x0a, ...dottedLine(w), 0x0a);
     buf.push(...CMD.BOLD_ON);
     buf.push(...line('*** ملاحظات ***'));
     buf.push(...CMD.BOLD_OFF);
@@ -1163,7 +1429,7 @@ export function buildEscPosKitchenTicket(data: {
   }
 
   // ── Footer ─────────────────────────────────────────────────────────────────
-  buf.push(...dottedLine(w));
+  buf.push(0x0a, ...dottedLine(w), 0x0a);
   buf.push(...CMD.ALIGN_CENTER);
   buf.push(...textBytes(`الكاشير: ${data.cashierName}`), 0x0a);
 
@@ -1429,13 +1695,16 @@ export async function networkPrint(escData: Uint8Array, ip: string, port: number
   // 3. Server-side TCP — for public/accessible IPs (local server deployments)
   try {
     const base64Data = btoa(Array.from(escData, b => String.fromCharCode(b)).join(''));
+    // Dynamic timeouts: scale with payload size (no hard limit on receipt length)
+    const printTimeout = Math.max(10_000, Math.ceil(escData.length / 8_000) * 1_000 + 5_000);
+    const fetchTimeout = printTimeout + 5_000;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 4000);
+    const timer = setTimeout(() => controller.abort(), fetchTimeout);
     try {
       const resp = await fetch('/api/print/network', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ip, port, data: base64Data, timeout: 3500 }),
+        body: JSON.stringify({ ip, port, data: base64Data, timeout: printTimeout }),
         signal: controller.signal,
       });
       clearTimeout(timer);
@@ -1464,26 +1733,58 @@ export async function networkPrint(escData: Uint8Array, ip: string, port: number
 // The relay opens a raw TCP socket to the printer and forwards the bytes.
 
 /**
- * Send ESC/POS data to a LAN printer via the local relay agent.
+ * Send ESC/POS data to a LAN printer via the local relay agent (v2).
  * The relay agent runs on the same local network as the printer.
+ * Supports queued and direct print modes, vendor-specific init, and job tracking.
+ *
+ * @param escData    - Raw ESC/POS bytes
+ * @param relayUrl   - URL of the relay agent e.g. "http://192.168.1.10:8089"
+ * @param printerIp  - Printer LAN IP
+ * @param printerPort - Printer TCP port (default 9100)
+ * @param options    - Optional: vendor, jobType, direct (bypass queue)
  */
-export async function relayAgentPrint(escData: Uint8Array, relayUrl: string, printerIp: string, printerPort = 9100): Promise<PrintResult> {
+export async function relayAgentPrint(
+  escData: Uint8Array,
+  relayUrl: string,
+  printerIp: string,
+  printerPort = 9100,
+  options: { vendor?: string; jobType?: 'receipt' | 'kitchen' | 'test'; direct?: boolean } = {}
+): Promise<PrintResult> {
   try {
-    const base = relayUrl.replace(/\/+$/, '');
-    const b64  = btoa(Array.from(escData, b => String.fromCharCode(b)).join(''));
+    const base     = relayUrl.replace(/\/+$/, '');
+    const b64      = btoa(Array.from(escData, b => String.fromCharCode(b)).join(''));
+    const endpoint = options.direct ? `${base}/print/direct` : `${base}/print`;
+
+    // Dynamic timeout: 15s base + 1s per 8KB of data — supports massive receipts (2000+ items)
+    const dynamicTimeoutMs = Math.max(15_000, Math.ceil(escData.length / 8_000) * 1_000 + 10_000);
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 8000);
+    const timer = setTimeout(() => controller.abort(), dynamicTimeoutMs);
+
     try {
-      const resp = await fetch(`${base}/print`, {
+      const resp = await fetch(endpoint, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ ip: printerIp, port: printerPort, data: b64 }),
-        signal:  controller.signal,
+        body:    JSON.stringify({
+          ip:      printerIp,
+          port:    printerPort,
+          data:    b64,
+          vendor:  options.vendor  || 'generic',
+          jobType: options.jobType || 'receipt',
+        }),
+        signal: controller.signal,
       });
+
       const result = await resp.json();
+
       if (!resp.ok || !result.success) {
         return { success: false, mode: 'error', error: result.error || 'فشل وكيل الطباعة المحلي' };
       }
+
+      // Queued mode: job accepted into queue (not yet printed)
+      if (result.jobId && !options.direct) {
+        console.info(`[Relay] مهمة طباعة في الطابور: ${result.jobId} (${result.queued || 1} مهمة معلقة)`);
+      }
+
       return { success: true, mode: 'network' };
     } finally {
       clearTimeout(timer);
@@ -1531,9 +1832,10 @@ export async function testRelayAgent(relayUrl: string, printerIp?: string, print
       };
     }
 
+    const wsNote = info.wsSupported ? ' | WebSocket ✅' : ' | WebSocket غير مفعّل (npm install ws)';
     return {
       connected: true,
-      message:   `✅ وكيل الطباعة يعمل (v${info.version || '?'}) على ${info.localIPs?.join(' / ') || relayUrl}`,
+      message:   `✅ وكيل الطباعة يعمل (v${info.version || '?'}) على ${info.localIPs?.join(' / ') || relayUrl}${wsNote}`,
     };
   } catch (err: any) {
     const isNetErr = err.name === 'AbortError' || err.message?.includes('fetch') || err.message?.includes('network');
@@ -1618,33 +1920,23 @@ export async function testNetworkPrinter(ip: string, port: number = 9100): Promi
 // ─── Bluetooth (BLE) Printer ──────────────────────────────────────────────────
 // Works with any ESC/POS BLE printer: Xprinter XP-P300BT, MUNBYN BT, Rongta, etc.
 // Uses Web Bluetooth API — Chrome/Edge desktop & Android only.
-// NOTE: Classic Bluetooth (SPP/RFCOMM) is NOT supported by Web Bluetooth API.
-//       Only BLE (GATT) printers are supported. If your printer only supports
-//       Classic BT, use the Network (LAN) or USB mode instead.
 
 /** Known BLE printer service UUIDs (ordered by prevalence) */
 const BT_SERVICE_UUIDS = [
-  '000018f0-0000-1000-8000-00805f9b34fb', // Generic BLE SPP — Xprinter, MUNBYN, most common
-  'e7810a71-73ae-499d-8c15-faa9aef0c3f2', // Bluetooth printer SP service — Epson/Star clones
-  '49535343-fe7d-4ae5-8fa9-9fafd205e455', // ISSC Transparent UART — common on cheap BLE printers
-  '0000ff00-0000-1000-8000-00805f9b34fb', // Generic custom FF00 — Rongta, some Xprinter
-  '0000ffd0-0000-1000-8000-00805f9b34fb', // FFD0 — some Sewoo / Bixolon BLE
-  '0000fee7-0000-1000-8000-00805f9b34fb', // FEE7 — used by some HPRT / iDPRT printers
-  '000019f1-0000-1000-8000-00805f9b34fb', // 19F1 — common on Chinese BLE printer modules
-  'af0badb1-5b99-43cd-917a-a77bc549e3cc', // Peripage / mini BLE printers
-  '6e400001-b5a3-f393-e0a9-e50e24dcca9e', // Nordic UART Service (NUS) — some printers use this
+  '000018f0-0000-1000-8000-00805f9b34fb', // Generic BLE SPP (most common)
+  'e7810a71-73ae-499d-8c15-faa9aef0c3f2', // Bluetooth printer SP service
+  '49535343-fe7d-4ae5-8fa9-9fafd205e455', // ISSC Transparent UART
+  '0000ff00-0000-1000-8000-00805f9b34fb', // Generic custom FF00
+  '00001101-0000-1000-8000-00805f9b34fb', // SPP (classic, limited BLE support)
 ];
 
 /** Known write characteristic UUIDs */
 const BT_CHAR_UUIDS = [
-  '00002af1-0000-1000-8000-00805f9b34fb', // Generic BLE write — Xprinter 18F0 service
-  'bef8d6c9-9c21-4c9e-b632-bd58c1009f9f', // BLE printer write — Epson/Star clones
-  '49535343-8841-43f4-a8d4-ecbe34729bb3', // ISSC UART TX write
-  '0000ff02-0000-1000-8000-00805f9b34fb', // FF00 service write char
-  '0000ff01-0000-1000-8000-00805f9b34fb', // FF00 service write alt
-  '0000ffd9-0000-1000-8000-00805f9b34fb', // FFD0 service write
-  '6e400002-b5a3-f393-e0a9-e50e24dcca9e', // Nordic UART TX
-  '000019f2-0000-1000-8000-00805f9b34fb', // 19F1 service write
+  '00002af1-0000-1000-8000-00805f9b34fb', // Generic BLE write
+  'bef8d6c9-9c21-4c9e-b632-bd58c1009f9f', // BLE printer write
+  '49535343-8841-43f4-a8d4-ecbe34729bb3', // ISSC UART write
+  '0000ff02-0000-1000-8000-00805f9b34fb', // FF00 write char
+  '0000ff01-0000-1000-8000-00805f9b34fb', // FF00 write alt
 ];
 
 const BT_DEVICE_KEY = 'qirox-bt-printer';
@@ -1653,49 +1945,9 @@ const BT_DEVICE_KEY = 'qirox-bt-printer';
 let _btDevice: BluetoothDevice | null = null;
 let _btCharacteristic: BluetoothRemoteGATTCharacteristic | null = null;
 
-/**
- * Quick synchronous check — true if the Bluetooth API object exists at all.
- * Does NOT guarantee the device has Bluetooth hardware enabled.
- * Use checkBluetoothAvailability() for a deeper async check.
- */
+/** Is Web Bluetooth supported in this browser? */
 export function isBluetoothSupported(): boolean {
-  if (typeof navigator === 'undefined') return false;
-  // navigator.bluetooth exists in Chrome/Edge (desktop + Android).
-  // It may be present but blocked in iframes without Permissions-Policy: bluetooth=*
-  return 'bluetooth' in navigator && navigator.bluetooth != null;
-}
-
-/**
- * Deep async check — calls navigator.bluetooth.getAvailability() which returns
- * true only when the browser AND the OS Bluetooth adapter are ready.
- * Returns { available, reason } so the UI can show a specific message.
- */
-export async function checkBluetoothAvailability(): Promise<{ available: boolean; reason: string }> {
-  if (typeof navigator === 'undefined') {
-    return { available: false, reason: 'not-browser' };
-  }
-  if (!('bluetooth' in navigator) || navigator.bluetooth == null) {
-    // Check if we're likely in a context that blocks BT (non-HTTPS or wrong browser)
-    const isHttps = location.protocol === 'https:' || location.hostname === 'localhost';
-    if (!isHttps) {
-      return { available: false, reason: 'not-https' };
-    }
-    return { available: false, reason: 'no-api' };
-  }
-  try {
-    // getAvailability() = true → OS Bluetooth adapter present & on
-    const available = await (navigator.bluetooth as any).getAvailability();
-    if (!available) return { available: false, reason: 'adapter-off' };
-    return { available: true, reason: 'ok' };
-  } catch (e: any) {
-    // Permissions-Policy blocked (iframe without allow="bluetooth") throws SecurityError
-    const msg = (e?.message || '').toLowerCase();
-    if (msg.includes('permissions') || msg.includes('policy') || msg.includes('denied')) {
-      return { available: false, reason: 'permissions-policy' };
-    }
-    // getAvailability not implemented — still try requestDevice (older Chrome)
-    return { available: true, reason: 'ok' };
-  }
+  return typeof navigator !== 'undefined' && 'bluetooth' in navigator;
 }
 
 /** Save BT device name/id to localStorage */
@@ -1770,14 +2022,7 @@ export async function reconnectBluetoothPrinter(): Promise<string> {
  * Returns the device name on success, or throws an error.
  */
 export async function connectBluetoothPrinter(): Promise<string> {
-  if (!isBluetoothSupported()) {
-    throw new Error(
-      'Web Bluetooth غير مدعوم في هذا المتصفح.\n' +
-      '• استخدم Chrome أو Edge على الكمبيوتر أو Android\n' +
-      '• Safari وFirefox لا يدعمان هذه الميزة\n' +
-      '• تأكد أن الطابعة تدعم BLE وليس Bluetooth Classic فقط'
-    );
-  }
+  if (!isBluetoothSupported()) throw new Error('Web Bluetooth غير مدعوم في هذا المتصفح — استخدم Chrome أو Edge');
 
   const bt = (navigator as any).bluetooth as Bluetooth;
 
@@ -1786,25 +2031,11 @@ export async function connectBluetoothPrinter(): Promise<string> {
     optionalServices: BT_SERVICE_UUIDS,
   });
 
-  if (!device.gatt) throw new Error('GATT غير متوفر لهذا الجهاز — الطابعة لا تدعم BLE');
+  if (!device.gatt) throw new Error('GATT غير متوفر لهذا الجهاز');
 
-  let server: BluetoothRemoteGATTServer;
-  try {
-    server = await device.gatt.connect();
-  } catch (e: any) {
-    throw new Error(`فشل الاتصال GATT: ${e?.message || e}\nتأكد أن الطابعة مشغّلة وقريبة، وأن بلوتوث الجهاز مفعّل`);
-  }
-
+  const server = await device.gatt.connect();
   const characteristic = await _findWriteCharacteristic(server);
-  if (!characteristic) {
-    throw new Error(
-      'تم الاتصال بالجهاز لكن لم يُعثر على خدمة طباعة BLE متوافقة.\n' +
-      'الأسباب المحتملة:\n' +
-      '• الطابعة تستخدم Bluetooth Classic (SPP) فقط — غير مدعوم في المتصفح\n' +
-      '• UUID الخدمة غير معروف — جرّب وضع الشبكة (LAN) بدلاً من البلوتوث\n' +
-      '• تأكد أن الطابعة تدعم BLE (Bluetooth Low Energy)'
-    );
-  }
+  if (!characteristic) throw new Error('لم يُعثر على طابعة BLE متوافقة — تأكد من دعم الطابعة لـ ESC/POS');
 
   _btDevice = device;
   _btCharacteristic = characteristic;
@@ -1822,7 +2053,6 @@ export async function connectBluetoothPrinter(): Promise<string> {
 async function _findWriteCharacteristic(
   server: BluetoothRemoteGATTServer,
 ): Promise<BluetoothRemoteGATTCharacteristic | null> {
-  // 1. Try known service UUIDs first (fast path)
   for (const svcUuid of BT_SERVICE_UUIDS) {
     try {
       const service = await server.getPrimaryService(svcUuid);
@@ -1833,7 +2063,7 @@ async function _findWriteCharacteristic(
           if (char.properties.write || char.properties.writeWithoutResponse) return char;
         } catch {}
       }
-      // Fall back: enumerate all characteristics in this service
+      // Fall back: enumerate all characteristics
       try {
         const chars = await service.getCharacteristics();
         for (const char of chars) {
@@ -1842,21 +2072,6 @@ async function _findWriteCharacteristic(
       } catch {}
     } catch {}
   }
-
-  // 2. Last resort: enumerate ALL primary services and look for any writable char
-  //    Only works for services declared in optionalServices at requestDevice time.
-  try {
-    const services = await server.getPrimaryServices();
-    for (const service of services) {
-      try {
-        const chars = await service.getCharacteristics();
-        for (const char of chars) {
-          if (char.properties.write || char.properties.writeWithoutResponse) return char;
-        }
-      } catch {}
-    }
-  } catch {}
-
   return null;
 }
 
@@ -1877,49 +2092,22 @@ async function _ensureBtConnected(): Promise<BluetoothRemoteGATTCharacteristic> 
 
 /**
  * Send ESC/POS bytes to connected BLE printer.
- * Chunks data into safe 200-byte packets (conservative BLE MTU).
- * Uses writeValueWithoutResponse when available (faster, no ACK needed for printers).
- * Falls back to writeValueWithResponse → writeValue for older browsers/firmware.
+ * Automatically chunks data into 512-byte packets (BLE MTU limit).
  */
 export async function bluetoothPrint(escData: Uint8Array): Promise<PrintResult> {
   try {
     const char = await _ensureBtConnected();
-
-    // Prefer writeWithoutResponse (faster, less overhead for printers)
-    // Fall back to writeValueWithResponse (modern API) then writeValue (deprecated but widely supported)
-    const canWriteNoResp = char.properties.writeWithoutResponse;
-    const canWriteResp   = char.properties.write;
-
-    // Use 200 bytes per chunk — safe default for most BLE printers.
-    // 512 is the theoretical BLE 4.2 MTU, but many printers buffer less.
-    const CHUNK = 200;
-    const DELAY_MS = 50; // 50ms between chunks — prevents buffer overflow on slower printers
-
+    const useWriteWithoutResponse = char.properties.writeWithoutResponse && !char.properties.write;
+    const CHUNK = 512;
     for (let i = 0; i < escData.length; i += CHUNK) {
       const chunk = escData.slice(i, i + CHUNK);
-
-      if (canWriteNoResp) {
-        // writeValueWithoutResponse: modern API, preferred for printers (no ACK = faster)
-        if (typeof char.writeValueWithoutResponse === 'function') {
-          await char.writeValueWithoutResponse(chunk);
-        } else {
-          await (char as any).writeValue(chunk);
-        }
-      } else if (canWriteResp) {
-        // writeValueWithResponse: modern API with ACK
-        if (typeof (char as any).writeValueWithResponse === 'function') {
-          await (char as any).writeValueWithResponse(chunk);
-        } else {
-          await (char as any).writeValue(chunk);
-        }
+      if (useWriteWithoutResponse) {
+        await char.writeValueWithoutResponse(chunk);
       } else {
-        // Last resort — shouldn't happen if _findWriteCharacteristic did its job
-        await (char as any).writeValue(chunk);
+        await char.writeValue(chunk);
       }
-
-      if (i + CHUNK < escData.length) {
-        await new Promise(r => setTimeout(r, DELAY_MS));
-      }
+      // Small delay between chunks to avoid buffer overflow
+      if (i + CHUNK < escData.length) await new Promise(r => setTimeout(r, 20));
     }
     return { success: true, mode: 'bluetooth' };
   } catch (err: any) {
@@ -2066,9 +2254,37 @@ export async function thermalPrint(escData: Uint8Array, fallbackHtml: string, fa
 }
 
 /**
- * Auto-print receipt + kitchen ticket after a completed order.
- * Call this from checkout success handlers.
+ * Send the ESC/POS cash drawer open command through the configured printer.
+ * The cash drawer must be connected to the printer's RJ11 port (standard setup).
+ * This sends a 5-byte pulse command: ESC p 0 25 250
  */
+export async function openCashDrawer(): Promise<void> {
+  const settings = loadPrinterSettings();
+  if (!settings.cashDrawerEnabled) return;
+
+  const cmd = new Uint8Array(CMD.CASH_DRAWER);
+
+  try {
+    let result: PrintResult;
+    if (settings.mode === 'relay' && settings.relayAgentUrl && settings.networkIp) {
+      result = await relayAgentPrint(cmd, settings.relayAgentUrl, settings.networkIp, settings.networkPort || 9100, { jobType: 'receipt', direct: true });
+    } else if (settings.mode === 'network' && settings.networkIp) {
+      result = await networkPrint(cmd, settings.networkIp, settings.networkPort || 9100);
+    } else if (settings.mode === 'webusb' && _usbDevice) {
+      const ok = await _sendToUSB(cmd);
+      result = ok ? { success: true, mode: 'webusb' } : { success: false, mode: 'error', error: 'USB send failed' };
+    } else if (settings.mode === 'bluetooth') {
+      result = await bluetoothPrint(cmd);
+    } else {
+      return;
+    }
+    if (!result.success) console.warn('[CashDrawer] فشل فتح درج النقود:', result.error);
+    else console.info('[CashDrawer] ✅ تم فتح درج النقود');
+  } catch (e: any) {
+    console.warn('[CashDrawer] استثناء أثناء فتح الدرج:', e?.message);
+  }
+}
+
 export async function autoPrintOrder(receiptEsc: Uint8Array, kitchenEsc: Uint8Array | null, receiptHtml: string, paperWidth: '58mm' | '80mm'): Promise<void> {
   const settings = loadPrinterSettings();
   if (!settings.autoPrint) return;
@@ -2079,6 +2295,13 @@ export async function autoPrintOrder(receiptEsc: Uint8Array, kitchenEsc: Uint8Ar
     console.error('[AutoPrint] Receipt failed:', receiptResult.error);
   }
 
+  // Open cash drawer after receipt print (if enabled)
+  if (receiptResult.success && settings.cashDrawerEnabled) {
+    const delay = settings.cashDrawerDelay ?? 500;
+    if (delay > 0) await new Promise(r => setTimeout(r, delay));
+    await openCashDrawer();
+  }
+
   // Print kitchen copy — delay 1.5s to avoid overwhelming the printer buffer
   if (kitchenEsc && settings.autoKitchenCopy) {
     await new Promise(r => setTimeout(r, 1500));
@@ -2087,6 +2310,236 @@ export async function autoPrintOrder(receiptEsc: Uint8Array, kitchenEsc: Uint8Ar
       console.error('[AutoPrint] Kitchen copy failed:', kitchenResult.error);
     }
   }
+}
+
+// ── Refund Receipt Canvas ─────────────────────────────────────────────────────
+export interface RefundReceiptOpts {
+  shopName: string;
+  refundId: string;
+  originalOrderNumber: string | number;
+  items: Array<{ nameAr: string; nameEn?: string; quantity: number; unitPrice: number; subtotal: number }>;
+  refundAmount: number;
+  paymentMethod: 'cash' | 'card' | 'split';
+  cashAmount?: number;
+  cardAmount?: number;
+  reason: string;
+  employeeName?: string;
+  date: string;
+  originalPaymentMethod?: string;
+  paperWidth: '58mm' | '80mm';
+}
+
+export async function buildRefundCanvas(opts: RefundReceiptOpts): Promise<HTMLCanvasElement> {
+  const DW = opts.paperWidth === '58mm' ? 384 : 576;
+  const PAD = Math.round(DW * 0.04);
+  const FS = opts.paperWidth === '58mm' ? 22 : 28;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = DW;
+  canvas.height = 5000;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, DW, 5000);
+
+  let y = 16;
+  const lh = (fs: number) => Math.ceil(fs * 1.65);
+  const fmt = (n: number) => `${n.toFixed(2)} ر.س`;
+
+  const drawCenter = (text: string, fs: number, bold = false, color = '#000') => {
+    ctx.font = `${bold ? '700' : '400'} ${fs}px Tahoma, Arial, sans-serif`;
+    ctx.fillStyle = color;
+    ctx.direction = 'rtl';
+    ctx.textAlign = 'center';
+    ctx.fillText(text, DW / 2, y);
+    y += lh(fs);
+  };
+
+  const drawRight = (text: string, fs: number, bold = false, color = '#000') => {
+    ctx.font = `${bold ? '700' : '400'} ${fs}px Tahoma, Arial, sans-serif`;
+    ctx.fillStyle = color;
+    ctx.direction = 'rtl';
+    ctx.textAlign = 'right';
+    ctx.fillText(text, DW - PAD, y);
+    y += lh(fs);
+  };
+
+  const drawRow = (label: string, value: string, fs: number, valueColor = '#000') => {
+    ctx.direction = 'rtl';
+    ctx.font = `400 ${fs}px Tahoma, Arial, sans-serif`;
+    ctx.fillStyle = '#000';
+    ctx.textAlign = 'right';
+    ctx.fillText(label, DW - PAD, y);
+    ctx.font = `700 ${fs}px Tahoma, Arial, sans-serif`;
+    ctx.fillStyle = valueColor;
+    ctx.direction = 'ltr';
+    ctx.textAlign = 'left';
+    ctx.fillText(value, PAD, y);
+    y += lh(fs);
+  };
+
+  const drawDash = () => {
+    y += 16;
+    ctx.save();
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = '#aaa';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(PAD, y); ctx.lineTo(DW - PAD, y); ctx.stroke();
+    ctx.restore();
+    y += 16;
+  };
+
+  const drawSolid = (color = '#000') => {
+    y += 16;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(PAD, y); ctx.lineTo(DW - PAD, y); ctx.stroke();
+    ctx.restore();
+    y += 16;
+  };
+
+  // ── HEADER ────────────────────────────────────────────────────────────────
+  drawCenter(opts.shopName, Math.round(FS * 1.3), true);
+  y += 6;
+
+  // Red refund badge
+  const badgeW = Math.round(DW * 0.62);
+  const badgeH = Math.round(FS * 1.9);
+  const badgeX = Math.round((DW - badgeW) / 2);
+  ctx.fillStyle = '#b91c1c';
+  ctx.beginPath();
+  if (ctx.roundRect) {
+    ctx.roundRect(badgeX, y, badgeW, badgeH, 6);
+  } else {
+    ctx.rect(badgeX, y, badgeW, badgeH);
+  }
+  ctx.fill();
+  ctx.font = `700 ${Math.round(FS * 0.95)}px Tahoma, Arial, sans-serif`;
+  ctx.fillStyle = '#fff';
+  ctx.direction = 'rtl';
+  ctx.textAlign = 'center';
+  ctx.fillText('استرجاع / REFUND', DW / 2, y + Math.round(badgeH * 0.72));
+  y += badgeH + Math.round(FS * 0.5);
+
+  drawSolid('#b91c1c');
+
+  drawRow('الطلب الأصلي:', `#${opts.originalOrderNumber}`, FS);
+  drawRow('رقم الاسترجاع:', opts.refundId.slice(-8).toUpperCase(), FS);
+  drawRow('التاريخ:', opts.date, Math.round(FS * 0.88));
+  if (opts.employeeName) drawRow('الكاشير:', opts.employeeName, Math.round(FS * 0.88));
+  if (opts.originalPaymentMethod) drawRow('طريقة الدفع الأصلية:', opts.originalPaymentMethod, Math.round(FS * 0.85));
+
+  drawDash();
+
+  // ── ITEMS ────────────────────────────────────────────────────────────────
+  ctx.font = `700 ${Math.round(FS * 0.9)}px Tahoma, Arial, sans-serif`;
+  ctx.fillStyle = '#b91c1c';
+  ctx.direction = 'rtl';
+  ctx.textAlign = 'right';
+  ctx.fillText('الأصناف المستردة', DW - PAD, y);
+  y += lh(Math.round(FS * 0.9));
+
+  for (const item of opts.items) {
+    drawRight(item.nameAr, Math.round(FS * 0.92), true);
+    if (item.nameEn && item.nameEn.trim() && item.nameEn !== item.nameAr) {
+      ctx.font = `400 ${Math.round(FS * 0.8)}px Tahoma, Arial, sans-serif`;
+      ctx.fillStyle = '#666';
+      ctx.direction = 'ltr';
+      ctx.textAlign = 'left';
+      ctx.fillText(item.nameEn, PAD, y);
+      y += lh(Math.round(FS * 0.8));
+    }
+    drawRow(`${item.quantity} × ${item.unitPrice.toFixed(2)} ر.س`, fmt(item.subtotal), Math.round(FS * 0.85));
+    y += 2;
+  }
+
+  drawSolid('#b91c1c');
+
+  // ── TOTAL ────────────────────────────────────────────────────────────────
+  ctx.font = `400 ${FS}px Tahoma, Arial, sans-serif`;
+  ctx.fillStyle = '#000';
+  ctx.direction = 'rtl';
+  ctx.textAlign = 'right';
+  ctx.fillText('إجمالي المسترجع', DW - PAD, y);
+  ctx.font = `900 ${Math.round(FS * 1.2)}px Tahoma, Arial, sans-serif`;
+  ctx.fillStyle = '#b91c1c';
+  ctx.direction = 'ltr';
+  ctx.textAlign = 'left';
+  ctx.fillText(fmt(opts.refundAmount), PAD, y);
+  y += lh(Math.round(FS * 1.2));
+
+  drawDash();
+
+  // ── PAYMENT ──────────────────────────────────────────────────────────────
+  const payLabel = (() => {
+    const m = (opts.paymentMethod || '').toLowerCase();
+    if (m === 'cash') return 'نقدي';
+    if (m === 'card' || m === 'network' || m === 'pos' || m === 'pos-network') return 'شبكة';
+    if (m === 'apple_pay' || m === 'neoleap-apple-pay' || m === 'paymob-apple-pay') return 'Apple Pay';
+    if (m === 'stc-pay' || m === 'stc_pay') return 'STC Pay';
+    if (m === 'mada') return 'مدى';
+    if (m === 'geidea' || m === 'paymob' || m === 'paymob-card') return 'بطاقة ائتمان';
+    if (m === 'split') return 'نقدي + شبكة';
+    if (m === 'loyalty' || m === 'qahwa-card' || m === 'qirox-card' || m === 'loyalty-card') return 'بطاقة ولاء';
+    return opts.paymentMethod || 'غير محدد';
+  })();
+  drawRow('طريقة الاسترجاع:', payLabel, FS);
+  if (opts.paymentMethod === 'split') {
+    drawRow('↳ نقدي:', fmt(opts.cashAmount || 0), FS);
+    drawRow('↳ شبكة:', fmt(opts.cardAmount || 0), FS);
+  }
+
+  drawDash();
+
+  drawRow('السبب:', opts.reason, Math.round(FS * 0.88));
+
+  drawDash();
+  drawCenter('تم الاسترجاع بنجاح ✓', Math.round(FS * 0.9), false, '#16a34a');
+  drawCenter('شكراً لتعاملكم معنا', Math.round(FS * 0.85), false, '#666');
+
+  y += 40;
+
+  const finalH = Math.min(y + 10, 5000);
+  const trimmed = document.createElement('canvas');
+  trimmed.width = DW;
+  trimmed.height = finalH;
+  trimmed.getContext('2d')!.drawImage(canvas, 0, 0);
+  return trimmed;
+}
+
+export async function buildRefundEscPos(opts: RefundReceiptOpts): Promise<Uint8Array> {
+  const canvas = await buildRefundCanvas(opts);
+  const DW = canvas.width;
+  const finalH = canvas.height;
+  const ctx = canvas.getContext('2d')!;
+
+  const imgData = ctx.getImageData(0, 0, DW, finalH);
+  const bpl = Math.ceil(DW / 8);
+  const raster: number[] = [];
+
+  raster.push(0x1b, 0x40);
+  raster.push(0x1d, 0x76, 0x30, 0x00);
+  raster.push(bpl & 0xff, (bpl >> 8) & 0xff);
+  raster.push(finalH & 0xff, (finalH >> 8) & 0xff);
+
+  for (let row = 0; row < finalH; row++) {
+    for (let bx = 0; bx < bpl; bx++) {
+      let byte = 0;
+      for (let bit = 0; bit < 8; bit++) {
+        const px = bx * 8 + bit;
+        if (px < DW) {
+          const i = (row * DW + px) * 4;
+          const lum = 0.299 * imgData.data[i] + 0.587 * imgData.data[i + 1] + 0.114 * imgData.data[i + 2];
+          if (lum < 128) byte |= 1 << (7 - bit);
+        }
+      }
+      raster.push(byte);
+    }
+  }
+
+  raster.push(0x1b, 0x64, 4);
+  raster.push(0x1d, 0x56, 0x41, 0x03);
+  return new Uint8Array(raster);
 }
 
 // ─── Printer status ───────────────────────────────────────────────────────────

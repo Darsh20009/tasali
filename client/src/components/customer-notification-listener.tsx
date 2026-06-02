@@ -32,7 +32,7 @@ export function CustomerNotificationListener() {
       "serviceWorker" in navigator
     ) {
       navigator.serviceWorker.ready.then((reg) => {
-        reg.showNotification(notif.title || "تسالي كرومش", {
+        reg.showNotification(notif.title || "TASALI QURUMSH", {
           body: notif.message || notif.body || "",
           icon: "/logo.png",
           badge: "/badge-icon.png",

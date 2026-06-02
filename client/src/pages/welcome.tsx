@@ -2,14 +2,13 @@ import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import { Coffee, Star, MapPin, ChevronLeft, ChevronRight, LogOut, Sparkles, User, KeyRound, X as XIcon } from "lucide-react";
-import tasaliLogo from "@assets/logo.png";
-import bannerImage1 from "@assets/tasali-banner-1.png";
-import bannerImage2 from "@assets/tasali-banner-2.png";
-import splashVideo from "@assets/Screen_Recording_2026-05-04_at_1.03.49_AM_1777845944391.mov";
+import blackroseLogo from "@assets/logo.png";
+import bannerImage1 from "@assets/banner-coffee-1.png";
+import bannerImage2 from "@assets/banner-coffee-2.png";
 import { useCustomer } from "@/contexts/CustomerContext";
 import { useTranslation } from "react-i18next";
 import CurrentOrderBanner from "@/components/current-order-banner";
-import { useOrderWebSocket } from "@/lib/websocket";
+import { useRealtimeEvent } from "@/hooks/useRealtimeEngine";
 import { useState } from "react";
 import { CustomerFooter } from "@/components/customer-footer";
 
@@ -19,14 +18,9 @@ export default function WelcomePage() {
   const { t, i18n } = useTranslation();
   const [verificationCode, setVerificationCode] = useState<any>(null);
 
-  useOrderWebSocket({
-    clientType: 'customer',
-    customerId: customer?.id,
-    onPointsVerificationCode: (data) => {
-      setVerificationCode(data);
-      setTimeout(() => setVerificationCode(null), 5 * 60 * 1000);
-    },
-    enabled: !!customer?.id
+  useRealtimeEvent("points_verification_code", (data: any) => {
+    setVerificationCode(data);
+    setTimeout(() => setVerificationCode(null), 5 * 60 * 1000);
   });
 
   const features = [
@@ -39,18 +33,12 @@ export default function WelcomePage() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-primary/5 text-foreground overflow-hidden font-ibm-arabic">
       {/* Hero Section with Background Image */}
       <div className="relative min-h-[100dvh] flex flex-col">
-        {/* Background Video with Overlay */}
+        {/* Background Image with Overlay */}
         <div className="absolute inset-0 z-0">
-          <video
-            src={splashVideo}
-            autoPlay
-            loop
-            muted
-            playsInline
-            preload="auto"
-            poster={bannerImage1}
+          <img
+            src={bannerImage1}
+            alt="Coffee Background"
             className="w-full h-full object-cover"
-            data-testid="video-splash-background"
           />
           <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/40 to-black/70" />
         </div>
@@ -65,9 +53,9 @@ export default function WelcomePage() {
         <header className="relative z-20 flex items-center justify-between p-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-xl p-1 border border-white/30">
-              <img src={tasaliLogo} alt="Logo" className="w-full h-full object-contain rounded-xl" />
+              <img src={blackroseLogo} alt="Logo" className="w-full h-full object-contain rounded-xl" />
             </div>
-            <span className="text-white font-bold text-lg tracking-wide">TASALI QURUMSH </span>
+            <span className="text-white font-bold text-lg tracking-wide">TASALI QURUMSH</span>
           </div>
 
           <div className="flex items-center gap-2">
@@ -140,7 +128,7 @@ export default function WelcomePage() {
               transition={{ delay: 0.2, duration: 0.5 }}
               className="w-28 h-28 mx-auto mb-8 rounded-2xl overflow-hidden backdrop-blur-xl p-2 border border-white/20 shadow-xl bg-black/30"
             >
-              <img src={tasaliLogo} alt="Logo" className="w-full h-full object-contain rounded-2xl" />
+              <img src={blackroseLogo} alt="Logo" className="w-full h-full object-contain rounded-2xl" />
             </motion.div>
 
             <motion.div

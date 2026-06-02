@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import QRCode from "qrcode";
-import tasaliLogo from "@assets/logo.png";
+import blackroseLogo from "@assets/blackrose-logo.png";
 import { brand as sysBrand } from "@/lib/brand";
 
 interface TableQRCardProps {
@@ -223,7 +223,7 @@ export function TableQRCard({ tableNumber, qrToken, branchName, tableUrl }: Tabl
         ctx.font          = "bold 58px 'Georgia', 'Times New Roman', serif";
         ctx.textAlign     = "center";
         ctx.textBaseline  = "alphabetic";
-        ctx.fillText("TASALI QURUMSH", W / 2, nameY);
+        ctx.fillText(sysBrand.shortNameEn, W / 2, nameY);
 
         ctx.fillStyle     = C.gold;
         ctx.font          = "22px 'Georgia', serif";
@@ -282,7 +282,7 @@ export function TableQRCard({ tableNumber, qrToken, branchName, tableUrl }: Tabl
 
       logoImg.onload  = () => drawMain(true);
       logoImg.onerror = () => drawMain(false);
-      logoImg.src     = tasaliLogo;
+      logoImg.src     = blackroseLogo;
     };
 
     const drawQRSection = async (
@@ -389,7 +389,7 @@ export function TableQRCard({ tableNumber, qrToken, branchName, tableUrl }: Tabl
             ctx.textBaseline = "middle";
             ctx.fillText("BR", ocx, ocy);
           };
-          logoOverlay.src = tasaliLogo;
+          logoOverlay.src = blackroseLogo;
 
           const ctaY = qrY + qrSz + pad + 40;
 

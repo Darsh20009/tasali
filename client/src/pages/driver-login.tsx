@@ -1,3 +1,4 @@
+import brand from "@/lib/brand";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -6,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Truck, Phone, ArrowLeft } from "lucide-react";
-import tasaliLogoStaff from "@assets/logo.png";
+import blackroseLogoStaff from "@assets/logo.png";
 import { useTranslate } from "@/lib/useTranslate";
 
 export default function DriverLogin() {
@@ -53,11 +54,11 @@ export default function DriverLogin() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-background to-primary/5 flex items-center justify-center p-4" dir="rtl">
+    <div className="min-h-screen bg-gradient-to-b from-background to-primary/5 flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-3">
-            <img src={tasaliLogoStaff} alt="TASALI QURUMSH SYSTEMS" className="w-14 h-14 object-contain rounded-xl" />
+            <img src={blackroseLogoStaff} alt={brand.shortNameEn} className="w-14 h-14 object-contain rounded-xl" />
           </div>
           <div className="w-14 h-14 mx-auto bg-primary/10 rounded-full flex items-center justify-center mb-2">
             <Truck className="w-7 h-7 text-primary" />

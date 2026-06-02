@@ -2,8 +2,9 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
 import { useTranslate } from "@/lib/useTranslate";
+import { MobileBottomNav } from "@/components/MobileBottomNav";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useOrderWebSocket } from "@/lib/websocket";
+import { useRealtimeEvent, useRealtimeStatus, useRealtimeSend } from "@/hooks/useRealtimeEngine";
 import { getSoundEnabled, setSoundEnabled as saveSoundEnabled, testSound, playNotificationSound } from "@/lib/notification-sounds";
 import { AudioUnlockBanner } from "@/components/audio-unlock-banner";
 import { 
@@ -15,13 +16,21 @@ import {
   Archive, RefreshCw, Wifi, WifiOff, Loader2,
   Navigation, SplitSquareVertical, Banknote,
   Lock, Bell, BellOff, MonitorSmartphone, ScanLine,
-  PauseCircle, Receipt, Settings, User, RotateCcw, TrendingDown,
-  Play, Square, CreditCard as CardIcon
+  PauseCircle, Receipt, Settings, User, Wallet, RotateCcw,
+  Percent, DollarSign, FolderOpen, Hash, Merge, Users, Scissors, Car,
+  Home, MoreHorizontal
 } from "lucide-react";
+import {
+  type CartSnapshot, type HeldCart as HeldCartType, type LineItemDiscount, type OrderDiscount,
+  type ServiceCharge as ServiceChargeConfig, type PersonPayment,
+  computeUnitPrice, computeTotalItemDiscounts, computeServiceChargeAmount,
+  computeOrderDiscountAmount, mergeCartItems, computePOSTotals, newCartId, blankCart
+} from "@/lib/pos-engine";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import SarIcon from "@/components/sar-icon";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -36,8 +45,15 @@ import {
   buildReceiptPreviewHtml,
   buildEmployeeReceiptPreviewHtml,
   printKitchenOrder,
-  fmtOrderNum
+  fmtOrderNum,
+  printReceiptSection,
+  openReceiptPreviewWindow,
+  prewarmZatcaQr,
 } from "@/lib/print-utils";
+import { preRenderReceiptPng } from "@/lib/receipt-png-cache";
+import { QuickSidebar } from "@/components/quick-sidebar";
+import QrPayModal from "@/components/qr-pay-modal";
+import { QrCode } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { LoadingState } from "@/components/ui/loading-state";
@@ -45,9 +61,11 @@ import { EmptyState } from "@/components/ui/empty-state";
 import DrinkCustomizationDialog, { type DrinkCustomization } from "@/components/drink-customization-dialog";
 import PrinterSettingsPanel from "@/components/printer-settings-panel";
 import { loadPrinterSettings } from "@/lib/thermal-printer";
+import RefundDialog from "@/components/refund-dialog";
+import { PosShiftBar } from "@/components/pos-shift-bar";
 
 type OrderType = "dine_in" | "takeaway" | "delivery" | "car_pickup";
-type PaymentMethod = "cash" | "card" | "split";
+type PaymentMethod = "cash" | "card" | "qahwa-card" | "split";
 
 const ORDER_TYPES = [
   { id: "dine_in", name: "محلي", nameEn: "Dine-in", icon: Coffee },
@@ -69,6 +87,7 @@ export default function PosSystem() {
   const PAYMENT_METHOD_LABELS: Record<string, string> = {
     cash: tc("نقدي","Cash"),
     card: tc("شبكة","Network"),
+    "qahwa-card": tc("بطاقة تسالي","TASALI Card"),
     split: tc("نقدي + شبكة","Cash + Network"),
   };
   const dir = i18n.language === 'ar' ? 'rtl' : 'ltr';
@@ -93,6 +112,9 @@ export default function PosSystem() {
   const [orderType, setOrderType] = useState<OrderType>("dine_in");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [splitCashAmount, setSplitCashAmount] = useState("");
+  const [personPayments, setPersonPayments] = useState<PersonPayment[]>([
+    { id: '1', method: 'cash', amount: '' },
+  ]);
   const [tableNumber, setTableNumber] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -109,8 +131,13 @@ export default function PosSystem() {
   const [offlineQueueCount, setOfflineQueueCount] = useState(0);
   const [newOrdersCount, setNewOrdersCount] = useState(0);
   const [showOrdersPanel, setShowOrdersPanel] = useState(false);
-  const [ordersFilter, setOrdersFilter] = useState<'all' | 'online' | 'pos'>('all');
+  const [ordersFilter, setOrdersFilter] = useState<'all' | 'online' | 'pos' | 'car'>('all');
+  const [carPreparationAlerts, setCarPreparationAlerts] = useState<any[]>([]);
+  const [showCarOrdersPanel, setShowCarOrdersPanel] = useState(false);
   const [showReceiptDialog, setShowReceiptDialog] = useState(false);
+  const [qrPayOpen, setQrPayOpen] = useState(false);
+  const [qrPayOrder, setQrPayOrder] = useState<{ id: string; orderNumber: string; amount: number } | null>(null);
+  const [creatingQrPay, setCreatingQrPay] = useState(false);
   const [receiptCountdown, setReceiptCountdown] = useState(0);
   const [lastOrder, setLastOrder] = useState<any>(null);
   const [lastPrintFailed, setLastPrintFailed] = useState(false);
@@ -133,7 +160,7 @@ export default function PosSystem() {
     return stored === null ? true : stored === "true"; // default ON
   });
   const [showVatLabel, setShowVatLabel] = useState(() => localStorage.getItem("pos-show-vat-label") === "true");
-  const [posCustomizationItem, setPosCustomizationItem] = useState<{ item: CoffeeItem; group: CoffeeItem[] } | null>(null);
+  const [posCustomizationItem, setPosCustomizationItem] = useState<{ item: CoffeeItem; group: CoffeeItem[]; initialCustomization?: DrinkCustomization } | null>(null);
   const [showOrderReview, setShowOrderReview] = useState(false);
   const [orderNote, setOrderNote] = useState("");
   const [carTypeInput, setCarTypeInput] = useState("");
@@ -143,188 +170,171 @@ export default function PosSystem() {
     const saved = localStorage.getItem("pos-zoom");
     return saved ? Number(saved) : 100;
   });
-
-  // ── Shift state ─────────────────────────────────────────────────────
-  const [showPosShiftOpen, setShowPosShiftOpen] = useState(false);
-  const [showPosShiftClose, setShowPosShiftClose] = useState(false);
-  const [posOpeningCash, setPosOpeningCash] = useState("");
-  const [posClosingCash, setPosClosingCash] = useState("");
-  const [posClosingNotes, setPosClosingNotes] = useState("");
-  const [showShiftDetails, setShowShiftDetails] = useState(false);
-
-  const { data: activeShift, refetch: refetchShift } = useQuery<any | null>({
-    queryKey: ['/api/shifts/active'],
-    refetchInterval: 60000,
-    retry: false,
-  });
-
-  const { data: currentPeriod } = useQuery<any>({
-    queryKey: ['/api/shifts/current-period'],
-    refetchInterval: 300000,
-    retry: false,
-  });
-
-  const openShiftMutation = useMutation({
-    mutationFn: async (data: { openingCash: number; notes: string }) => {
-      const res = await apiRequest("POST", "/api/shifts/open", data);
-      return res.json();
-    },
-    onSuccess: () => {
-      toast({ title: "تم فتح الوردية بنجاح", description: "يمكنك الآن استقبال الطلبات" });
-      queryClient.invalidateQueries({ queryKey: ['/api/shifts/active'] });
-      setShowPosShiftOpen(false);
-      setPosOpeningCash("");
-    },
-    onError: (error: any) => {
-      toast({ title: "خطأ", description: error.message || "فشل في فتح الوردية", variant: "destructive" });
-    },
-  });
-
-  const closeShiftMutation = useMutation({
-    mutationFn: async (data: { closingCash: number; closingNotes: string }) => {
-      const res = await apiRequest("POST", "/api/shifts/close", data);
-      return res.json();
-    },
-    onSuccess: (data) => {
-      toast({ title: "تم إغلاق الوردية", description: "تم إنشاء تقرير Z بنجاح" });
-      queryClient.invalidateQueries({ queryKey: ['/api/shifts/active'] });
-      setShowPosShiftClose(false);
-      setPosClosingCash("");
-      setPosClosingNotes("");
-      if (data.shift) handlePrintShiftReport(data.shift);
-    },
-    onError: (error: any) => {
-      toast({ title: "خطأ", description: error.message || "فشل في إغلاق الوردية", variant: "destructive" });
-    },
-  });
-
-  const handlePrintShiftReport = (shift: any) => {
-    const printWindow = window.open('', '_blank', 'width=400,height=800');
-    if (!printWindow) return;
-    const pb = shift.paymentBreakdown || {};
-    const cashIn = (shift.cashMovements || []).filter((m: any) => m.type === 'cash_in' || m.type === 'paid_in').reduce((s: number, m: any) => s + m.amount, 0);
-    const cashOut = (shift.cashMovements || []).filter((m: any) => m.type === 'cash_out' || m.type === 'paid_out').reduce((s: number, m: any) => s + m.amount, 0);
-    const fmt = (n: number) => `${(n || 0).toFixed(2)} ر.س`;
-    const fmtTime = (d: string) => new Date(d).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
-    printWindow.document.write(`<html dir="rtl"><head><title>تقرير الوردية</title>
-      <style>body{font-family:Arial,sans-serif;padding:10px;max-width:340px;margin:0 auto;font-size:13px}
-      .hdr{text-align:center;border-bottom:2px solid #000;padding-bottom:8px;margin-bottom:8px}
-      .hdr h1{font-size:17px;margin:3px 0}.hdr h2{font-size:13px;color:#7D3D0F;margin:2px 0}
-      .row{display:flex;justify-content:space-between;padding:2px 0}
-      .sec{border-top:1px dashed #999;margin:6px 0;padding-top:6px}
-      .sec-t{font-weight:bold;font-size:13px;margin-bottom:4px;color:#7D3D0F}
-      .bold{font-weight:bold;border-top:2px solid #000;padding-top:4px;margin-top:4px}
-      .foot{text-align:center;margin-top:12px;border-top:1px dashed #999;padding-top:8px;font-size:11px;color:#666}
-      @media print{body{padding:3px}}</style></head><body>
-      <div class="hdr"><h1>تسالي كرومش</h1><h2>تقرير الوردية - ${shift.isAuto ? 'تلقائية' : 'Z'}</h2><div>${shift.shiftNumber}</div></div>
-      <div class="row"><span>الكاشير:</span><span>${shift.employeeName || '-'}</span></div>
-      <div class="row"><span>بداية الوردية:</span><span>${fmtTime(shift.openedAt)}</span></div>
-      <div class="row"><span>نهاية الوردية:</span><span>${shift.closedAt ? fmtTime(shift.closedAt) : '-'}</span></div>
-      <div class="sec"><div class="sec-t">ملخص المبيعات</div>
-      <div class="row"><span>إجمالي المبيعات:</span><span>${fmt(shift.totalSales)}</span></div>
-      <div class="row"><span>عدد الطلبات:</span><span>${shift.totalOrders}</span></div>
-      <div class="row"><span>مبيعات نقدية:</span><span>${fmt(shift.totalCashSales)}</span></div>
-      <div class="row"><span>مبيعات شبكة:</span><span>${fmt(shift.totalCardSales)}</span></div>
-      ${(pb.loyalty || 0) > 0 ? `<div class="row"><span>بطاقة ولاء:</span><span>${fmt(pb.loyalty)}</span></div>` : ''}
-      <div class="row"><span>ضريبة القيمة المضافة:</span><span>${fmt(shift.totalVAT)}</span></div>
-      <div class="bold row"><span>صافي الإيرادات:</span><span>${fmt(shift.netRevenue)}</span></div></div>
-      ${!shift.isAuto ? `<div class="sec"><div class="sec-t">الصندوق</div>
-      <div class="row"><span>رصيد الافتتاح:</span><span>${fmt(shift.openingCash)}</span></div>
-      ${cashIn > 0 ? `<div class="row"><span>إيداعات:</span><span>${fmt(cashIn)}</span></div>` : ''}
-      ${cashOut > 0 ? `<div class="row"><span>سحوبات:</span><span>${fmt(cashOut)}</span></div>` : ''}
-      <div class="row"><span>الرصيد المتوقع:</span><span>${fmt(shift.expectedCash || 0)}</span></div>
-      <div class="row"><span>الرصيد الفعلي:</span><span>${fmt(shift.closingCash || 0)}</span></div>
-      <div class="bold row"><span>الفرق:</span><span>${fmt(shift.cashDifference || 0)}</span></div></div>` : ''}
-      <div class="foot"><div>TASALI QURUMSH</div><div>${new Date().toLocaleString('ar-SA')}</div></div>
-      </body></html>`);
-    printWindow.document.close();
-    setTimeout(() => printWindow.print(), 500);
-  };
-
-  // ── Refund state ─────────────────────────────────────────────────────
   const [showRefundDialog, setShowRefundDialog] = useState(false);
-  const [refundOrder, setRefundOrder] = useState<any>(null);
-  const [refundType, setRefundType] = useState<'full' | 'partial'>('full');
-  const [refundMethod, setRefundMethod] = useState<'cash' | 'card' | 'split'>('cash');
-  const [refundCashInput, setRefundCashInput] = useState('');
-  const [refundReason, setRefundReason] = useState('');
-  const [refundSelectedItems, setRefundSelectedItems] = useState<Record<string, boolean>>({});
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const categoryDropdownRef = useRef<HTMLDivElement>(null);
 
-  const { isConnected: wsConnected, sendMessage: wsSend } = useOrderWebSocket({
-    clientType: "pos",
-    branchId: employee?.branchId?.toString(),
-    onNewOrder: (order) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/orders/live"] });
-      const isOnlineWebOrder = order?.channel === 'online' || order?.channel === 'web';
-      const isPosOrder = order?.channel === 'pos';
-      // Only show badge and toast for online/web customer orders (not POS orders created by staff)
-      if (isOnlineWebOrder) {
-        setNewOrdersCount(prev => prev + 1);
-        if (soundEnabled) {
-          playNotificationSound('onlineOrderVoice', 1.0);
-        }
-        toast({
-          title: t('pos.new_order_toast'),
-          description: t('pos.new_order_toast_desc', { number: order?.orderNumber ? fmtOrderNum(order.orderNumber) : '', amount: order?.totalAmount || 0 }),
-        });
-        // Auto-print online order receipt
-        const printerSettings = loadPrinterSettings();
-        if (printerSettings.autoPrint && order?.items?.length > 0) {
-          const onlineOrderType = order.orderType || 'online';
-          const onlineOrderTypeName =
-            onlineOrderType === 'dine_in' || onlineOrderType === 'dine-in' ? 'طاولة' :
-            onlineOrderType === 'takeaway' || onlineOrderType === 'pickup' ? 'سفري' :
-            onlineOrderType === 'delivery' ? 'توصيل' :
-            onlineOrderType === 'car_pickup' || onlineOrderType === 'car-pickup' ? 'سيارة' :
-            'أونلاين';
-          const printData = {
-            orderNumber: String(order.orderNumber || order.dailyNumber || order._id?.slice(-4) || '0'),
-            customerName: order.customerName || 'عميل أونلاين',
-            customerPhone: order.customerPhone || '',
-            items: (order.items || []).map((item: any) => ({
-              coffeeItem: {
-                nameAr: item.coffeeItem?.nameAr || item.nameAr || '',
-                nameEn: item.coffeeItem?.nameEn || item.nameEn || '',
-                price: String(item.coffeeItem?.price || item.price || 0),
-              },
-              quantity: item.quantity || 1,
-              customization: item.customization,
-            })),
-            subtotal: String(order.subtotal || (Number(order.totalAmount) / 1.15).toFixed(2)),
-            total: String(order.totalAmount || 0),
-            paymentMethod: order.paymentMethod || 'أونلاين',
-            employeeName: '',
-            tableNumber: order.tableNumber,
-            orderType: onlineOrderType as any,
-            orderTypeName: onlineOrderTypeName,
-            date: order.createdAt || new Date().toISOString(),
-          };
-          setTimeout(() => {
-            try { printTaxInvoice(printData, { autoPrint: true }); } catch (e) {
-              console.warn('[POS] Online order auto-print failed silently:', e);
-            }
-          }, 500);
-        }
-      } else if (!isPosOrder && soundEnabled) {
-        playNotificationSound('newOrder', 0.6);
+  // ── Stable callback refs (prevents TDZ in keyboard useEffect) ────────────
+  const newCartTabRef     = useRef<() => void>(() => {});
+  const holdCurrentCartRef = useRef<() => void>(() => {});
+
+  // ── POS Engine: Multi-Cart, Hold, Service Charge, Discounts ──────────────
+  interface CartTab { id: string; name: string; itemCount: number; total: number; createdAt: number; }
+
+  const [cartTabs, setCartTabs] = useState<CartTab[]>([{ id: 'main', name: tc('طلب 1','Order 1'), itemCount: 0, total: 0, createdAt: Date.now() }]);
+  const [activeTabId, setActiveTabId] = useState('main');
+  const [heldCarts, setHeldCarts] = useState<HeldCartType[]>(() => {
+    try { return JSON.parse(localStorage.getItem('pos-held-carts') || '[]'); } catch { return []; }
+  });
+  const [showHeldCarts, setShowHeldCarts] = useState(false);
+  const [showMergeBills, setShowMergeBills] = useState(false);
+
+  // Service charge
+  const [serviceCharge, setServiceCharge] = useState<ServiceChargeConfig>({ enabled: false, type: 'percent', value: 10 });
+
+  // Per-item discounts: Record<lineItemId, {type, value}>
+  const [itemDiscounts, setItemDiscounts] = useState<Record<string, LineItemDiscount>>({});
+  const [showItemDiscountFor, setShowItemDiscountFor] = useState<string | null>(null);
+  const [itemDiscountInput, setItemDiscountInput] = useState('');
+  const [itemDiscountType, setItemDiscountType] = useState<'percent' | 'amount'>('percent');
+
+  // Manual order-level discount
+  const [manualDiscount, setManualDiscount] = useState<OrderDiscount | undefined>(undefined);
+  const [showManualDiscount, setShowManualDiscount] = useState(false);
+  const [manualDiscountInput, setManualDiscountInput] = useState('');
+  const [manualDiscountType, setManualDiscountType] = useState<'percent' | 'amount'>('percent');
+
+  // Split by persons
+  const [showSplitPersons, setShowSplitPersons] = useState(false);
+  const [splitPersons, setSplitPersons] = useState(2);
+
+  // Saved cart snapshots for tab switching (stored as map cartId → CartSnapshot)
+  const savedTabsRef = useRef<Record<string, Partial<CartSnapshot>>>({});
+
+  // ── RealtimeEngine WebSocket (replaces legacy useOrderWebSocket) ─────────────
+  const { connected: wsConnected } = useRealtimeStatus();
+  const { send: rtSend } = useRealtimeSend();
+
+  useRealtimeEvent("new_order", (order: any) => {
+    queryClient.invalidateQueries({ queryKey: ["/api/orders/live"] });
+    const isOnlineWebOrder = order?.channel === 'online' || order?.channel === 'web';
+    const isPosOrder = order?.channel === 'pos';
+    if (isOnlineWebOrder) {
+      setNewOrdersCount(prev => prev + 1);
+      if (soundEnabled) playNotificationSound('onlineOrderVoice', 1.0);
+      toast({
+        title: t('pos.new_order_toast'),
+        description: t('pos.new_order_toast_desc', {
+          number: order?.orderNumber ? fmtOrderNum(order.orderNumber) : '',
+          amount: order?.totalAmount || 0,
+        }),
+      });
+      const printerSettings = loadPrinterSettings();
+      if (printerSettings.autoPrint && order?.items?.length > 0) {
+        const onlineOrderType = order.orderType || 'online';
+        const onlineOrderTypeName =
+          onlineOrderType === 'dine_in'    || onlineOrderType === 'dine-in'    ? 'محلي'   :
+          onlineOrderType === 'takeaway'   || onlineOrderType === 'pickup'     ? 'سفري'   :
+          onlineOrderType === 'delivery'                                        ? 'توصيل'  :
+          onlineOrderType === 'car_pickup' || onlineOrderType === 'car-pickup' ? 'سيارة'  :
+          'أونلاين';
+        const printData = {
+          orderNumber: String(order.orderNumber || order.dailyNumber || order._id?.slice(-4) || '0'),
+          customerName: order.customerName || 'عميل أونلاين',
+          customerPhone: order.customerPhone || '',
+          items: (order.items || []).map((item: any) => ({
+            coffeeItem: {
+              nameAr: item.coffeeItem?.nameAr || item.nameAr || '',
+              nameEn: item.coffeeItem?.nameEn || item.nameEn || '',
+              price: String(item.price || item.unitPrice || item.coffeeItem?.price || 0),
+            },
+            quantity: item.quantity || 1,
+            selectedSize: item.selectedSize || undefined,
+            customization: item.customization,
+          })),
+          subtotal: String(order.subtotal || (Number(order.totalAmount) / 1.15).toFixed(2)),
+          total: String(order.totalAmount || 0),
+          paymentMethod: order.paymentMethod || 'أونلاين',
+          employeeName: '',
+          tableNumber: order.tableNumber,
+          orderType: onlineOrderType as any,
+          orderTypeName: onlineOrderTypeName,
+          date: order.createdAt || new Date().toISOString(),
+        };
+        setTimeout(() => {
+          try { printTaxInvoice(printData, { autoPrint: true }); } catch (e) {
+            console.warn('[POS] Online order auto-print failed silently:', e);
+          }
+        }, 500);
       }
-      // POS orders: no sound, no toast (cashier already knows they created it)
-    },
-    onOrderUpdated: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/orders/live"] });
-    },
-    enabled: true,
+    } else if (!isPosOrder && soundEnabled) {
+      playNotificationSound('newOrder', 0.6);
+    }
+  });
+
+  useRealtimeEvent("order_updated", () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/orders/live"] });
+  });
+
+  useRealtimeEvent("car_preparation_alert", (order: any) => {
+    queryClient.invalidateQueries({ queryKey: ["/api/orders/curbside"] });
+    setCarPreparationAlerts(prev => {
+      if (prev.some(a => a._id === order._id)) return prev;
+      return [order, ...prev];
+    });
+    if (soundEnabled) playNotificationSound('onlineOrderVoice', 1.0);
+    toast({
+      title: `🚗 طلب سيارة — وصول خلال ${order.diffMin ?? '≤10'} دقيقة!`,
+      description: `${order.customerName || 'عميل'} | ${order.carColor || ''} ${order.carType || ''} | لوحة: ${order.plateNumber || '—'}`,
+      duration: 15000,
+    });
+    // Auto-print kitchen preparation ticket
+    const printerSettings = loadPrinterSettings();
+    if (printerSettings.autoPrint && order?.items?.length > 0) {
+      import('@/lib/print-utils').then(({ printTaxInvoice }) => {
+        printTaxInvoice({
+          orderNumber: String(order.orderNumber || order.dailyNumber || ''),
+          customerName: order.customerName || 'سيارة',
+          customerPhone: order.customerPhone || '',
+          items: (order.items || []).map((item: any) => ({
+            coffeeItem: {
+              nameAr: item.coffeeItem?.nameAr || item.nameAr || '',
+              nameEn: item.coffeeItem?.nameEn || item.nameEn || '',
+              price: String(item.coffeeItem?.price || item.price || 0),
+            },
+            quantity: item.quantity || 1,
+          })),
+          subtotal: String(Number(order.totalAmount || 0) / 1.15),
+          total: String(order.totalAmount || 0),
+          paymentMethod: 'نقدي عند الاستلام',
+          employeeName: employee?.fullName || '',
+          orderType: 'car_pickup' as any,
+          orderTypeName: `🚗 سيارة — ${order.carColor || ''} ${order.carType || ''} (${order.plateNumber || ''}) — يصل ${order.arrivalTime || ''}`,
+          date: new Date().toISOString(),
+        }, { autoPrint: true });
+      }).catch(() => {});
+    }
   });
 
   const broadcastToDisplay = useCallback((event: string, data?: any) => {
-    if (typeof wsSend === 'function') {
-      wsSend({ type: "pos_cart_update", payload: { event, ...data } });
-    }
-  }, [wsSend]);
+    rtSend("pos_cart_update", { event, ...data });
+  }, [rtSend]);
 
   useEffect(() => {
     localStorage.setItem("pos-terminal-connected", String(posTerminalConnected));
   }, [posTerminalConnected]);
+
+  // Close category dropdown when clicking outside
+  useEffect(() => {
+    if (!showCategoryDropdown) return;
+    const handleClick = (e: MouseEvent) => {
+      if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(e.target as Node)) {
+        setShowCategoryDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showCategoryDropdown]);
 
   // Offline queue: load count on mount, sync when back online
   useEffect(() => {
@@ -392,6 +402,27 @@ export default function PosSystem() {
     return () => clearInterval(interval);
   }, [showReceiptDialog]);
 
+  // Auto-generate new-design receipt HTML whenever an order completes
+  useEffect(() => {
+    if (!lastOrder || !showReceiptDialog) return;
+    setReceiptPreviewHtml('');
+    const previewData = {
+      orderNumber: lastOrder.orderNumber,
+      customerName: lastOrder.customerName,
+      customerPhone: lastOrder.customerPhone,
+      items: lastOrder.items,
+      subtotal: String(lastOrder.subtotal),
+      total: String(lastOrder.total),
+      paymentMethod: PAYMENT_METHOD_LABELS[lastOrder.paymentMethod] || lastOrder.paymentMethod,
+      employeeName: lastOrder.employeeName,
+      tableNumber: lastOrder.tableNumber,
+      orderType: lastOrder.orderType,
+      date: lastOrder.date,
+      splitPayment: lastOrder.splitPayment,
+    };
+    buildReceiptPreviewHtml(previewData).then(html => setReceiptPreviewHtml(html)).catch(() => {});
+  }, [lastOrder, showReceiptDialog]);
+
   useEffect(() => {
     const is9Digit = customerPhone.length === 9 && customerPhone.startsWith('5');
     const is10Digit = customerPhone.length === 10 && customerPhone.startsWith('05');
@@ -458,22 +489,24 @@ export default function PosSystem() {
       const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
       const isInput = tag === 'input' || tag === 'textarea' || tag === 'select';
 
-      // / or F2 → focus search (from anywhere except other inputs)
+      // / or F2 → focus search
       if ((e.key === '/' || e.key === 'F2') && !isInput) {
         e.preventDefault();
         searchInputRef.current?.focus();
         return;
       }
-      // Escape → clear search or blur
-      if (e.key === 'Escape' && isInput) {
-        setSearchQuery('');
-        (e.target as HTMLElement).blur();
-        return;
+      // Escape → clear search or close dialogs
+      if (e.key === 'Escape') {
+        if (showItemDiscountFor) { setShowItemDiscountFor(null); return; }
+        if (showHeldCarts) { setShowHeldCarts(false); return; }
+        if (showMergeBills) { setShowMergeBills(false); return; }
+        if (isInput) { setSearchQuery(''); (e.target as HTMLElement).blur(); return; }
       }
-      // Ctrl+P → print receipt
+      // Ctrl+P → print receipt (via print queue, not window.print)
       if ((e.ctrlKey || e.metaKey) && e.key === 'p' && orderItems.length > 0) {
         e.preventDefault();
-        window.print();
+        const printEvent = new CustomEvent('qirox:pos-print-shortcut');
+        window.dispatchEvent(printEvent);
         return;
       }
       // Ctrl+F → focus search
@@ -482,10 +515,102 @@ export default function PosSystem() {
         searchInputRef.current?.focus();
         return;
       }
+      // F4 → new cart tab
+      if (e.key === 'F4' && !isInput) {
+        e.preventDefault();
+        newCartTabRef.current();
+        return;
+      }
+      // F5 → hold current cart
+      if (e.key === 'F5' && !isInput) {
+        e.preventDefault();
+        holdCurrentCartRef.current();
+        return;
+      }
+      // F6 → show held carts
+      if (e.key === 'F6' && !isInput) {
+        e.preventDefault();
+        setShowHeldCarts(true);
+        return;
+      }
+      // F3 → toggle incoming orders panel
+      if (e.key === 'F3' && !isInput) {
+        e.preventDefault();
+        setShowOrdersPanel(prev => { if (!prev) setNewOrdersCount(0); return !prev; });
+        return;
+      }
+      // F7 → toggle service charge
+      if (e.key === 'F7' && !isInput) {
+        e.preventDefault();
+        setServiceCharge(prev => ({ ...prev, enabled: !prev.enabled }));
+        return;
+      }
+      // F8 → toggle customer lookup
+      if (e.key === 'F8' && !isInput) {
+        e.preventDefault();
+        setShowCustomerInfo(v => !v);
+        return;
+      }
+      // F9 → open bills
+      if (e.key === 'F9' && !isInput) {
+        e.preventDefault();
+        setShowOpenBillsDialog(true);
+        return;
+      }
+      // F10 → tables
+      if (e.key === 'F10' && !isInput) {
+        e.preventDefault();
+        setShowTablesDialog(true);
+        return;
+      }
+      // Ctrl+D → manual discount
+      if ((e.ctrlKey || e.metaKey) && e.key === 'd' && !isInput) {
+        e.preventDefault();
+        setShowManualDiscount(true);
+        return;
+      }
+      // Ctrl+M → merge bills
+      if ((e.ctrlKey || e.metaKey) && e.key === 'm' && !isInput) {
+        e.preventDefault();
+        setShowMergeBills(true);
+        return;
+      }
+      // Ctrl+S → split bill
+      if ((e.ctrlKey || e.metaKey) && e.key === 's' && !isInput) {
+        e.preventDefault();
+        setShowSplitPersons(true);
+        return;
+      }
+      // Numpad +/- → adjust quantity of last item
+      if (!isInput && orderItems.length > 0) {
+        const lastItem = orderItems[orderItems.length - 1];
+        if (e.key === 'NumpadAdd' || e.key === '+') {
+          e.preventDefault();
+          updateQuantity(lastItem.lineItemId, lastItem.quantity + 1);
+          return;
+        }
+        if (e.key === 'NumpadSubtract' || e.key === '-') {
+          e.preventDefault();
+          updateQuantity(lastItem.lineItemId, Math.max(0, lastItem.quantity - 1));
+          return;
+        }
+      }
+      // Ctrl+H → hold current order
+      if ((e.ctrlKey || e.metaKey) && e.key === 'h' && !isInput) {
+        e.preventDefault();
+        holdCurrentCartRef.current();
+        return;
+      }
+      // Ctrl+T → new cart tab
+      if ((e.ctrlKey || e.metaKey) && e.key === 't' && !isInput) {
+        e.preventDefault();
+        newCartTabRef.current();
+        return;
+      }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [orderItems.length]);
+  }, [orderItems.length, showItemDiscountFor, showHeldCarts, showMergeBills]);
 
   const { data: productsData, isLoading: isLoadingProducts } = useQuery<CoffeeItem[]>({
     queryKey: ["/api/coffee-items"],
@@ -505,8 +630,7 @@ export default function PosSystem() {
 
   const { data: liveOrders } = useQuery<Order[]>({
     queryKey: ["/api/orders/live"],
-    refetchInterval: 20000,
-    staleTime: 10000,
+    staleTime: 30000,
   });
 
   const { data: businessConfig } = useQuery<any>({
@@ -521,8 +645,7 @@ export default function PosSystem() {
       return res.json();
     },
     enabled: !!employee?.branchId,
-    refetchInterval: 30000,
-    staleTime: 15000,
+    staleTime: 60000,
   });
 
   const updateOrderStatusMutation = useMutation({
@@ -548,35 +671,6 @@ export default function PosSystem() {
     },
     onError: () => {
       toast({ variant: "destructive", title: t('pos.error'), description: t('pos.table_clear_error') });
-    }
-  });
-
-  // ── Refund mutation ─────────────────────────────────────────────────
-  const refundMutation = useMutation({
-    mutationFn: async (payload: {
-      orderId: string;
-      refundType: 'full' | 'partial';
-      refundMethod: 'cash' | 'card' | 'split';
-      refundCashAmount?: number;
-      reason?: string;
-      items?: any[];
-    }) => {
-      const { orderId, ...body } = payload;
-      return await apiRequest("POST", `/api/orders/${orderId}/refund`, body);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/orders/live"] });
-      setShowRefundDialog(false);
-      setRefundOrder(null);
-      setRefundType('full');
-      setRefundMethod('cash');
-      setRefundCashInput('');
-      setRefundReason('');
-      setRefundSelectedItems({});
-      toast({ title: tc('تم الاسترجاع بنجاح', 'Refund Processed'), description: tc('تم خصم المبلغ من الإيرادات والأرباح', 'Amount deducted from revenue and profits') });
-    },
-    onError: (err: any) => {
-      toast({ variant: "destructive", title: tc('فشل الاسترجاع', 'Refund Failed'), description: err?.message || tc('حدث خطأ، حاول مجددًا', 'An error occurred, please try again') });
     }
   });
 
@@ -625,11 +719,44 @@ export default function PosSystem() {
   const openTableOrders = useMemo(() => {
     if (!liveOrders) return [];
     return liveOrders.filter((o: any) => 
-      ['pending', 'in_progress', 'ready'].includes(o.status) && 
+      ['pending', 'payment_confirmed', 'confirmed', 'in_progress', 'ready', 'delivered', 'received', 'suspended'].includes(o.status) && 
       o.tableNumber && 
       (o.orderType === 'dine_in' || o.orderType === 'dine-in')
     );
   }, [liveOrders]);
+
+  // ── 10-minute pre-warning for scheduled orders (car pickup / pre-paid table) ──
+  const { data: kitchenOrdersForAlert = [] } = useQuery<any[]>({
+    queryKey: ["/api/orders/kitchen"],
+    staleTime: 60000,
+    select: (orders: any[]) =>
+      (orders || []).filter((o: any) => o.scheduledPickupTime && o.preparationHoldUntil),
+  });
+
+  const alertedPosPreWarningIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!kitchenOrdersForAlert.length) return;
+    const now = Date.now();
+    const newWarnings = kitchenOrdersForAlert.filter((o: any) => {
+      if (!o.preparationHoldUntil) return false;
+      const holdTime = new Date(o.preparationHoldUntil).getTime();
+      return (
+        holdTime > now &&
+        holdTime - now <= 10 * 60 * 1000 &&
+        !alertedPosPreWarningIds.current.has(o.id || o._id)
+      );
+    });
+    if (!newWarnings.length) return;
+    newWarnings.forEach((o: any) => alertedPosPreWarningIds.current.add(o.id || o._id));
+    newWarnings.forEach((o: any) => {
+      const minsLeft = Math.ceil((new Date(o.preparationHoldUntil).getTime() - now) / 60000);
+      toast({
+        title: `⏰ تنبيه موعد — طلب #${o.orderNumber}`,
+        description: `باقي ${minsLeft} دقيقة للموعد — ابدأ التحضير الآن!`,
+        variant: "destructive",
+      });
+    });
+  }, [kitchenOrdersForAlert, toast]);
 
   const getItemDisplayName = useCallback((item: any) => {
     if (i18n.language === 'en') return item.nameEn || item.nameAr || '';
@@ -661,6 +788,11 @@ export default function PosSystem() {
   const filteredItemsList = useMemo(() => {
     if (!productsData) return [];
     const q = searchQuery.toLowerCase();
+    const allCounts = productsData
+      .map((i: any) => i.salesCount || 0)
+      .filter((c: number) => c > 0)
+      .sort((a: number, b: number) => b - a);
+    const bsThreshold = allCounts.length >= 3 ? allCounts[2] : (allCounts[0] || 1);
     return Object.values(groupedItemsMap)
       .filter(group => {
         const rep = group[0];
@@ -673,56 +805,44 @@ export default function PosSystem() {
           return arName.includes(q) || enName.includes(q);
         });
       })
-      .map(group => group[0])
-      .sort((a, b) => ((b as any).salesCount || 0) - ((a as any).salesCount || 0));
+      .map(group => {
+        const item = group[0] as any;
+        return {
+          ...item,
+          isBestSeller: (item.salesCount || 0) >= bsThreshold && bsThreshold > 0,
+        };
+      });
   }, [productsData, selectedCategory, searchQuery, groupedItemsMap]);
 
   const visibleCategories = useMemo(() => {
     const itemCategorySet = new Set(productsData?.map(p => p.category).filter(Boolean) || []);
-    const dbCatIds = new Set(menuCategories.map(c => c.id));
-
-    const dynamicCats = menuCategories
+    return menuCategories
       .filter(c => itemCategorySet.has(c.id))
       .map(c => ({
         id: c.id,
-        name: i18n.language === 'ar' ? c.nameAr : (c.nameEn || c.nameAr),
+        name: i18n.language === 'ar' ? (c.nameAr || c.nameEn) : (c.nameEn || c.nameAr),
         icon: Tag,
         color: "text-primary"
       }));
-
-    const legacyNames: Record<string, { ar: string; en: string }> = {
-      hot:       { ar: 'وجبات ساخنة',    en: 'Hot Snacks' },
-      cold:      { ar: 'مشروبات باردة',   en: 'Cold Drinks' },
-      desserts:  { ar: 'الحلويات',        en: 'Desserts' },
-      bakery:    { ar: 'المخبوزات',       en: 'Bakery' },
-      sandwiches:{ ar: 'ساندويتش',        en: 'Sandwiches' },
-      basic:     { ar: 'سناكس أساسية',   en: 'Main Snacks' },
-      specialty: { ar: 'أطباق إضافية',   en: 'Specialty Items' },
-      drinks:    { ar: 'الأطباق',         en: 'Drinks' },
-      food:      { ar: 'المأكولات',       en: 'Food' },
-    };
-    const legacyCats = Array.from(itemCategorySet)
-      .filter(id => !dbCatIds.has(id) && legacyNames[id as string])
-      .map(id => ({
-        id,
-        name: i18n.language === 'ar' ? legacyNames[id].ar : legacyNames[id].en,
-        icon: Tag,
-        color: "text-primary"
-      }));
-
-    return [...dynamicCats, ...legacyCats];
   }, [productsData, menuCategories, i18n.language]);
 
-  const maxSalesCount = useMemo(() => {
-    if (!productsData?.length) return 0;
-    return Math.max(0, ...productsData.map(p => (p as any).salesCount || 0));
-  }, [productsData]);
+  // Helper: get the correct unit price for a POS order item, respecting the selected size
+  // Defined here (before calculateTotal) so it can be used in useMemo callbacks
+  const getPosItemUnitPriceEarly = (item: any): number => {
+    let base = Number(item.coffeeItem?.price) || 0;
+    if (item.selectedSize && item.coffeeItem?.availableSizes) {
+      const size = item.coffeeItem.availableSizes.find((s: any) => s.nameAr === item.selectedSize);
+      if (size) base = Number(size.price) || 0;
+    }
+    const addonsPrice = (item.customization?.selectedItemAddons || []).reduce((s: number, a: any) => s + (Number(a.price) || 0), 0);
+    return base + addonsPrice;
+  };
 
   const calculateTotal = useMemo(() => {
     return orderItems.reduce((sum, item) => {
-      const addonsPrice = (item.customization?.selectedItemAddons || []).reduce((s: number, a: any) => s + (Number(a.price) || 0), 0);
-      return sum + ((Number(item.coffeeItem.price) + addonsPrice) * item.quantity);
+      return sum + (getPosItemUnitPriceEarly(item) * item.quantity);
     }, 0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderItems]);
 
   const pointsDiscount = useMemo(() => {
@@ -735,7 +855,7 @@ export default function PosSystem() {
 
   const calculateSubtotal = useMemo(() => calculateTotal / 1.15, [calculateTotal]);
 
-  // Discount coupon (e.g. TECH10 — كلية التقنية للبنات بالرياض)
+  // Discount coupon (e.g. TECH10 — كلية التقنية للبنات بينبع)
   const [discountCode, setDiscountCode] = useState("");
   const [isValidatingDiscount, setIsValidatingDiscount] = useState(false);
   const [appliedDiscount, setAppliedDiscount] = useState<{ code: string; percentage: number; reason?: string } | null>(null);
@@ -749,6 +869,40 @@ export default function PosSystem() {
     () => Math.max(0, calculateTotalAfterPoints - couponDiscountAmount),
     [calculateTotalAfterPoints, couponDiscountAmount]
   );
+
+  // ── New engine calculations ────────────────────────────────────────────────
+  const itemDiscountTotal = useMemo(
+    () => computeTotalItemDiscounts(orderItems, itemDiscounts),
+    [orderItems, itemDiscounts]
+  );
+  const manualDiscountAmount = useMemo(
+    () => computeOrderDiscountAmount(Math.max(0, calculateGrandTotal - itemDiscountTotal), manualDiscount),
+    [calculateGrandTotal, itemDiscountTotal, manualDiscount]
+  );
+  const serviceChargeAmount = useMemo(
+    () => computeServiceChargeAmount(Math.max(0, calculateGrandTotal - itemDiscountTotal - manualDiscountAmount), serviceCharge),
+    [calculateGrandTotal, itemDiscountTotal, manualDiscountAmount, serviceCharge]
+  );
+  const finalGrandTotal = useMemo(
+    () => Math.max(0, calculateGrandTotal - itemDiscountTotal - manualDiscountAmount + serviceChargeAmount),
+    [calculateGrandTotal, itemDiscountTotal, manualDiscountAmount, serviceChargeAmount]
+  );
+  const finalSubtotal = useMemo(() => finalGrandTotal / 1.15, [finalGrandTotal]);
+  const finalTax     = useMemo(() => finalGrandTotal - finalSubtotal, [finalGrandTotal, finalSubtotal]);
+
+  // Sync tab item counts
+  useEffect(() => {
+    setCartTabs(prev => prev.map(t =>
+      t.id === activeTabId
+        ? { ...t, itemCount: orderItems.length, total: finalGrandTotal }
+        : t
+    ));
+  }, [orderItems.length, finalGrandTotal, activeTabId]);
+
+  // Persist held carts to localStorage
+  useEffect(() => {
+    localStorage.setItem('pos-held-carts', JSON.stringify(heldCarts));
+  }, [heldCarts]);
 
   const handleValidateDiscount = async () => {
     const code = discountCode.trim();
@@ -789,14 +943,14 @@ export default function PosSystem() {
   };
 
   const buildDisplayPayload = (items: any[], event: string, extra?: any) => {
-    const total = items.reduce((s, i) => s + Number(i.coffeeItem.price) * i.quantity, 0);
+    const total = items.reduce((s, i) => s + getPosItemUnitPrice(i) * i.quantity, 0);
     const subtotal = total / 1.15;
     const tax = total - subtotal;
     return {
       event,
       items: items.map(i => ({
         nameAr: i.coffeeItem.nameAr,
-        price: Number(i.coffeeItem.price),
+        price: getPosItemUnitPrice(i),
         quantity: i.quantity,
         lineItemId: i.lineItemId,
       })),
@@ -807,22 +961,25 @@ export default function PosSystem() {
     };
   };
 
-  const addToOrder = (product: CoffeeItem, customization?: { selectedItemAddons?: Array<{nameAr: string; nameEn?: string; price: number}>; _selectedSize?: string }, qty: number = 1) => {
+  const getPosItemUnitPrice = getPosItemUnitPriceEarly;
+
+  const addToOrder = (product: CoffeeItem, customization?: { selectedItemAddons: Array<{nameAr: string; nameEn?: string; price: number}> }, selectedSize?: string | null, quantity: number = 1, fullCustomization?: DrinkCustomization) => {
     const addonKey = JSON.stringify(customization?.selectedItemAddons || []);
-    const sizeKey = customization?._selectedSize || '';
-    const isSameItem = (item: typeof orderItems[0]) =>
-      item.coffeeItem.id === product.id &&
-      Number(item.coffeeItem.price) === Number(product.price) &&
-      ((item.customization as any)?._selectedSize || '') === sizeKey &&
-      JSON.stringify((item.customization as any)?.selectedItemAddons || []) === addonKey;
-    const existing = orderItems.find(isSameItem);
+    const sizeKey = selectedSize || '';
+    const existing = orderItems.find(item => item.coffeeItem.id === product.id && item.selectedSize === sizeKey && JSON.stringify(item.customization?.selectedItemAddons || []) === addonKey);
     const next = existing
-      ? orderItems.map(item => isSameItem(item) ? { ...item, quantity: item.quantity + qty } : item)
+      ? orderItems.map(item =>
+          item.coffeeItem.id === product.id && item.selectedSize === sizeKey && JSON.stringify(item.customization?.selectedItemAddons || []) === addonKey
+            ? { ...item, quantity: item.quantity + quantity }
+            : item
+        )
       : [...orderItems, {
           lineItemId: Math.random().toString(36).substr(2, 9),
           coffeeItem: product,
-          quantity: qty,
+          quantity: quantity,
+          selectedSize: sizeKey,
           customization: customization || {},
+          _fullCustomization: fullCustomization,
         }];
     setOrderItems(next);
     const isFirst = next.length === 1;
@@ -835,6 +992,10 @@ export default function PosSystem() {
       : orderItems.map(item =>
           item.lineItemId === lineItemId ? { ...item, quantity: newQty } : item
         );
+    if (newQty <= 0) {
+      // Remove item discount if item deleted
+      setItemDiscounts(prev => { const n = { ...prev }; delete n[lineItemId]; return n; });
+    }
     setOrderItems(next);
     if (next.length === 0) {
       broadcastToDisplay("order_cancelled", { items: [], subtotal: 0, tax: 0, total: 0 });
@@ -843,15 +1004,273 @@ export default function PosSystem() {
     }
   };
 
+  // ── Multi-Cart: hold, resume, new tab, switch, merge ──────────────────────
+
+  const captureCurrentCartSnapshot = useCallback((): Partial<CartSnapshot> => ({
+    orderItems,
+    orderType,
+    tableNumber,
+    customerName,
+    customerPhone,
+    orderNote,
+    paymentMethod,
+    splitCashAmount,
+    personPayments,
+    itemDiscounts,
+  }), [orderItems, orderType, tableNumber, customerName, customerPhone, orderNote, paymentMethod, splitCashAmount, personPayments, itemDiscounts]);
+
+  const restoreCartSnapshot = useCallback((snap: Partial<CartSnapshot>) => {
+    setOrderItems(snap.orderItems || []);
+    if (snap.orderType) setOrderType(snap.orderType as any);
+    setTableNumber(snap.tableNumber || '');
+    setCustomerName(snap.customerName || '');
+    setCustomerPhone(snap.customerPhone || '');
+    setOrderNote(snap.orderNote || '');
+    if (snap.paymentMethod) setPaymentMethod(snap.paymentMethod as any);
+    setSplitCashAmount(snap.splitCashAmount || '');
+    setPersonPayments(snap.personPayments?.length ? snap.personPayments : [{ id: '1', method: 'cash', amount: '' }]);
+    setItemDiscounts(snap.itemDiscounts || {});
+  }, []);
+
+  const holdCurrentCart = useCallback(() => {
+    if (orderItems.length === 0) { toast({ title: tc('السلة فارغة', 'Cart is empty') }); return; }
+    const snap = captureCurrentCartSnapshot();
+    const rawTotal = orderItems.reduce((s, i) => s + getPosItemUnitPriceEarly(i) * i.quantity, 0);
+    const holdName = tableNumber
+      ? tc(`طاولة ${tableNumber}`, `Table ${tableNumber}`)
+      : customerName || tc(`طلب مؤجل ${heldCarts.length + 1}`, `Hold ${heldCarts.length + 1}`);
+    const held: HeldCartType = {
+      id: newCartId(),
+      name: holdName,
+      heldAt: Date.now(),
+      totalAmount: rawTotal,
+      orderItems: snap.orderItems || [],
+      orderType: (snap.orderType || 'dine_in') as any,
+      tableNumber: snap.tableNumber || '',
+      customerName: snap.customerName || '',
+      customerPhone: snap.customerPhone || '',
+      orderNote: snap.orderNote || '',
+      paymentMethod: (snap.paymentMethod || 'cash') as any,
+      splitCashAmount: snap.splitCashAmount || '',
+      personPayments: snap.personPayments || [{ id: '1', method: 'cash' as const, amount: '' }],
+      itemDiscounts: snap.itemDiscounts || {},
+      createdAt: Date.now(),
+    };
+    setHeldCarts(prev => [held, ...prev]);
+    // Clear current cart
+    setOrderItems([]);
+    setTableNumber('');
+    setCustomerName('');
+    setCustomerPhone('');
+    setOrderNote('');
+    setItemDiscounts({});
+    setAppliedDiscount(null);
+    setDiscountCode('');
+    broadcastToDisplay("order_cancelled", { items: [], subtotal: 0, tax: 0, total: 0 });
+    toast({ title: tc(`تم حجز الطلب: ${holdName}`, `Order held: ${holdName}`) });
+  }, [orderItems, captureCurrentCartSnapshot, heldCarts.length, tableNumber, customerName, toast, tc]);
+
+  const resumeHeldCart = useCallback((heldId: string) => {
+    const held = heldCarts.find(h => h.id === heldId);
+    if (!held) return;
+    if (orderItems.length > 0) {
+      // Auto-hold the current cart before resuming
+      holdCurrentCart();
+    }
+    restoreCartSnapshot(held);
+    setHeldCarts(prev => prev.filter(h => h.id !== heldId));
+    setShowHeldCarts(false);
+    toast({ title: tc(`تم استرداد: ${held.name}`, `Resumed: ${held.name}`) });
+  }, [heldCarts, orderItems.length, holdCurrentCart, restoreCartSnapshot, toast, tc]);
+
+  const deleteHeldCart = useCallback((heldId: string) => {
+    setHeldCarts(prev => prev.filter(h => h.id !== heldId));
+  }, []);
+
+  const newCartTab = useCallback(() => {
+    // Save current cart to the saved tabs ref
+    savedTabsRef.current[activeTabId] = captureCurrentCartSnapshot();
+    // Create new tab
+    const newId = newCartId();
+    const newName = tc(`طلب ${cartTabs.length + 1}`, `Order ${cartTabs.length + 1}`);
+    setCartTabs(prev => [...prev, { id: newId, name: newName, itemCount: 0, total: 0, createdAt: Date.now() }]);
+    setActiveTabId(newId);
+    // Clear cart for new tab
+    setOrderItems([]);
+    setTableNumber('');
+    setCustomerName('');
+    setCustomerPhone('');
+    setOrderNote('');
+    setItemDiscounts({});
+    setAppliedDiscount(null);
+    setDiscountCode('');
+  }, [activeTabId, captureCurrentCartSnapshot, cartTabs.length, tc]);
+
+  const switchCartTab = useCallback((tabId: string) => {
+    if (tabId === activeTabId) return;
+    // Save current
+    savedTabsRef.current[activeTabId] = captureCurrentCartSnapshot();
+    // Restore target
+    const saved = savedTabsRef.current[tabId];
+    if (saved) {
+      restoreCartSnapshot(saved);
+    } else {
+      setOrderItems([]);
+      setTableNumber('');
+      setCustomerName('');
+      setCustomerPhone('');
+      setOrderNote('');
+      setItemDiscounts({});
+    }
+    setActiveTabId(tabId);
+  }, [activeTabId, captureCurrentCartSnapshot, restoreCartSnapshot]);
+
+  const closeCartTab = useCallback((tabId: string) => {
+    if (cartTabs.length <= 1) return; // keep at least 1
+    const idx = cartTabs.findIndex(t => t.id === tabId);
+    const isActive = tabId === activeTabId;
+    const remaining = cartTabs.filter(t => t.id !== tabId);
+    setCartTabs(remaining);
+    delete savedTabsRef.current[tabId];
+    if (isActive) {
+      const nextTab = remaining[Math.max(0, idx - 1)];
+      switchCartTab(nextTab.id);
+    }
+  }, [cartTabs, activeTabId, switchCartTab]);
+
+  const mergeTabIntoActive = useCallback((sourceTabId: string) => {
+    const sourceSaved = savedTabsRef.current[sourceTabId];
+    const sourceItems = sourceSaved?.orderItems || [];
+    const merged = mergeCartItems(orderItems, sourceItems);
+    setOrderItems(merged);
+    // Close source tab
+    const remaining = cartTabs.filter(t => t.id !== sourceTabId);
+    setCartTabs(remaining);
+    delete savedTabsRef.current[sourceTabId];
+    setShowMergeBills(false);
+    toast({ title: tc('تم دمج الطلبات', 'Bills merged') });
+  }, [orderItems, cartTabs, toast, tc]);
+
+  // Item-level discount helpers
+  const applyItemDiscount = useCallback((lineId: string) => {
+    const val = parseFloat(itemDiscountInput);
+    if (!val || val <= 0) return;
+    setItemDiscounts(prev => ({ ...prev, [lineId]: { type: itemDiscountType, value: val } }));
+    setShowItemDiscountFor(null);
+    setItemDiscountInput('');
+  }, [itemDiscountInput, itemDiscountType]);
+
+  const clearItemDiscount = useCallback((lineId: string) => {
+    setItemDiscounts(prev => { const n = { ...prev }; delete n[lineId]; return n; });
+  }, []);
+
+  const applyManualDiscount = useCallback(() => {
+    const val = parseFloat(manualDiscountInput);
+    if (!val || val <= 0) { setManualDiscount(undefined); setShowManualDiscount(false); return; }
+    setManualDiscount({ type: manualDiscountType, value: val });
+    setShowManualDiscount(false);
+    setManualDiscountInput('');
+  }, [manualDiscountInput, manualDiscountType]);
+
+  // Keep keyboard-accessible refs up-to-date every render
+  useEffect(() => {
+    newCartTabRef.current     = newCartTab;
+    holdCurrentCartRef.current = holdCurrentCart;
+  });
+
+  // ── Create a pending PayMob order and show QR code for customer to scan ──
+  const handleQrPayCheckout = async () => {
+    if (orderItems.length === 0) return;
+    if (!navigator.onLine) {
+      toast({ title: tc('لا يوجد اتصال', 'Offline'), description: tc('الدفع عبر QR يتطلب الإنترنت', 'QR pay requires internet'), variant: 'destructive' });
+      return;
+    }
+    try {
+      setCreatingQrPay(true);
+      const rawTotal = calculateTotal;
+      const pointsDiscountAmt = usePoints && customerPoints >= 100 ? pointsDiscount : 0;
+      const afterPoints = Math.max(0, rawTotal - pointsDiscountAmt);
+      const couponDiscountAmt = appliedDiscount ? afterPoints * appliedDiscount.percentage / 100 : 0;
+      const discount = pointsDiscountAmt + couponDiscountAmt;
+      const itemDiscountsAmt = computeTotalItemDiscounts(orderItems, itemDiscounts);
+      const manualDiscAmt = computeOrderDiscountAmount(Math.max(0, rawTotal - discount - itemDiscountsAmt), manualDiscount);
+      const svcChargeAmt = computeServiceChargeAmount(Math.max(0, rawTotal - discount - itemDiscountsAmt - manualDiscAmt), serviceCharge);
+      const total = Math.max(0, rawTotal - discount - itemDiscountsAmt - manualDiscAmt + svcChargeAmt);
+      const subtotal = total / 1.15;
+      const tax = total - subtotal;
+
+      const orderData: any = {
+        items: orderItems.map(item => ({
+          coffeeItemId: item.coffeeItem.id,
+          name: item.coffeeItem.nameAr,
+          nameAr: item.coffeeItem.nameAr,
+          price: getPosItemUnitPrice(item),
+          selectedSize: item.selectedSize || undefined,
+          quantity: item.quantity,
+          customization: item.customization || {},
+        })),
+        subtotal, tax, total,
+        orderType,
+        paymentMethod: 'paymob-card',
+        paymentStatus: 'pending',
+        tableNumber: orderType === 'dine_in' ? tableNumber : undefined,
+        customerName, customerPhone,
+        // 'awaiting_payment' keeps the order out of normal operational counts
+        // until PayMob confirms; webhook will flip it to 'payment_confirmed'.
+        status: 'awaiting_payment',
+        deliveryType: orderType === 'car_pickup' ? 'car_pickup' : orderType === 'delivery' ? 'delivery' : orderType === 'dine_in' ? 'dine-in' : 'pickup',
+        branchId: employee?.branchId || 'main',
+        tenantId: employee?.tenantId || 'demo-tenant',
+        employeeId: employee?.id,
+        channel: 'pos',
+        notes: orderNote || undefined,
+      };
+
+      const res = await apiRequest('POST', '/api/orders', orderData);
+      const result = await res.json().catch(() => ({}));
+      if (!result || result.error || !result.orderNumber || !result.id) {
+        throw new Error(result?.error || tc('فشل إنشاء الطلب', 'Failed to create order'));
+      }
+
+      // Show the QR modal — it will poll for payment status and auto-close on paid.
+      // QR link uses the unguessable nanoid `id`, not the predictable orderNumber.
+      setQrPayOrder({ id: result.id, orderNumber: result.orderNumber, amount: total });
+      setQrPayOpen(true);
+    } catch (e: any) {
+      toast({ title: tc('خطأ', 'Error'), description: e?.message || '', variant: 'destructive' });
+    } finally {
+      setCreatingQrPay(false);
+    }
+  };
+
+  const handleQrPaymentConfirmed = () => {
+    // When customer pays via QR, clear the cart & invalidate orders cache.
+    setOrderItems([]);
+    setCustomerName('');
+    setCustomerPhone('');
+    setOrderNote('');
+    queryClient.invalidateQueries({ queryKey: ['/api/orders'] });
+    queryClient.invalidateQueries({ queryKey: ['/api/orders/live'] });
+    toast({ title: tc('✅ تم استلام الدفع', '✅ Payment received'), description: tc('شكراً، تم تأكيد الفاتورة', 'Thanks, invoice confirmed') });
+  };
+
   const handleCheckout = async () => {
     if (orderItems.length === 0) return;
 
-    // Validate split payment: ensure cash amount is entered and doesn't exceed total
+    // Validate split payment: ensure all person payments sum to total
     if (paymentMethod === "split") {
-      const cashVal = parseFloat(splitCashAmount) || 0;
-      const total0 = Math.max(0, calculateTotal - (usePoints && customerPoints >= 100 ? pointsDiscount : 0));
-      if (cashVal <= 0 || cashVal >= total0) {
-        alert(tc("الرجاء إدخال مبلغ الكاش بشكل صحيح (أقل من الإجمالي وأكبر من صفر)", "Please enter a valid cash amount (less than total and greater than 0)"));
+      const getPersonTotal = (p: PersonPayment) =>
+        p.method === 'mixed'
+          ? (parseFloat(p.cashAmount || '') || 0) + (parseFloat(p.cardAmount || '') || 0)
+          : (parseFloat(p.amount) || 0);
+      const paidTotal = personPayments.reduce((s, p) => s + getPersonTotal(p), 0);
+      const orderTotal = finalGrandTotal;
+      if (personPayments.every(p => getPersonTotal(p) === 0)) {
+        alert(tc("الرجاء إدخال مبالغ الدفع لكل شخص", "Please enter payment amounts for each person"));
+        return;
+      }
+      if (Math.abs(paidTotal - orderTotal) > 0.01) {
+        alert(tc(`المبالغ المدخلة (${paidTotal.toFixed(2)}) لا تساوي الإجمالي (${orderTotal.toFixed(2)})`, `Entered amounts (${paidTotal.toFixed(2)}) don't match total (${orderTotal.toFixed(2)})`));
         return;
       }
     }
@@ -863,28 +1282,46 @@ export default function PosSystem() {
       const afterPoints = Math.max(0, rawTotal - pointsDiscountAmt);
       const couponDiscountAmt = appliedDiscount ? afterPoints * appliedDiscount.percentage / 100 : 0;
       const discount = pointsDiscountAmt + couponDiscountAmt;
-      const total = Math.max(0, rawTotal - discount);
-      const subtotal = calculateSubtotal;
-      const tax = rawTotal - subtotal;
+      // Apply new engine discounts on top
+      const itemDiscountsAmt = computeTotalItemDiscounts(orderItems, itemDiscounts);
+      const manualDiscAmt = computeOrderDiscountAmount(Math.max(0, rawTotal - discount - itemDiscountsAmt), manualDiscount);
+      const svcChargeAmt = computeServiceChargeAmount(Math.max(0, rawTotal - discount - itemDiscountsAmt - manualDiscAmt), serviceCharge);
+      const total = Math.max(0, rawTotal - discount - itemDiscountsAmt - manualDiscAmt + svcChargeAmt);
+      const subtotal = total / 1.15;
+      const tax = total - subtotal;
+      const getPersonCash = (p: PersonPayment) =>
+        p.method === 'mixed' ? (parseFloat(p.cashAmount || '') || 0) : p.method === 'cash' ? (parseFloat(p.amount) || 0) : 0;
+      const getPersonCard = (p: PersonPayment) =>
+        p.method === 'mixed' ? (parseFloat(p.cardAmount || '') || 0) : p.method === 'card' ? (parseFloat(p.amount) || 0) : 0;
       const splitPaymentData = paymentMethod === "split"
-        ? { cash: parseFloat(splitCashAmount) || 0, card: Math.max(0, total - (parseFloat(splitCashAmount) || 0)) }
+        ? {
+            cash: personPayments.reduce((s, p) => s + getPersonCash(p), 0),
+            card: personPayments.reduce((s, p) => s + getPersonCard(p), 0),
+            persons: personPayments.map(p => ({
+              method: p.method,
+              amount: p.method === 'mixed'
+                ? (parseFloat(p.cashAmount || '') || 0) + (parseFloat(p.cardAmount || '') || 0)
+                : (parseFloat(p.amount) || 0),
+              cashAmount: getPersonCash(p),
+              cardAmount: getPersonCard(p),
+            })),
+          }
         : undefined;
       const pointsUsed = discount > 0 ? Math.round(discount * 50) : 0;
 
       broadcastToDisplay("payment_processing", {
-        items: orderItems.map(i => ({ nameAr: i.coffeeItem.nameAr, price: Number(i.coffeeItem.price), quantity: i.quantity })),
+        items: orderItems.map(i => ({ nameAr: i.coffeeItem.nameAr, price: getPosItemUnitPrice(i), quantity: i.quantity })),
         subtotal, tax, total,
       });
 
       const orderData: any = {
         items: orderItems.map(item => {
-          const addonsPrice = (item.customization?.selectedItemAddons || []).reduce((s: number, a: any) => s + (Number(a.price) || 0), 0);
           return {
             coffeeItemId: item.coffeeItem.id,
             name: item.coffeeItem.nameAr,
             nameAr: item.coffeeItem.nameAr,
-            nameEn: item.coffeeItem.nameEn || '',
-            price: Number(item.coffeeItem.price) + addonsPrice,
+            price: getPosItemUnitPrice(item),
+            selectedSize: item.selectedSize || undefined,
             quantity: item.quantity,
             customization: item.customization || {}
           };
@@ -940,12 +1377,11 @@ export default function PosSystem() {
           orderNumber: offlineOrderNum,
           date: new Date().toISOString(),
           items: orderItems.map(item => {
-            const addonsPrice = (item.customization?.selectedItemAddons || []).reduce((s: number, a: any) => s + (Number(a.price) || 0), 0);
             return {
               coffeeItem: {
                 nameAr: item.coffeeItem.nameAr,
                 nameEn: item.coffeeItem.nameEn,
-                price: String(Number(item.coffeeItem.price) + addonsPrice),
+                price: String(getPosItemUnitPrice(item)),
               },
               quantity: item.quantity,
               customization: item.customization,
@@ -971,13 +1407,12 @@ export default function PosSystem() {
             customerName,
             customerPhone,
             items: orderItems.map(item => {
-              const addonsPrice = (item.customization?.selectedItemAddons || []).reduce((s: number, a: any) => s + (Number(a.price) || 0), 0);
               const inlineNames = (item.customization?.selectedItemAddons || []).map((a: any) => a.nameAr).join('، ');
               return {
                 coffeeItem: {
                   nameAr: (item.coffeeItem?.nameAr || '') + (inlineNames ? ` (${inlineNames})` : ''),
                   nameEn: item.coffeeItem?.nameEn || '',
-                  price: String(Number(item.coffeeItem?.price || 0) + addonsPrice),
+                  price: String(getPosItemUnitPrice(item)),
                 },
                 quantity: item.quantity,
                 customization: item.customization,
@@ -993,12 +1428,11 @@ export default function PosSystem() {
             date: new Date().toISOString(),
             crNumber: businessConfig?.commercialRegistration,
             vatNumber: businessConfig?.vatNumber,
+            notes: orderNote || undefined,
           };
-          setTimeout(() => {
-            try { printTaxInvoice(printSnapshot, { autoPrint: true }); } catch (e) {
-              console.warn('[POS] Offline auto-print failed silently:', e);
-            }
-          }, 200);
+          try { printTaxInvoice(printSnapshot, { autoPrint: true }); } catch (e) {
+            console.warn('[POS] Offline auto-print failed silently:', e);
+          }
         }
 
         // Show the receipt dialog
@@ -1031,21 +1465,52 @@ export default function PosSystem() {
         localStorage.setItem("pos-offline-counter", "0");
       }
 
-      setLastOrder({
-        orderNumber: result.orderNumber || result.dailyNumber || result._id?.slice(-4) || '—',
+      const orderNumForPrint = result.orderNumber || result.dailyNumber || result._id?.slice(-4) || '—';
+
+      // ── Pre-generate ZATCA QR code in background so printing is instant ──
+      prewarmZatcaQr({
+        orderNumber: orderNumForPrint,
+        total: total.toFixed(2),
         date: new Date().toISOString(),
-        items: orderItems.map(item => {
-          const addonsPrice = (item.customization?.selectedItemAddons || []).reduce((s: number, a: any) => s + (Number(a.price) || 0), 0);
-          return {
-            coffeeItem: {
-              nameAr: item.coffeeItem.nameAr,
-              nameEn: item.coffeeItem.nameEn,
-              price: String(Number(item.coffeeItem.price) + addonsPrice),
-            },
-            quantity: item.quantity,
-            customization: item.customization,
-          };
-        }),
+        vatNumber: businessConfig?.vatNumber,
+      });
+
+      // ── Pre-render receipt PNG immediately so print is instant when user clicks ──
+      preRenderReceiptPng({
+        orderNumber: orderNumForPrint,
+        createdAt: new Date().toISOString(),
+        tableNumber: orderType === "dine_in" ? tableNumber : undefined,
+        totalAmount: total,
+        paymentMethod: PAYMENT_METHOD_LABELS[paymentMethod] || paymentMethod,
+        employeeName: employee?.fullName || t('pos.employee_fallback'),
+        deliveryType: orderType,
+        orderType: orderType,
+        customerName,
+        customerPhone,
+        notes: orderNote || undefined,
+        items: orderItems.map(item => ({
+          nameAr: item.coffeeItem?.nameAr || '',
+          nameEn: item.coffeeItem?.nameEn || '',
+          quantity: item.quantity,
+          price: getPosItemUnitPrice(item),
+          selectedSize: item.selectedSize || undefined,
+          customization: item.customization,
+        })),
+      });
+
+      setLastOrder({
+        orderNumber: orderNumForPrint,
+        date: new Date().toISOString(),
+        items: orderItems.map(item => ({
+          coffeeItem: {
+            nameAr: item.coffeeItem.nameAr,
+            nameEn: item.coffeeItem.nameEn,
+            price: String(getPosItemUnitPrice(item)),
+          },
+          quantity: item.quantity,
+          selectedSize: item.selectedSize || undefined,
+          customization: item.customization,
+        })),
         subtotal,
         tax,
         total,
@@ -1063,19 +1528,16 @@ export default function PosSystem() {
           orderNumber: result.orderNumber || result.dailyNumber || result._id?.slice(-4) || '—',
           customerName,
           customerPhone,
-          items: orderItems.map(item => {
-            const addonsPrice = (item.customization?.selectedItemAddons || []).reduce((s: number, a: any) => s + (Number(a.price) || 0), 0);
-            const inlineNames = (item.customization?.selectedItemAddons || []).map((a: any) => a.nameAr).join('، ');
-            return {
-              coffeeItem: {
-                nameAr: (item.coffeeItem?.nameAr || '') + (inlineNames ? ` (${inlineNames})` : ''),
-                nameEn: item.coffeeItem?.nameEn || '',
-                price: String(Number(item.coffeeItem?.price || 0) + addonsPrice),
-              },
-              quantity: item.quantity,
-              customization: item.customization,
-            };
-          }),
+          items: orderItems.map(item => ({
+            coffeeItem: {
+              nameAr: item.coffeeItem?.nameAr || '',
+              nameEn: item.coffeeItem?.nameEn || '',
+              price: String(getPosItemUnitPrice(item)),
+            },
+            quantity: item.quantity,
+            selectedSize: item.selectedSize || undefined,
+            customization: item.customization,
+          })),
           subtotal: subtotal.toFixed(2),
           total: total.toFixed(2),
           paymentMethod: PAYMENT_METHOD_LABELS[paymentMethod] || paymentMethod,
@@ -1083,7 +1545,7 @@ export default function PosSystem() {
           tableNumber: orderType === "dine_in" ? tableNumber : undefined,
           orderType: orderType as any,
           orderTypeName: (
-            (orderType as string) === 'dine_in' || (orderType as string) === 'dine-in' ? 'طاولة' :
+            (orderType as string) === 'dine_in' || (orderType as string) === 'dine-in' ? 'محلي'  :
             (orderType as string) === 'takeaway' || (orderType as string) === 'pickup' ? 'سفري' :
             (orderType as string) === 'delivery' ? 'توصيل' :
             (orderType as string) === 'car_pickup' || (orderType as string) === 'car-pickup' ? 'سيارة' :
@@ -1094,18 +1556,21 @@ export default function PosSystem() {
           crNumber: businessConfig?.commercialRegistration,
           vatNumber: businessConfig?.vatNumber,
           splitPayment: splitPaymentData,
+          cashReceived: (paymentMethod === 'cash' && splitCashAmount)
+            ? parseFloat(splitCashAmount) || undefined
+            : undefined,
           notes: orderNote || undefined,
         };
-        // Delay print by 200ms so UI updates (clear cart, show receipt) render first
-        setTimeout(() => {
-          try { printTaxInvoice(printSnapshot, { autoPrint: true }); } catch (e) {
-            console.warn('[POS] Auto-print failed silently:', e);
-          }
-        }, 200);
+        // Fire immediately — thermal path is instant, HTML fallback uses pre-warmed ZATCA QR cache
+        try {
+          printTaxInvoice(printSnapshot, { autoPrint: true });
+        } catch (e) {
+          console.warn('[POS] Auto-print failed silently:', e);
+        }
       }
       broadcastToDisplay("payment_success", {
         orderNumber: result.orderNumber || result.dailyNumber || '',
-        items: orderItems.map(i => ({ nameAr: i.coffeeItem.nameAr, price: Number(i.coffeeItem.price), quantity: i.quantity })),
+        items: orderItems.map(i => ({ nameAr: i.coffeeItem.nameAr, price: getPosItemUnitPrice(i), quantity: i.quantity })),
         subtotal, tax, total,
       });
 
@@ -1130,6 +1595,7 @@ export default function PosSystem() {
       setUsePoints(false);
       
       queryClient.invalidateQueries({ queryKey: ["/api/orders/live"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/shifts/active"] });
     } catch (error) {
       console.error("Checkout error:", error);
       toast({ 
@@ -1142,9 +1608,10 @@ export default function PosSystem() {
     }
   };
 
-  const handlePrintReceipt = () => {
-    if (!lastOrder) return;
-    printTaxInvoice({
+  // Build a single invoice payload once — used by every action button below.
+  const buildLastOrderInvoiceData = () => {
+    if (!lastOrder) return null;
+    return {
       orderNumber: lastOrder.orderNumber,
       customerName: lastOrder.customerName || t('pos.customer_cash'),
       customerPhone: lastOrder.customerPhone || '',
@@ -1158,8 +1625,124 @@ export default function PosSystem() {
       date: lastOrder.date,
       crNumber: businessConfig?.commercialRegistration,
       vatNumber: businessConfig?.vatNumber,
-      notes: (lastOrder as any).notes || undefined,
-    }, { autoPrint: true });
+    } as any;
+  };
+
+  // ── Pre-stage a print iframe with the customer receipt HTML so the
+  //    "Print" button can call print() synchronously — zero perceived delay.
+  const stagedPrintIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const stagedPrintReadyRef = useRef(false);
+
+  useEffect(() => {
+    // Cleanup previous staging whenever the receipt HTML changes / dialog closes
+    return () => {
+      try { stagedPrintIframeRef.current?.remove(); } catch {}
+      stagedPrintIframeRef.current = null;
+      stagedPrintReadyRef.current = false;
+    };
+  }, [receiptPreviewHtml, showReceiptDialog]);
+
+  useEffect(() => {
+    if (!showReceiptDialog || !receiptPreviewHtml) return;
+    if (stagedPrintIframeRef.current) return;
+
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('aria-hidden', 'true');
+    iframe.style.cssText =
+      'position:fixed;top:-9999px;left:-9999px;width:302px;height:1px;border:none;opacity:0;pointer-events:none;';
+    document.body.appendChild(iframe);
+    iframe.addEventListener('load', () => { stagedPrintReadyRef.current = true; });
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!doc) {
+      // Browser refused us a document — bail out gracefully; fallback path will be used.
+      try { iframe.remove(); } catch {}
+      return;
+    }
+    try {
+      doc.open();
+      doc.write(receiptPreviewHtml);
+      doc.close();
+      stagedPrintIframeRef.current = iframe;
+      // Mark ready once the document has fully parsed (covers browsers that don't fire load for srcdoc-less iframes)
+      if (doc.readyState === 'complete') {
+        stagedPrintReadyRef.current = true;
+      } else {
+        doc.addEventListener('readystatechange', () => {
+          if (doc.readyState === 'complete') stagedPrintReadyRef.current = true;
+        });
+      }
+    } catch (err) {
+      console.warn('[POS] receipt staging failed:', err);
+      try { iframe.remove(); } catch {}
+    }
+  }, [showReceiptDialog, receiptPreviewHtml]);
+
+  // Helper: fast-path print only when staged iframe is truly ready & populated.
+  const tryStagedPrint = (): boolean => {
+    const staged = stagedPrintIframeRef.current;
+    if (!staged || !staged.contentWindow) return false;
+    if (!stagedPrintReadyRef.current) return false;
+    const doc = staged.contentDocument;
+    if (!doc || doc.readyState !== 'complete' || !doc.body || !doc.body.innerHTML.trim()) {
+      return false;
+    }
+    try {
+      staged.contentWindow.focus();
+      staged.contentWindow.print();
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const handlePrintReceipt = () => {
+    const data = buildLastOrderInvoiceData();
+    if (!data) return;
+    const ps = loadPrinterSettings();
+    // If thermal printer is configured, skip browser staged-print entirely
+    if (ps.enabled && ps.mode !== 'browser') {
+      printReceiptSection(data, 'customer');
+      return;
+    }
+    // Fast path: if we have a staged iframe truly ready, print synchronously
+    if (tryStagedPrint()) return;
+    // Fallback to full thermal/HTML pipeline
+    printTaxInvoice(data, { autoPrint: true });
+  };
+
+  // ── 5-action handlers for the receipt dialog ──────────────────────────
+  const handlePreviewBoth = async () => {
+    const data = buildLastOrderInvoiceData();
+    if (!data) return;
+    try { await openReceiptPreviewWindow(data); } catch (e) { console.error(e); }
+  };
+  const handlePrintCustomerOnly = async () => {
+    const data = buildLastOrderInvoiceData();
+    if (!data) return;
+    const ps = loadPrinterSettings();
+    // If thermal printer is configured, go direct — no browser PDF
+    if (ps.enabled && ps.mode !== 'browser') {
+      try { await printReceiptSection(data, 'customer'); } catch (e) { console.error(e); }
+      return;
+    }
+    // Browser fallback: try staged iframe first (instant), then HTML queue
+    if (tryStagedPrint()) return;
+    try { await printReceiptSection(data, 'customer'); } catch (e) { console.error(e); }
+  };
+  const handlePrintKitchenOnly = async () => {
+    const data = buildLastOrderInvoiceData();
+    if (!data) return;
+    try { await printReceiptSection(data, 'kitchen'); } catch (e) { console.error(e); }
+  };
+  const handlePrintBoth = async () => {
+    const data = buildLastOrderInvoiceData();
+    if (!data) return;
+    try { await printReceiptSection(data, 'both'); } catch (e) { console.error(e); }
+  };
+  const handleEditLastOrder = () => {
+    // Close the receipt dialog and return to POS so cashier can build a new/edit order
+    setShowReceiptDialog(false);
+    setLastPrintFailed(false);
   };
 
   const handlePrintLiveOrder = (order: any) => {
@@ -1167,9 +1750,11 @@ export default function PosSystem() {
       coffeeItem: {
         nameAr: item.name || item.nameAr || item.coffeeItem?.nameAr || '',
         nameEn: item.nameEn || item.coffeeItem?.nameEn || '',
-        price: String(item.price || item.unitPrice || 0),
+        price: String(item.price || item.unitPrice || item.coffeeItem?.price || 0),
       },
       quantity: item.quantity || 1,
+      selectedSize: item.selectedSize || undefined,
+      customization: item.customization,
     }));
     printTaxInvoice({
       orderNumber: order.dailyNumber || order.orderNumber || '',
@@ -1211,7 +1796,7 @@ export default function PosSystem() {
             <div className="bg-primary/10 p-1.5 sm:p-2 rounded-lg">
               <Coffee className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
             </div>
-            <h1 className="text-lg sm:text-2xl font-black tracking-tight text-primary">TASALI QURUMSH</h1>
+            <h1 className="text-lg sm:text-2xl font-black tracking-tight text-primary">TASALI</h1>
           </div>
           
           <div className="flex items-center gap-2 sm:hidden">
@@ -1262,7 +1847,7 @@ export default function PosSystem() {
         </div>
 
         <div className="hidden sm:flex items-center gap-3">
-          <Tabs value={orderType} onValueChange={(v) => setOrderType(v as OrderType)} className="w-[400px]">
+          <Tabs value={orderType} onValueChange={(v) => setOrderType(v as OrderType)} className="w-full max-w-sm">
             <TabsList className="grid grid-cols-4 w-full h-10 p-1">
               {ORDER_TYPES.map((type) => (
                 <TabsTrigger key={type.id} value={type.id} className="text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground" data-testid={`tab-order-type-${type.id}`}>
@@ -1374,6 +1959,35 @@ export default function PosSystem() {
             )}
           </Button>
 
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowCarOrdersPanel(true)}
+            className="relative hidden sm:flex gap-1 border-primary/30 text-primary hover:bg-primary/10"
+            data-testid="button-car-orders"
+            title={tc("طلبات السيارات", "Car Orders")}
+          >
+            <Car className="w-4 h-4" />
+            <span className="text-xs font-bold">{tc("سيارات", "Cars")}</span>
+            {carPreparationAlerts.length > 0 && (
+              <Badge className="absolute -top-2 -right-2 px-1.5 min-w-[18px] h-[18px] bg-amber-500 text-white animate-pulse">
+                {carPreparationAlerts.length}
+              </Badge>
+            )}
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowRefundDialog(true)}
+            className="hidden sm:flex gap-1 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-400"
+            data-testid="button-refund-open"
+            title={tc("استرجاع طلب / Refund", "Refund Order")}
+          >
+            <RotateCcw className="w-4 h-4" />
+            <span className="text-xs font-bold">{tc("استرجاع", "Refund")}</span>
+          </Button>
+
           <div className="flex items-center gap-2 bg-muted/50 px-2 py-1 rounded-full border">
             <div className="w-2 h-2 rounded-full bg-green-500" />
             <span className="text-[10px] sm:text-xs font-medium">{employee?.fullName || t('pos.employee_fallback')}</span>
@@ -1393,140 +2007,76 @@ export default function PosSystem() {
           </Button>
         </div>
       </header>
-
-      {/* ── Shift Status Bar ── */}
-      {activeShift ? (
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/30 border-b border-emerald-200 dark:border-emerald-800 shrink-0">
-          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="text-xs font-semibold text-emerald-800 dark:text-emerald-300">وردية مفتوحة</span>
-          <span className="text-xs text-muted-foreground hidden sm:inline">|</span>
-          <span className="text-xs text-muted-foreground hidden sm:inline">{activeShift.employeeName}</span>
-          <span className="text-xs text-muted-foreground hidden sm:inline">|</span>
-          <span className="text-xs text-muted-foreground hidden sm:inline">بدأت: {new Date(activeShift.openedAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}</span>
-          <div className="flex-1" />
-          <div className="hidden sm:flex items-center gap-3 text-xs">
-            <span className="flex items-center gap-1 text-green-700 dark:text-green-400 font-mono"><Banknote className="w-3 h-3" /> {(activeShift.totalCashSales || 0).toFixed(2)} ر.س</span>
-            <span className="flex items-center gap-1 text-blue-700 dark:text-blue-400 font-mono"><CreditCard className="w-3 h-3" /> {(activeShift.totalCardSales || 0).toFixed(2)} ر.س</span>
-            <span className="flex items-center gap-1 text-purple-700 dark:text-purple-400 font-mono"><ShoppingCart className="w-3 h-3" /> {activeShift.totalOrders || 0} طلب</span>
-          </div>
-          <Button size="sm" variant="ghost" className="h-6 text-xs gap-1 hidden sm:flex" onClick={() => handlePrintShiftReport(activeShift)}>
-            <Printer className="w-3 h-3" /> طباعة
-          </Button>
-          <Button size="sm" variant="destructive" className="h-6 text-xs gap-1" onClick={() => setShowPosShiftClose(true)}>
-            <Square className="w-3 h-3" /> غلق الوردية
-          </Button>
-        </div>
-      ) : (
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800 shrink-0">
-          <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-          <span className="text-xs text-amber-800 dark:text-amber-300 flex-1">
-            لا توجد وردية مفتوحة
-            {currentPeriod?.hasPeriod && (
-              <span className="hidden sm:inline text-amber-600"> — الفترة التلقائية: {currentPeriod.label}</span>
-            )}
-          </span>
-          <Button size="sm" className="h-6 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700" onClick={() => setShowPosShiftOpen(true)}>
-            <Play className="w-3 h-3" /> بدا الوردية
-          </Button>
-        </div>
-      )}
-
-      {/* ── POS Shift Open Dialog ── */}
-      <Dialog open={showPosShiftOpen} onOpenChange={setShowPosShiftOpen}>
-        <DialogContent className="sm:max-w-sm" dir="rtl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Play className="w-5 h-5 text-emerald-600" />
-              بدء وردية جديدة
-            </DialogTitle>
-          </DialogHeader>
-          {currentPeriod?.hasPeriod && (
-            <div className="bg-amber-50 dark:bg-amber-950/20 rounded-lg p-3 text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-              <span>الفترة التلقائية الحالية بدأت من {new Date(currentPeriod.start).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}. ستبدأ وردية يدوية منفصلة.</span>
-            </div>
-          )}
-          <div className="space-y-3 py-2">
-            <div>
-              <label className="text-sm font-medium mb-1.5 block">رصيد الافتتاح (ر.س)</label>
-              <Input type="number" placeholder="0.00" value={posOpeningCash} onChange={e => setPosOpeningCash(e.target.value)} className="text-lg text-center font-mono" dir="ltr" />
-              <p className="text-xs text-muted-foreground mt-1">المبلغ الموجود في الصندوق الآن</p>
-            </div>
-          </div>
-          <div className="flex gap-2 justify-end">
-            <Button variant="outline" onClick={() => setShowPosShiftOpen(false)}>إلغاء</Button>
-            <Button onClick={() => openShiftMutation.mutate({ openingCash: Number(posOpeningCash) || 0, notes: '' })} disabled={openShiftMutation.isPending} className="bg-emerald-600 hover:bg-emerald-700 gap-2">
-              {openShiftMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-              بدء الوردية
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* ── POS Shift Close Dialog ── */}
-      <Dialog open={showPosShiftClose} onOpenChange={setShowPosShiftClose}>
-        <DialogContent className="sm:max-w-sm" dir="rtl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Square className="w-5 h-5 text-red-500" />
-              إغلاق الوردية
-            </DialogTitle>
-          </DialogHeader>
-          {activeShift && (
-            <div className="bg-muted/50 rounded-lg p-3 space-y-1 text-xs">
-              <div className="flex justify-between"><span>بدأت:</span><span>{new Date(activeShift.openedAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}</span></div>
-              <div className="flex justify-between"><span>عدد الطلبات:</span><span>{activeShift.totalOrders}</span></div>
-              <div className="flex justify-between"><span>نقدي:</span><span className="font-mono">{(activeShift.totalCashSales || 0).toFixed(2)} ر.س</span></div>
-              <div className="flex justify-between"><span>شبكة:</span><span className="font-mono">{(activeShift.totalCardSales || 0).toFixed(2)} ر.س</span></div>
-              <div className="flex justify-between font-bold border-t pt-1"><span>الإجمالي:</span><span className="font-mono text-primary">{(activeShift.totalSales || 0).toFixed(2)} ر.س</span></div>
-            </div>
-          )}
-          <div className="space-y-3 py-2">
-            <div>
-              <label className="text-sm font-medium mb-1.5 block">الرصيد الفعلي في الصندوق (ر.س)</label>
-              <Input type="number" placeholder="0.00" value={posClosingCash} onChange={e => setPosClosingCash(e.target.value)} className="text-lg text-center font-mono" dir="ltr" />
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-1.5 block">ملاحظات (اختياري)</label>
-              <Input placeholder="أي ملاحظات..." value={posClosingNotes} onChange={e => setPosClosingNotes(e.target.value)} />
-            </div>
-          </div>
-          <div className="flex gap-2 justify-end">
-            <Button variant="outline" onClick={() => setShowPosShiftClose(false)}>إلغاء</Button>
-            <Button variant="destructive" onClick={() => closeShiftMutation.mutate({ closingCash: Number(posClosingCash) || 0, closingNotes: posClosingNotes })} disabled={closeShiftMutation.isPending} className="gap-2">
-              {closeShiftMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4" />}
-              إغلاق وطباعة
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <PosShiftBar />
 
       <main className="flex-1 flex overflow-hidden">
 
-        <section className={`${mobilePanelView === 'products' ? 'flex' : 'hidden'} md:flex ${splitViewMode ? 'md:hidden' : ''} flex-1 flex-col overflow-hidden`}>
+        <section className={`${mobilePanelView === 'products' ? 'flex' : 'hidden'} md:flex flex-1 flex-col overflow-hidden`}>
           {/* Category Top Bar */}
-          <div className={`${mobilePanelView === 'cart' ? 'hidden' : ''} flex gap-1 overflow-x-auto border-b bg-muted/30 px-2 py-2 shrink-0 no-scrollbar`}>
-            <Button
-              variant={selectedCategory === "all" ? "default" : "ghost"}
-              className="flex-row gap-1.5 h-9 px-3 shrink-0 rounded-lg"
-              onClick={() => setSelectedCategory("all")}
-              data-testid="button-category-all"
-            >
-              <Grid3X3 className="w-4 h-4" />
-              <span className="text-xs font-bold whitespace-nowrap">{t('pos.category_all')}</span>
-            </Button>
-            {visibleCategories.map((cat: any) => (
+          <div className={`${mobilePanelView === 'cart' ? 'hidden' : ''} flex border-b bg-muted/30 shrink-0`}>
+            {/* Scrollable category buttons */}
+            <div className="flex gap-1 overflow-x-auto px-2 py-2 no-scrollbar flex-1 min-w-0">
               <Button
-                key={cat.id}
-                variant={selectedCategory === cat.id ? "default" : "ghost"}
+                variant={selectedCategory === "all" ? "default" : "ghost"}
                 className="flex-row gap-1.5 h-9 px-3 shrink-0 rounded-lg"
-                onClick={() => setSelectedCategory(cat.id)}
-                data-testid={`button-category-${cat.id}`}
+                onClick={() => setSelectedCategory("all")}
+                data-testid="button-category-all"
               >
-                <cat.icon className="w-4 h-4" />
-                <span className="text-xs font-bold whitespace-nowrap">{cat.name}</span>
+                <Grid3X3 className="w-4 h-4" />
+                <span className="text-xs font-bold whitespace-nowrap">{t('pos.category_all')}</span>
               </Button>
-            ))}
+              {visibleCategories.map((cat: any) => (
+                <Button
+                  key={cat.id}
+                  variant={selectedCategory === cat.id ? "default" : "ghost"}
+                  className="flex-row gap-1.5 h-9 px-3 shrink-0 rounded-lg"
+                  onClick={() => setSelectedCategory(cat.id)}
+                  data-testid={`button-category-${cat.id}`}
+                >
+                  <cat.icon className="w-4 h-4" />
+                  <span className="text-xs font-bold whitespace-nowrap">{cat.name}</span>
+                </Button>
+              ))}
+            </div>
+            {/* Fixed three-dots button */}
+            <div ref={categoryDropdownRef} className="relative flex items-center shrink-0 border-r px-1">
+              <Button
+                variant={showCategoryDropdown ? "default" : "ghost"}
+                size="icon"
+                className="h-9 w-9 rounded-lg shrink-0"
+                onClick={() => setShowCategoryDropdown(v => !v)}
+                data-testid="button-category-dropdown-toggle"
+              >
+                <MoreHorizontal className="w-4 h-4" />
+              </Button>
+              {showCategoryDropdown && (
+                <div
+                  className="absolute top-full left-0 z-50 mt-1 bg-card border rounded-xl shadow-2xl p-2 min-w-[220px] max-h-[60vh] overflow-y-auto"
+                  style={{ direction: 'rtl' }}
+                >
+                  <p className="text-[10px] font-bold text-muted-foreground px-2 pb-1.5">{i18n.language === 'ar' ? 'جميع الأقسام' : 'All Categories'}</p>
+                  <button
+                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold transition-colors text-right ${selectedCategory === 'all' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+                    onClick={() => { setSelectedCategory('all'); setShowCategoryDropdown(false); }}
+                    data-testid="button-catdrop-all"
+                  >
+                    <Grid3X3 className="w-4 h-4 shrink-0" />
+                    <span>{t('pos.category_all')}</span>
+                  </button>
+                  {visibleCategories.map((cat: any) => (
+                    <button
+                      key={cat.id}
+                      className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold transition-colors text-right ${selectedCategory === cat.id ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+                      onClick={() => { setSelectedCategory(cat.id); setShowCategoryDropdown(false); }}
+                      data-testid={`button-catdrop-${cat.id}`}
+                    >
+                      <cat.icon className="w-4 h-4 shrink-0" />
+                      <span>{cat.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="p-2 sm:p-4 border-b bg-card/50 flex flex-col sm:flex-row gap-2 sm:gap-3">
@@ -1579,7 +2129,8 @@ export default function PosSystem() {
                       if (!hasVariants && !hasSizes && !hasAddons) {
                         addToOrder(item);
                       } else {
-                        setPosCustomizationItem({ item, group });
+                        const existingCartItem = orderItems.find((oi: any) => oi.coffeeItem.id === item.id);
+                        setPosCustomizationItem({ item, group, initialCustomization: existingCartItem?._fullCustomization });
                       }
                     }}
                     data-testid={`card-product-${item.id}`}
@@ -1605,36 +2156,37 @@ export default function PosSystem() {
                         const groupKey = getGroupingKey(item);
                         const groupCount = (groupedItemsMap[groupKey] || [item]).length;
                         const hasAddonsBadge = itemsWithAddonsSet.has(item.id);
-                        const itemSales = (item as any).salesCount || 0;
-                        const isBestSeller = itemSales > 0 && maxSalesCount > 0 && itemSales >= maxSalesCount * 0.6;
-                        const isNew = (item as any).isNewProduct === 1;
+                        const customBadge = i18n.language === 'ar'
+                          ? (item.badgeAr || item.badgeEn)
+                          : (item.badgeEn || item.badgeAr);
                         return (
-                          <>
-                            <div className="absolute top-1.5 right-1.5 flex flex-col gap-1">
-                              {groupCount > 1 && (
-                                <Badge className="text-[9px] sm:text-[10px] px-1.5 py-0.5 bg-primary/90 text-white font-bold">
-                                  {groupCount} {i18n.language === 'ar' ? 'خيارات' : 'options'}
-                                </Badge>
-                              )}
-                              {hasAddonsBadge && (
-                                <Badge className="text-[9px] sm:text-[10px] px-1.5 py-0.5 bg-orange-500/90 text-white font-bold">
-                                  + {i18n.language === 'ar' ? 'إضافات' : 'Addons'}
-                                </Badge>
-                              )}
-                            </div>
-                            <div className="absolute top-1.5 left-1.5 flex flex-col gap-1">
-                              {isBestSeller && (
-                                <Badge className="text-[9px] sm:text-[10px] px-1.5 py-0.5 bg-[#D4912A] text-white font-bold">
-                                  ⭐ {i18n.language === 'ar' ? 'الأكثر مبيعاً' : 'Best Seller'}
-                                </Badge>
-                              )}
-                              {isNew && (
-                                <Badge className="text-[9px] sm:text-[10px] px-1.5 py-0.5 bg-green-500 text-white font-bold">
-                                  ✨ {i18n.language === 'ar' ? 'جديد' : 'New'}
-                                </Badge>
-                              )}
-                            </div>
-                          </>
+                          <div className="absolute top-1.5 right-1.5 flex flex-col gap-1">
+                            {item.isBestSeller && (
+                              <Badge className="text-[9px] sm:text-[10px] px-1.5 py-0.5 bg-primary text-white font-bold">
+                                🔥 {i18n.language === 'ar' ? 'الأكثر طلباً' : 'Best Seller'}
+                              </Badge>
+                            )}
+                            {item.isNewProduct === 1 && (
+                              <Badge className="text-[9px] sm:text-[10px] px-1.5 py-0.5 bg-green-500 text-white font-bold">
+                                {i18n.language === 'ar' ? 'جديد' : 'New'}
+                              </Badge>
+                            )}
+                            {customBadge && (
+                              <Badge className="text-[9px] sm:text-[10px] px-1.5 py-0.5 bg-accent text-white font-bold border-0">
+                                {customBadge}
+                              </Badge>
+                            )}
+                            {groupCount > 1 && (
+                              <Badge className="text-[9px] sm:text-[10px] px-1.5 py-0.5 bg-primary/90 text-white font-bold">
+                                {groupCount} {i18n.language === 'ar' ? 'خيارات' : 'options'}
+                              </Badge>
+                            )}
+                            {hasAddonsBadge && (
+                              <Badge className="text-[9px] sm:text-[10px] px-1.5 py-0.5 bg-orange-500/90 text-white font-bold">
+                                + {i18n.language === 'ar' ? 'إضافات' : 'Addons'}
+                              </Badge>
+                            )}
+                          </div>
                         );
                       })()}
                     </div>
@@ -1677,16 +2229,90 @@ export default function PosSystem() {
               </div>
             </div>
             <div className="flex gap-1">
-              <Button variant="ghost" size="icon" className="hidden md:flex" onClick={() => setSplitViewMode(!splitViewMode)} data-testid="button-split-view">
-                <Columns2 className="w-4 h-4" />
-              </Button>
+              {/* Hold current cart */}
               {orderItems.length > 0 && (
-                <Button variant="ghost" size="icon" onClick={() => { setOrderItems([]); setSplitCashAmount(""); broadcastToDisplay("order_cancelled", { items: [], subtotal: 0, tax: 0, total: 0 }); }} className="text-destructive h-8 w-8" data-testid="button-clear-order">
+                <Button variant="ghost" size="icon" title={tc('احجز الطلب (F5)','Hold Order (F5)')} onClick={holdCurrentCart} className="h-8 w-8 text-amber-600 hover:text-amber-700" data-testid="button-hold-order">
+                  <PauseCircle className="w-4 h-4" />
+                </Button>
+              )}
+              {/* Held carts badge */}
+              {heldCarts.length > 0 && (
+                <Button variant="ghost" size="icon" title={tc('الطلبات المحجوزة (F6)','Held Orders (F6)')} onClick={() => setShowHeldCarts(true)} className="h-8 w-8 relative" data-testid="button-show-held-carts">
+                  <Archive className="w-4 h-4" />
+                  <span className="absolute -top-1 -right-1 bg-amber-500 text-white rounded-full w-4 h-4 text-[9px] font-bold flex items-center justify-center">{heldCarts.length}</span>
+                </Button>
+              )}
+              {/* Merge bills */}
+              {cartTabs.length > 1 && (
+                <Button variant="ghost" size="icon" title={tc('دمج الفواتير','Merge Bills')} onClick={() => setShowMergeBills(true)} className="h-8 w-8" data-testid="button-merge-bills">
+                  <Merge className="w-4 h-4" />
+                </Button>
+              )}
+              {orderItems.length > 0 && (
+                <Button variant="ghost" size="icon" onClick={() => { setOrderItems([]); setSplitCashAmount(""); setItemDiscounts({}); broadcastToDisplay("order_cancelled", { items: [], subtotal: 0, tax: 0, total: 0 }); }} className="text-destructive h-8 w-8" data-testid="button-clear-order">
                   <Trash2 className="w-4 h-4" />
                 </Button>
               )}
             </div>
           </div>
+
+          {/* ── Cart Tabs Bar (Multi-Cart) ──────────────────────────────── */}
+          {cartTabs.length > 1 && (
+            <div className="flex items-center gap-0.5 px-2 pt-1 pb-0 border-b overflow-x-auto no-scrollbar bg-muted/20">
+              {cartTabs.map(tab => (
+                <div key={tab.id} className="flex items-center shrink-0">
+                  <button
+                    onClick={() => switchCartTab(tab.id)}
+                    className={`flex items-center gap-1 px-2 py-1.5 rounded-t-lg text-[10px] font-bold whitespace-nowrap border-b-2 transition-all ${
+                      activeTabId === tab.id
+                        ? 'border-primary text-primary bg-primary/5'
+                        : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/40'
+                    }`}
+                    data-testid={`button-cart-tab-${tab.id}`}
+                  >
+                    {tab.name}
+                    {tab.itemCount > 0 && (
+                      <span className={`rounded-full px-1 text-[9px] font-black ${activeTabId === tab.id ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                        {tab.itemCount}
+                      </span>
+                    )}
+                  </button>
+                  {cartTabs.length > 1 && (
+                    <button
+                      onClick={() => closeCartTab(tab.id)}
+                      className="w-3.5 h-3.5 text-muted-foreground/50 hover:text-destructive transition-colors mr-1"
+                      data-testid={`button-close-tab-${tab.id}`}
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              ))}
+              <button
+                onClick={newCartTab}
+                className="flex items-center gap-0.5 px-2 py-1.5 rounded-t-lg text-[10px] text-muted-foreground hover:text-primary transition-colors shrink-0"
+                title={tc('طلب جديد (F4 / Ctrl+T)','New Order (F4 / Ctrl+T)')}
+                data-testid="button-new-cart-tab"
+              >
+                <Plus className="w-3 h-3" />
+                <span>{tc('جديد','New')}</span>
+              </button>
+            </div>
+          )}
+          {/* Quick new tab when only 1 tab */}
+          {cartTabs.length === 1 && (
+            <div className="flex justify-end px-2 pt-1">
+              <button
+                onClick={newCartTab}
+                className="flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-primary transition-colors"
+                title={tc('طلب جديد (F4)','New Order (F4)')}
+                data-testid="button-new-first-tab"
+              >
+                <Plus className="w-3 h-3" />
+                <span>{tc('+ طلب جديد','+ New Order')}</span>
+              </button>
+            </div>
+          )}
 
           <ScrollArea className="flex-1 px-2 sm:px-4 py-2">
             {orderItems.length === 0 ? (
@@ -1706,9 +2332,31 @@ export default function PosSystem() {
                           + {item.customization.selectedItemAddons.map((a: any) => a.nameAr).join('، ')}
                         </p>
                       )}
-                      <p className="text-primary font-black text-xs mt-0.5">
-                        {((Number(item.coffeeItem.price) + (item.customization?.selectedItemAddons || []).reduce((s: number, a: any) => s + Number(a.price || 0), 0)) * item.quantity).toFixed(2)} {t('pos.currency')}
-                      </p>
+                      <div className="flex items-center gap-1 flex-wrap mt-0.5">
+                        <p className="text-primary font-black text-xs">
+                          {(getPosItemUnitPrice(item) * item.quantity).toFixed(2)} {t('pos.currency')}
+                        </p>
+                        {/* Per-item discount badge */}
+                        {itemDiscounts[item.lineItemId] ? (
+                          <button
+                            onClick={() => { setShowItemDiscountFor(item.lineItemId); setItemDiscountInput(String(itemDiscounts[item.lineItemId].value)); setItemDiscountType(itemDiscounts[item.lineItemId].type); }}
+                            className="text-[9px] font-bold text-green-700 bg-green-100 rounded px-1 inline-flex items-center gap-0.5 dark:bg-green-900/30 dark:text-green-400"
+                            data-testid={`badge-item-discount-${item.lineItemId}`}
+                          >
+                            <Percent className="w-2.5 h-2.5" />
+                            -{itemDiscounts[item.lineItemId].type === 'percent' ? `${itemDiscounts[item.lineItemId].value}%` : `${itemDiscounts[item.lineItemId].value} ${tc('ر.س','SAR')}`}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => { setShowItemDiscountFor(item.lineItemId); setItemDiscountInput(''); setItemDiscountType('percent'); }}
+                            className="text-[9px] text-muted-foreground/60 hover:text-primary inline-flex items-center gap-0.5 transition-colors"
+                            data-testid={`button-add-item-discount-${item.lineItemId}`}
+                          >
+                            <Tag className="w-2.5 h-2.5" />
+                            {tc('خصم','Disc')}
+                          </button>
+                        )}
+                      </div>
                     </div>
                     {/* Quantity controls */}
                     <div className="flex items-center bg-muted rounded-full p-0.5 shrink-0">
@@ -1835,13 +2483,20 @@ export default function PosSystem() {
 
           <div className="px-2 sm:px-4 py-2 border-t">
             <p className="text-xs sm:text-sm font-bold text-muted-foreground mb-2">{t('pos.payment_method')}</p>
-            <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
+            <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
               {PAYMENT_METHODS.map((method) => (
                 <Button
                   key={method.id}
+                  type="button"
                   variant={paymentMethod === method.id ? "default" : "outline"}
                   size="sm"
-                  onClick={() => { setPaymentMethod(method.id as PaymentMethod); setSplitCashAmount(""); }}
+                  onClick={() => {
+                    setPaymentMethod(method.id as PaymentMethod);
+                    setSplitCashAmount("");
+                    if (method.id === 'split') {
+                      setPersonPayments([{ id: Date.now().toString(), method: 'cash', amount: '' }]);
+                    }
+                  }}
                   className="flex flex-col gap-0.5 h-auto py-2 text-[10px] sm:text-xs"
                   data-testid={`button-payment-${method.id}`}
                 >
@@ -1850,8 +2505,108 @@ export default function PosSystem() {
                 </Button>
               ))}
             </div>
+            {paymentMethod === "cash" && (() => {
+              const received = parseFloat(splitCashAmount) || 0;
+              const change = received - finalGrandTotal;
+              const roundUpTo = (n: number) => Math.ceil(finalGrandTotal / n) * n;
+              const quickAmounts: { label: string; value: number; testId: string }[] = [
+                { label: tc("بالضبط","Exact"), value: finalGrandTotal, testId: "exact" },
+                { label: `≈${roundUpTo(10)}`, value: roundUpTo(10), testId: "round10" },
+                { label: `≈${roundUpTo(50)}`, value: roundUpTo(50), testId: "round50" },
+                { label: `≈${roundUpTo(100)}`, value: roundUpTo(100), testId: "round100" },
+              ];
+              const bills = [50, 100, 200, 500];
+              const switchToSplitWithCard = () => {
+                const cashEntered = received > 0 ? Math.min(received, finalGrandTotal) : finalGrandTotal / 2;
+                const cardPart = Math.max(0, finalGrandTotal - cashEntered);
+                setPersonPayments([{
+                  id: Date.now().toString(),
+                  method: 'mixed',
+                  amount: '',
+                  cashAmount: cashEntered.toFixed(2),
+                  cardAmount: cardPart.toFixed(2),
+                }]);
+                setPaymentMethod('split' as PaymentMethod);
+              };
+              return (
+                <div className="mt-2 rounded-xl border-2 border-primary/20 bg-primary/5 p-3 space-y-2">
+                  <p className="text-[11px] font-bold text-primary">{tc("المبلغ المستلم من العميل","Cash received from customer")}</p>
+                  <div className="flex items-center gap-2">
+                    <Banknote className="w-4 h-4 text-primary shrink-0" />
+                    <Input
+                      type="number"
+                      min={0}
+                      step={0.5}
+                      placeholder={finalGrandTotal.toFixed(2)}
+                      value={splitCashAmount}
+                      onChange={e => setSplitCashAmount(e.target.value)}
+                      className="h-9 text-base font-bold flex-1"
+                      data-testid="input-cash-received"
+                    />
+                    <SarIcon size={12} />
+                  </div>
+                  {/* Quick-fill shortcuts */}
+                  <div className="grid grid-cols-4 gap-1">
+                    {quickAmounts.map((q) => (
+                      <Button
+                        key={q.testId}
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-[10px] font-bold px-1 border-primary/30 hover:bg-primary/10"
+                        onClick={() => setSplitCashAmount(q.value.toFixed(2))}
+                        data-testid={`button-quick-cash-${q.testId}`}
+                      >{q.label}</Button>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-4 gap-1">
+                    {bills.map((b) => (
+                      <Button
+                        key={b}
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-[10px] font-bold px-1"
+                        onClick={() => setSplitCashAmount(((parseFloat(splitCashAmount) || 0) + b).toFixed(2))}
+                        data-testid={`button-add-bill-${b}`}
+                      >+{b}</Button>
+                    ))}
+                  </div>
+                  {splitCashAmount && received > 0 && (
+                    <div className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm font-bold border ${change >= 0 ? 'bg-green-50 dark:bg-green-950/30 text-green-700 border-green-300' : 'bg-red-50 dark:bg-red-950/20 text-red-600 border-red-300'}`}>
+                      <span>{change >= 0 ? tc("🪙 الباقي (الفكة)","🪙 Change due") : tc("⚠️ ناقص","⚠️ Short")}</span>
+                      <span className="text-base font-black">{Math.abs(change).toFixed(2)} <SarIcon size={13} /></span>
+                    </div>
+                  )}
+                  {/* Quick switch to split-with-card */}
+                  {received < finalGrandTotal && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="w-full h-8 text-[11px] font-black border-dashed border-primary/50 text-primary hover:bg-primary/10 gap-1"
+                      onClick={switchToSplitWithCard}
+                      data-testid="button-switch-cash-to-split"
+                    >
+                      <CreditCard className="w-3.5 h-3.5" />
+                      {received > 0
+                        ? tc(`الباقي ${(finalGrandTotal - received).toFixed(2)} ر.س على الشبكة`, `Charge remaining ${(finalGrandTotal - received).toFixed(2)} to card`)
+                        : tc("تقسيم الفاتورة كاش + شبكة","Split bill — Cash + Card")}
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="w-full h-7 text-[10px] text-muted-foreground"
+                    onClick={() => setSplitCashAmount("")}
+                    data-testid="button-clear-cash"
+                  >{tc("مسح","Clear")}</Button>
+                </div>
+              );
+            })()}
             {paymentMethod === "card" && (
-              <div className="mt-2 space-y-1">
+              <div className="mt-2 space-y-2 rounded-xl border-2 border-primary/20 bg-primary/5 p-3">
                 <p className="text-[10px] sm:text-xs text-muted-foreground text-center">
                   {t('pos.card_amount_note')}
                 </p>
@@ -1866,44 +2621,234 @@ export default function PosSystem() {
                     <span className="font-medium">{t('pos.terminal_disconnected_status')}</span>
                   </div>
                 )}
+                {/* Quick switch shortcuts */}
+                <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-primary/10">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-[10px] font-black border-dashed border-primary/50 text-primary hover:bg-primary/10 gap-1"
+                    onClick={() => {
+                      const half = finalGrandTotal / 2;
+                      setPersonPayments([{
+                        id: Date.now().toString(),
+                        method: 'mixed',
+                        amount: '',
+                        cashAmount: half.toFixed(2),
+                        cardAmount: half.toFixed(2),
+                      }]);
+                      setPaymentMethod('split' as PaymentMethod);
+                    }}
+                    data-testid="button-switch-card-to-split"
+                  >
+                    <Banknote className="w-3.5 h-3.5" />
+                    {tc("نصف كاش + نصف شبكة","½ Cash + ½ Card")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-[10px] font-black border-dashed border-primary/50 text-primary hover:bg-primary/10 gap-1"
+                    onClick={() => {
+                      setPersonPayments([{
+                        id: Date.now().toString(),
+                        method: 'mixed',
+                        amount: '',
+                        cashAmount: '',
+                        cardAmount: finalGrandTotal.toFixed(2),
+                      }]);
+                      setPaymentMethod('split' as PaymentMethod);
+                    }}
+                    data-testid="button-card-go-split"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    {tc("تقسيم مخصص","Custom split")}
+                  </Button>
+                </div>
               </div>
             )}
             {paymentMethod === "split" && (() => {
-              const splitTotal = usePoints && pointsDiscount > 0 ? calculateTotalAfterPoints : calculateTotal;
-              const cashVal = parseFloat(splitCashAmount) || 0;
-              const cardVal = Math.max(0, splitTotal - cashVal);
-              const isValid = cashVal >= 0 && cashVal <= splitTotal;
+              const orderTotal = finalGrandTotal;
+              const getPersonCashUI = (p: PersonPayment) =>
+                p.method === 'mixed' ? (parseFloat(p.cashAmount || '') || 0) : p.method === 'cash' ? (parseFloat(p.amount) || 0) : 0;
+              const getPersonCardUI = (p: PersonPayment) =>
+                p.method === 'mixed' ? (parseFloat(p.cardAmount || '') || 0) : p.method === 'card' ? (parseFloat(p.amount) || 0) : 0;
+              const getPersonTotalUI = (p: PersonPayment) => getPersonCashUI(p) + getPersonCardUI(p);
+              const paidTotal = personPayments.reduce((s, p) => s + getPersonTotalUI(p), 0);
+              const remaining = Math.max(0, orderTotal - paidTotal);
+              const isComplete = Math.abs(paidTotal - orderTotal) <= 0.01;
+              const addPerson = () => setPersonPayments(prev => [...prev, { id: Date.now().toString(), method: 'cash', amount: '' }]);
+              const removePerson = (id: string) => setPersonPayments(prev => prev.filter(p => p.id !== id));
+              const updatePerson = (id: string, field: keyof PersonPayment, val: string) =>
+                setPersonPayments(prev => prev.map(p => p.id === id ? { ...p, [field]: val } : p));
+              const fillRemaining = (id: string) => {
+                const p = personPayments.find(pp => pp.id === id)!;
+                if (p.method === 'mixed') {
+                  updatePerson(id, 'cashAmount', remaining > 0 ? remaining.toFixed(2) : '');
+                } else {
+                  updatePerson(id, 'amount', remaining > 0 ? remaining.toFixed(2) : '');
+                }
+              };
+              const totalCash = personPayments.reduce((s, p) => s + getPersonCashUI(p), 0);
+              const totalCard = personPayments.reduce((s, p) => s + getPersonCardUI(p), 0);
+              const splitEqualCash = (n: number) => {
+                const per = orderTotal / n;
+                const items = Array.from({ length: n }, (_, i) => ({
+                  id: `${Date.now()}-${i}`,
+                  method: 'cash' as const,
+                  amount: per.toFixed(2),
+                }));
+                setPersonPayments(items);
+              };
+              const splitCashCard = () => {
+                const half = orderTotal / 2;
+                setPersonPayments([{
+                  id: Date.now().toString(),
+                  method: 'mixed',
+                  amount: '',
+                  cashAmount: half.toFixed(2),
+                  cardAmount: half.toFixed(2),
+                }]);
+              };
+              const resetSplit = () => setPersonPayments([{ id: Date.now().toString(), method: 'cash', amount: '' }]);
               return (
                 <div className="mt-2 space-y-2 rounded-xl border-2 border-primary/30 bg-primary/5 p-3">
-                  <p className="text-[10px] font-bold text-primary text-center">{tc("أدخل المبلغ النقدي — الباقي يُسدَّد شبكة","Enter cash amount — rest goes to card")}</p>
-                  <div className="flex items-center gap-2">
-                    <Banknote className="w-4 h-4 text-green-600 shrink-0" />
-                    <Input
-                      type="number"
-                      min={0}
-                      max={splitTotal}
-                      step={0.01}
-                      placeholder={tc("مبلغ الكاش","Cash amount")}
-                      value={splitCashAmount}
-                      onChange={(e) => setSplitCashAmount(e.target.value)}
-                      className="h-8 text-sm font-bold"
-                      data-testid="input-split-cash"
-                    />
-                    <span className="text-xs font-bold shrink-0">{tc("ر.س","SAR")}</span>
+                  <div className="flex items-center justify-between">
+                    <p className="text-[11px] font-bold text-primary">{tc("تقسيم الفاتورة على أشخاص","Split bill between people")}</p>
+                    <span className="text-[10px] bg-primary/10 text-primary font-bold px-2 py-0.5 rounded-full">{tc("إجمالي","Total")}: {orderTotal.toFixed(2)}</span>
                   </div>
-                  <div className={`flex items-center justify-between rounded-lg px-3 py-2 text-xs font-bold ${isValid ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700' : 'bg-red-50 dark:bg-red-950/30 text-red-600 border border-red-200'}`}>
-                    <div className="flex items-center gap-1.5">
-                      <CreditCard className="w-3.5 h-3.5" />
-                      <span>{tc("الشبكة:","Card:")}</span>
-                    </div>
-                    <span>{isValid ? cardVal.toFixed(2) : "—"} {tc("ر.س","SAR")}</span>
+                  {/* Quick presets */}
+                  <div className="grid grid-cols-5 gap-1">
+                    {[2, 3, 4, 5].map((n) => (
+                      <Button
+                        key={n}
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-[10px] font-black border-primary/40 hover:bg-primary/10"
+                        onClick={() => splitEqualCash(n)}
+                        data-testid={`button-split-equal-${n}`}
+                      >÷{n}<br /><span className="text-[8px] font-normal">{(orderTotal / n).toFixed(2)}</span></Button>
+                    ))}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-[10px] font-black border-primary/40 hover:bg-primary/10 text-red-600"
+                      onClick={resetSplit}
+                      data-testid="button-split-reset"
+                    >{tc("صفر","Reset")}</Button>
                   </div>
-                  {cashVal > 0 && isValid && (
-                    <div className="flex justify-between text-[10px] text-muted-foreground">
-                      <span>{tc("كاش","Cash")} {cashVal.toFixed(2)} + {tc("شبكة","Card")} {cardVal.toFixed(2)}</span>
-                      <span className="font-bold text-primary">= {splitTotal.toFixed(2)} {tc("ر.س","SAR")}</span>
-                    </div>
-                  )}
+                  <div className="grid grid-cols-2 gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-[10px] font-black border-dashed border-primary/50 text-primary hover:bg-primary/10"
+                      onClick={splitCashCard}
+                      data-testid="button-split-cash-card-half"
+                    >½ {tc("كاش","Cash")} + ½ {tc("شبكة","Card")}</Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-[10px] font-black border-dashed border-primary/50 text-primary hover:bg-primary/10"
+                      onClick={() => setPersonPayments([{
+                        id: Date.now().toString(),
+                        method: 'mixed',
+                        amount: '',
+                        cashAmount: '',
+                        cardAmount: '',
+                      }])}
+                      data-testid="button-split-mixed-empty"
+                    >{tc("شخص واحد — كاش + شبكة","One person — Cash+Card")}</Button>
+                  </div>
+                  <div className="space-y-2">
+                    {personPayments.map((p, idx) => (
+                      <div key={p.id} className="space-y-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-bold text-muted-foreground shrink-0 w-5">{idx + 1}</span>
+                          <select
+                            value={p.method}
+                            onChange={e => updatePerson(p.id, 'method', e.target.value)}
+                            className="h-8 rounded-md border border-input bg-background text-xs font-bold px-1 shrink-0"
+                            data-testid={`select-person-method-${idx}`}
+                          >
+                            <option value="cash">{tc("كاش","Cash")}</option>
+                            <option value="card">{tc("شبكة","Card")}</option>
+                            <option value="mixed">{tc("كاش+شبكة","Cash+Card")}</option>
+                          </select>
+                          {p.method !== 'mixed' && (
+                            <Input
+                              type="number"
+                              min={0}
+                              step={0.01}
+                              placeholder={tc("المبلغ","Amount")}
+                              value={p.amount}
+                              onChange={e => updatePerson(p.id, 'amount', e.target.value)}
+                              className="h-8 text-sm font-bold flex-1 min-w-0"
+                              data-testid={`input-person-amount-${idx}`}
+                            />
+                          )}
+                          {p.method === 'mixed' && (
+                            <span className="text-[10px] text-primary font-bold flex-1 text-center">
+                              {getPersonTotalUI(p) > 0 ? `${getPersonTotalUI(p).toFixed(2)} ${tc("ر.س","SAR")}` : tc("أدخل المبالغ أدناه","Enter below")}
+                            </span>
+                          )}
+                          {remaining > 0 && getPersonTotalUI(p) === 0 && (
+                            <button
+                              onClick={() => fillRemaining(p.id)}
+                              className="text-[9px] text-primary underline shrink-0 whitespace-nowrap"
+                            >{remaining.toFixed(2)}</button>
+                          )}
+                          {personPayments.length > 1 && (
+                            <button onClick={() => removePerson(p.id)} className="text-red-500 hover:text-red-700 shrink-0">
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                        {p.method === 'mixed' && (
+                          <div className="flex items-center gap-1.5 mr-5">
+                            <Banknote className="w-3.5 h-3.5 text-green-600 shrink-0" />
+                            <Input
+                              type="number" min={0} step={0.01}
+                              placeholder={tc("كاش","Cash")}
+                              value={p.cashAmount || ''}
+                              onChange={e => updatePerson(p.id, 'cashAmount', e.target.value)}
+                              className="h-7 text-xs font-bold flex-1"
+                              data-testid={`input-person-cash-${idx}`}
+                            />
+                            <CreditCard className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                            <Input
+                              type="number" min={0} step={0.01}
+                              placeholder={tc("شبكة","Card")}
+                              value={p.cardAmount || ''}
+                              onChange={e => updatePerson(p.id, 'cardAmount', e.target.value)}
+                              className="h-7 text-xs font-bold flex-1"
+                              data-testid={`input-person-card-${idx}`}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    onClick={addPerson}
+                    className="text-[10px] text-primary font-bold flex items-center gap-1 hover:underline"
+                    data-testid="button-add-person"
+                  >
+                    <Plus className="w-3 h-3" />
+                    {tc("إضافة شخص","Add person")}
+                  </button>
+                  <div className={`flex items-center justify-between rounded-lg px-3 py-2 text-xs font-bold border ${isComplete ? 'bg-green-50 dark:bg-green-950/30 text-green-700 border-green-200' : remaining > 0 ? 'bg-amber-50 dark:bg-amber-950/20 text-amber-700 border-amber-200' : 'bg-red-50 text-red-600 border-red-200'}`}>
+                    <span>{isComplete ? tc("✓ مكتمل","✓ Complete") : remaining > 0 ? tc("المتبقي:","Remaining:") : tc("زيادة!","Over!")}</span>
+                    <span className="font-black text-sm">{isComplete ? '' : Math.abs(remaining > 0 ? remaining : paidTotal - orderTotal).toFixed(2) + ' ' + tc("ر.س","SAR")}</span>
+                  </div>
+                  <div className="flex justify-between text-[10px] text-muted-foreground pt-1 border-t">
+                    <span>{tc("نقدي","Cash")}: {totalCash.toFixed(2)}</span>
+                    <span>{tc("شبكة","Card")}: {totalCard.toFixed(2)}</span>
+                    <span className="font-bold text-primary">{tc("مدفوع","Paid")}: {paidTotal.toFixed(2)}</span>
+                  </div>
                 </div>
               );
             })()}
@@ -1979,7 +2924,7 @@ export default function PosSystem() {
               </div>
               {usePoints && pointsDiscount > 0 && (
                 <div className="flex justify-between text-[10px] sm:text-sm text-amber-600">
-                  <span className="font-bold">{i18n.language === 'ar' ? 'خصم بطاقة تسالي كرومش' : 'بطاقة تسالي'}</span>
+                  <span className="font-bold">{i18n.language === 'ar' ? 'خصم بطاقة تسالي' : 'Black Rose Card'}</span>
                   <span className="font-bold">- {pointsDiscount.toFixed(2)} {t('pos.currency')}</span>
                 </div>
               )}
@@ -1992,11 +2937,102 @@ export default function PosSystem() {
               {((usePoints && pointsDiscount > 0) || appliedDiscount) && (
                 <div className="flex justify-between items-center">
                   <span className="font-black text-sm sm:text-base">{i18n.language === 'ar' ? 'الإجمالي بعد الخصم' : 'Total After Discount'}</span>
-                  <span className="font-black text-base sm:text-xl text-primary" data-testid="text-grand-total">{calculateGrandTotal.toFixed(2)} {t('pos.currency')}</span>
+                  <span className={`font-black text-base sm:text-xl ${(itemDiscountTotal > 0 || manualDiscountAmount > 0 || serviceChargeAmount > 0) ? 'line-through text-muted-foreground text-sm' : 'text-primary'}`} data-testid="text-grand-total">{calculateGrandTotal.toFixed(2)} {t('pos.currency')}</span>
                 </div>
+              )}
+
+              {/* ── Engine extras: item discounts, manual discount, service charge ── */}
+              {itemDiscountTotal > 0 && (
+                <div className="flex justify-between text-[10px] sm:text-sm text-green-600">
+                  <span className="font-bold flex items-center gap-1"><Tag className="w-3 h-3" />{tc('خصم العناصر','Item Discounts')}</span>
+                  <span className="font-bold">- {itemDiscountTotal.toFixed(2)} {t('pos.currency')}</span>
+                </div>
+              )}
+              {manualDiscountAmount > 0 && (
+                <div className="flex justify-between text-[10px] sm:text-sm text-green-600">
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => setShowManualDiscount(true)} className="font-bold flex items-center gap-1 hover:underline">
+                      <DollarSign className="w-3 h-3" />{tc('خصم يدوي','Manual Discount')}
+                      {manualDiscount && <span className="text-[9px] text-muted-foreground">({manualDiscount.type === 'percent' ? `${manualDiscount.value}%` : `${manualDiscount.value} ${tc('ر.س','SAR')}`})</span>}
+                    </button>
+                    <button onClick={() => setManualDiscount(undefined)} className="text-destructive hover:opacity-70 ml-1"><X className="w-3 h-3" /></button>
+                  </div>
+                  <span className="font-bold">- {manualDiscountAmount.toFixed(2)} {t('pos.currency')}</span>
+                </div>
+              )}
+              {serviceCharge.enabled && serviceChargeAmount > 0 && (
+                <div className="flex justify-between text-[10px] sm:text-sm text-orange-600">
+                  <button onClick={() => setServiceCharge(prev => ({...prev, enabled: false}))} className="font-bold flex items-center gap-1 hover:underline">
+                    <Hash className="w-3 h-3" />{tc('رسوم الخدمة','Service Charge')} ({serviceCharge.value}{serviceCharge.type === 'percent' ? '%' : ` ${tc('ر.س','SAR')}`})
+                  </button>
+                  <span className="font-bold">+ {serviceChargeAmount.toFixed(2)} {t('pos.currency')}</span>
+                </div>
+              )}
+
+              {/* Service charge quick toggle */}
+              {!serviceCharge.enabled && (
+                <button
+                  onClick={() => setServiceCharge(prev => ({ ...prev, enabled: true }))}
+                  className="text-[10px] text-muted-foreground/50 hover:text-orange-600 transition-colors flex items-center gap-1"
+                  data-testid="button-enable-service-charge"
+                >
+                  <Hash className="w-3 h-3" />
+                  {tc('إضافة رسوم خدمة (F7)','Add Service Charge (F7)')}
+                </button>
+              )}
+              {/* Manual discount quick add */}
+              {!manualDiscountAmount && (
+                <button
+                  onClick={() => setShowManualDiscount(true)}
+                  className="text-[10px] text-muted-foreground/50 hover:text-green-600 transition-colors flex items-center gap-1"
+                  data-testid="button-add-manual-discount"
+                >
+                  <DollarSign className="w-3 h-3" />
+                  {tc('إضافة خصم يدوي','Add Manual Discount')}
+                </button>
+              )}
+
+              {(itemDiscountTotal > 0 || manualDiscountAmount > 0 || serviceChargeAmount > 0) && (
+                <>
+                  <Separator />
+                  <div className="flex justify-between items-center pt-1">
+                    <span className="font-black text-sm sm:text-base">{tc('الإجمالي النهائي','Final Total')}</span>
+                    <span className="font-black text-base sm:text-xl text-primary" data-testid="text-final-grand-total">{finalGrandTotal.toFixed(2)} {t('pos.currency')}</span>
+                  </div>
+                </>
               )}
             </div>
 
+            {/* Points discount toggle — only when customer found with ≥100 pts */}
+            {customerLookupFound === true && customerPoints >= 100 && (
+              <div className={`rounded-xl border-2 p-3 transition-colors ${usePoints ? 'border-amber-400 bg-amber-50 dark:bg-amber-950/30' : 'border-muted bg-muted/30'}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Wallet className="w-4 h-4 text-amber-600 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-black text-amber-700 dark:text-amber-300 leading-none">
+                        {i18n.language === 'ar' ? 'استخدام النقاط' : 'Use Points'}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                        {customerPoints} {i18n.language === 'ar' ? 'نقطة' : 'pts'} = {(customerPoints / 50).toFixed(2)} {t('pos.currency')}
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={usePoints}
+                    onCheckedChange={setUsePoints}
+                    data-testid="toggle-use-points"
+                  />
+                </div>
+                {usePoints && (
+                  <p className="text-[11px] text-amber-700 dark:text-amber-300 font-bold mt-2 border-t border-amber-200 dark:border-amber-700 pt-2">
+                    {i18n.language === 'ar'
+                      ? <span>سيُخصم {pointsDiscount.toFixed(2)} <SarIcon size={10} /> ({Math.round(pointsDiscount * 50)} نقطة) من الطلب</span>
+                      : `${pointsDiscount.toFixed(2)} SAR (${Math.round(pointsDiscount * 50)} pts) will be deducted`}
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Offline / Queue Indicator */}
             {(!isOnline || offlineQueueCount > 0) && (
@@ -2019,26 +3055,148 @@ export default function PosSystem() {
               </div>
             )}
 
-            <Button 
-              className="w-full h-11 sm:h-13 text-sm sm:text-base font-black rounded-xl shadow-lg shadow-primary/20 gap-2"
-              disabled={orderItems.length === 0 || syncing}
-              onClick={() => setShowOrderReview(true)}
-              data-testid="button-checkout"
-            >
-              {syncing ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <>
-                  {PAYMENT_METHODS.find(m => m.id === paymentMethod)?.icon && (() => {
-                    const IconComp = PAYMENT_METHODS.find(m => m.id === paymentMethod)!.icon;
-                    return <IconComp className="w-4 h-4" />;
-                  })()}
-                </>
-              )}
-              {i18n.language === 'ar' ? 'مراجعة الطلب والدفع' : 'Review & Pay'}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                className="flex-1 h-11 sm:h-13 text-sm sm:text-base font-black rounded-xl shadow-lg shadow-primary/20 gap-2"
+                disabled={orderItems.length === 0 || syncing}
+                onClick={() => setShowOrderReview(true)}
+                data-testid="button-checkout"
+              >
+                {syncing ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    {PAYMENT_METHODS.find(m => m.id === paymentMethod)?.icon && (() => {
+                      const IconComp = PAYMENT_METHODS.find(m => m.id === paymentMethod)!.icon;
+                      return <IconComp className="w-4 h-4" />;
+                    })()}
+                  </>
+                )}
+                {i18n.language === 'ar' ? 'مراجعة الطلب والدفع' : 'Review & Pay'}
+              </Button>
+            </div>
           </div>
         </aside>
+
+        {/* ── Quick Shortcuts Sidebar (left strip, hidden on mobile) ── */}
+        <QuickSidebar
+          groups={[
+            [
+              {
+                icon: <Plus className="w-5 h-5" />,
+                label: tc('طلب جديد', 'New Order'),
+                onClick: () => newCartTabRef.current(),
+                shortcut: 'F4',
+              },
+              {
+                icon: <PauseCircle className="w-5 h-5" />,
+                label: tc('تعليق الطلب', 'Hold Order'),
+                onClick: () => holdCurrentCartRef.current(),
+                shortcut: 'F5',
+              },
+              {
+                icon: <Archive className="w-5 h-5" />,
+                label: tc('الطلبات المعلقة', 'Held Orders'),
+                onClick: () => setShowHeldCarts(true),
+                shortcut: 'F6',
+              },
+              {
+                icon: <Merge className="w-5 h-5" />,
+                label: tc('دمج الفواتير', 'Merge Bills'),
+                onClick: () => setShowMergeBills(true),
+                shortcut: 'Ctrl+M',
+              },
+            ],
+            [
+              {
+                icon: <ClipboardList className="w-5 h-5" />,
+                label: tc('الطلبات الواردة', 'Incoming Orders'),
+                onClick: () => { setShowOrdersPanel(true); setNewOrdersCount(0); },
+                badge: newOrdersCount || undefined,
+                shortcut: 'F3',
+              },
+              {
+                icon: <Grid3X3 className="w-5 h-5" />,
+                label: tc('الطاولات', 'Tables'),
+                onClick: () => setShowTablesDialog(true),
+                shortcut: 'F10',
+              },
+              {
+                icon: <FolderOpen className="w-5 h-5" />,
+                label: tc('الحسابات المفتوحة', 'Open Bills'),
+                onClick: () => setShowOpenBillsDialog(true),
+                badge: openTableOrders.length || undefined,
+                shortcut: 'F9',
+              },
+              {
+                icon: <Car className="w-5 h-5" />,
+                label: tc('طلبات السيارات', 'Car Orders'),
+                onClick: () => setShowCarOrdersPanel(true),
+                badge: carPreparationAlerts.length || undefined,
+              },
+            ],
+            [
+              {
+                icon: <User className="w-5 h-5" />,
+                label: tc('بحث عن عميل', 'Customer Lookup'),
+                onClick: () => setShowCustomerInfo(v => !v),
+                active: showCustomerInfo,
+                shortcut: 'F8',
+              },
+              {
+                icon: <Percent className="w-5 h-5" />,
+                label: tc('خصم يدوي', 'Manual Discount'),
+                onClick: () => setShowManualDiscount(true),
+                shortcut: 'Ctrl+D',
+              },
+              {
+                icon: <SplitSquareVertical className="w-5 h-5" />,
+                label: tc('تقسيم الفاتورة', 'Split Bill'),
+                onClick: () => setShowSplitPersons(true),
+                shortcut: 'Ctrl+S',
+              },
+              {
+                icon: <Receipt className="w-5 h-5" />,
+                label: tc('آخر فاتورة', 'Last Receipt'),
+                onClick: () => { if (lastOrder) setShowReceiptDialog(true); },
+                active: !!lastOrder,
+                shortcut: 'Ctrl+P',
+              },
+              {
+                icon: <RotateCcw className="w-5 h-5" />,
+                label: tc('استرجاع طلب', 'Refund'),
+                onClick: () => setShowRefundDialog(true),
+                danger: true,
+              },
+            ],
+            [
+              {
+                icon: <Printer className="w-5 h-5" />,
+                label: tc('إعدادات الطابعة', 'Printer Settings'),
+                onClick: () => setShowPrinterSettings(true),
+              },
+              {
+                icon: <Settings className="w-5 h-5" />,
+                label: tc('إعدادات نقطة البيع', 'POS Settings'),
+                onClick: () => setShowPOSSettings(true),
+              },
+              {
+                icon: soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />,
+                label: soundEnabled ? tc('إيقاف الصوت', 'Mute Sound') : tc('تشغيل الصوت', 'Enable Sound'),
+                onClick: () => { const next = !soundEnabled; setSoundEnabled(next); saveSoundEnabled('pos', next); },
+                active: soundEnabled,
+                activeClass: 'bg-primary/10 text-primary',
+              },
+            ],
+          ]}
+          bottomItems={[
+            {
+              icon: <Home className="w-5 h-5" />,
+              label: tc('الرئيسية', 'Home'),
+              onClick: () => setLocation('/employee/home'),
+            },
+          ]}
+        />
       </main>
 
       {/* Mobile bottom navigation — Products / Cart tabs */}
@@ -2088,22 +3246,26 @@ export default function PosSystem() {
               {t('pos.live_orders', { count: liveOrders?.length || 0 })}
             </DialogTitle>
           </DialogHeader>
-          <div className="flex gap-2 px-1 pb-2">
+          <div className="flex gap-2 px-1 pb-2 flex-wrap">
             {([
               { key: 'all' as const, label: i18n.language === 'ar' ? 'الكل' : 'All', count: liveOrders?.length || 0 },
-              { key: 'online' as const, label: i18n.language === 'ar' ? 'طلبات أونلاين' : 'Online Orders', count: liveOrders?.filter((o: any) => o.channel === 'online' || o.channel === 'web').length || 0 },
-              { key: 'pos' as const, label: i18n.language === 'ar' ? 'طلبات الكاشير' : 'POS Orders', count: liveOrders?.filter((o: any) => o.channel === 'pos' || !o.channel).length || 0 },
+              { key: 'online' as const, label: i18n.language === 'ar' ? 'أونلاين' : 'Online', count: liveOrders?.filter((o: any) => o.channel === 'online' || o.channel === 'web').length || 0 },
+              { key: 'pos' as const, label: i18n.language === 'ar' ? 'كاشير' : 'POS', count: liveOrders?.filter((o: any) => o.channel === 'pos' || !o.channel).length || 0 },
+              { key: 'car' as const, label: i18n.language === 'ar' ? 'سيارات' : 'Cars', count: liveOrders?.filter((o: any) => o.orderType === 'car_pickup' || o.orderType === 'car-pickup').length || 0 },
             ]).map((tab) => (
               <button
                 key={tab.key}
                 onClick={() => setOrdersFilter(tab.key)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${
                   ordersFilter === tab.key
-                    ? tab.key === 'online' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' : 'bg-primary/10 text-primary'
+                    ? tab.key === 'online' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
+                    : tab.key === 'car' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                    : 'bg-primary/10 text-primary'
                     : 'bg-muted text-muted-foreground hover:bg-muted/80'
                 }`}
               >
                 {tab.key === 'online' && <MonitorSmartphone className="w-3.5 h-3.5" />}
+                {tab.key === 'car' && <Car className="w-3.5 h-3.5" />}
                 {tab.label}
                 {tab.count > 0 && (
                   <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
@@ -2119,6 +3281,7 @@ export default function PosSystem() {
                 const filteredOrders = (liveOrders || []).filter((o: any) => {
                   if (ordersFilter === 'online') return o.channel === 'online' || o.channel === 'web';
                   if (ordersFilter === 'pos') return o.channel === 'pos' || o.channel === undefined || o.channel === null;
+                  if (ordersFilter === 'car') return o.orderType === 'car_pickup' || o.orderType === 'car-pickup';
                   return true;
                 });
                 if (filteredOrders.length === 0) return (
@@ -2162,6 +3325,12 @@ export default function PosSystem() {
                                   <MonitorSmartphone className="w-3 h-3" />
                                   {i18n.language === 'ar' ? 'أونلاين' : 'Online'}
                                 </Badge>
+                              )}
+                              {(order.status === 'refunded' || (order as any).isFullyRefunded) && (
+                                <Badge className="text-xs bg-red-100 text-red-700 border border-red-300">مسترجع ↩</Badge>
+                              )}
+                              {(order as any).refundedAmount > 0 && !(order as any).isFullyRefunded && order.status !== 'refunded' && (
+                                <Badge className="text-xs bg-orange-100 text-orange-700 border border-orange-300">جزئي ↩</Badge>
                               )}
                               {order.orderType && (
                                 <Badge variant="outline" className="text-xs">
@@ -2303,32 +3472,6 @@ export default function PosSystem() {
                               {t('pos.cancel')}
                             </Button>
                           )}
-                          {(order.paymentStatus === 'paid' || order.status === 'completed') && !(order as any).refundInfo?.refundedAt && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="border-orange-400 text-orange-600 hover:bg-orange-50"
-                              data-testid={`button-refund-${order.id}`}
-                              onClick={() => {
-                                setRefundOrder(order);
-                                setRefundType('full');
-                                setRefundMethod('cash');
-                                setRefundCashInput('');
-                                setRefundReason('');
-                                setRefundSelectedItems({});
-                                setShowRefundDialog(true);
-                              }}
-                            >
-                              <RotateCcw className="w-3 h-3 ml-1" />
-                              {tc('استرجاع', 'Refund')}
-                            </Button>
-                          )}
-                          {(order as any).refundInfo?.refundedAt && (
-                            <Badge variant="outline" className="text-orange-600 border-orange-300 text-xs">
-                              <RotateCcw className="w-3 h-3 ml-1" />
-                              {tc('مسترجع', 'Refunded')}
-                            </Badge>
-                          )}
                         </div>
                       </CardContent>
                     </Card>
@@ -2336,292 +3479,6 @@ export default function PosSystem() {
                 });
               })()}
             </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* ── Refund Dialog ──────────────────────────────────────────────── */}
-      <Dialog open={showRefundDialog} onOpenChange={(o) => { if (!refundMutation.isPending) { setShowRefundDialog(o); if (!o) setRefundOrder(null); } }}>
-        <DialogContent className="max-w-lg w-full max-h-[92vh] flex flex-col p-0 gap-0 overflow-hidden" dir={dir}>
-          <DialogHeader className="px-5 pt-5 pb-3 border-b shrink-0 bg-orange-50">
-            <DialogTitle className="flex items-center gap-2 text-lg font-black text-orange-700">
-              <RotateCcw className="w-5 h-5" />
-              {tc('استرجاع الطلب', 'Order Refund')}
-            </DialogTitle>
-            {refundOrder && (
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {tc('طلب', 'Order')} #{fmtOrderNum(refundOrder.orderNumber || refundOrder.dailyNumber || '')}
-                {' · '}{tc('المبلغ الأصلي', 'Original Amount')}: {Number(refundOrder.totalAmount || 0).toFixed(2)} {tc('ر.س', 'SAR')}
-              </p>
-            )}
-          </DialogHeader>
-
-          {refundOrder && (() => {
-            const orderTotal = Number(refundOrder.totalAmount || 0);
-            const orderItems: any[] = Array.isArray(refundOrder.items) ? refundOrder.items : [];
-
-            // Compute selected partial items list
-            const selectedPartialItems = orderItems.filter((_: any, idx: number) => refundSelectedItems[String(idx)]);
-            const partialAmount = selectedPartialItems.reduce((s: number, it: any) => {
-              const price = Number(it.price || it.coffeeItem?.price || 0);
-              const qty = Number(it.quantity || 1);
-              return s + price * qty;
-            }, 0);
-
-            const refundAmount = refundType === 'full' ? orderTotal : Math.min(partialAmount, orderTotal);
-            const cashAmount = refundMethod === 'cash' ? refundAmount
-              : refundMethod === 'split' ? Math.min(Number(refundCashInput) || 0, refundAmount)
-              : 0;
-            const cardAmount = refundAmount - cashAmount;
-            const vatRatio = orderTotal > 0 ? (Number(refundOrder.tax) || 0) / orderTotal : 0;
-            const refundVat = refundAmount * vatRatio;
-            const refundNet = refundAmount - refundVat;
-
-            const canConfirm = refundAmount > 0
-              && (refundMethod !== 'split' || (cashAmount >= 0 && cashAmount <= refundAmount))
-              && (refundType === 'full' || selectedPartialItems.length > 0);
-
-            return (
-              <div className="flex-1 min-h-0 overflow-y-auto">
-                <div className="p-4 space-y-4">
-
-                  {/* 1. Refund Type */}
-                  <div>
-                    <p className="text-xs font-bold text-muted-foreground mb-2 uppercase tracking-wide">{tc('نوع الاسترجاع', 'Refund Type')}</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        className={`rounded-xl border-2 p-3 text-sm font-bold transition-all ${refundType === 'full' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-border bg-card text-foreground'}`}
-                        onClick={() => setRefundType('full')}
-                        data-testid="refund-type-full"
-                      >
-                        <RotateCcw className="w-4 h-4 mx-auto mb-1" />
-                        {tc('استرجاع كامل', 'Full Refund')}
-                        <p className="text-xs font-normal mt-0.5 opacity-70">{orderTotal.toFixed(2)} {tc('ر.س', 'SAR')}</p>
-                      </button>
-                      <button
-                        className={`rounded-xl border-2 p-3 text-sm font-bold transition-all ${refundType === 'partial' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-border bg-card text-foreground'}`}
-                        onClick={() => setRefundType('partial')}
-                        data-testid="refund-type-partial"
-                      >
-                        <SplitSquareVertical className="w-4 h-4 mx-auto mb-1" />
-                        {tc('استرجاع جزئي', 'Partial Refund')}
-                        <p className="text-xs font-normal mt-0.5 opacity-70">{tc('اختر الأصناف', 'Select items')}</p>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* 2. Partial items selector */}
-                  {refundType === 'partial' && orderItems.length > 0 && (
-                    <div>
-                      <p className="text-xs font-bold text-muted-foreground mb-2 uppercase tracking-wide">{tc('الأصناف المرتجعة', 'Returned Items')}</p>
-                      <div className="space-y-2 rounded-xl border bg-card p-2">
-                        {orderItems.map((item: any, idx: number) => {
-                          const name = item.coffeeItem?.nameAr || item.nameAr || item.name || tc('صنف', 'Item');
-                          const price = Number(item.price || item.coffeeItem?.price || 0);
-                          const qty = Number(item.quantity || 1);
-                          const lineTotal = price * qty;
-                          const selected = !!refundSelectedItems[String(idx)];
-                          return (
-                            <button
-                              key={idx}
-                              className={`w-full flex items-center gap-3 p-2.5 rounded-lg text-right transition-all ${selected ? 'bg-orange-50 border border-orange-300' : 'hover:bg-muted/50 border border-transparent'}`}
-                              onClick={() => setRefundSelectedItems(prev => ({ ...prev, [String(idx)]: !prev[String(idx)] }))}
-                              data-testid={`refund-item-${idx}`}
-                            >
-                              <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 ${selected ? 'bg-orange-500 border-orange-500' : 'border-border'}`}>
-                                {selected && <Check className="w-3 h-3 text-white" />}
-                              </div>
-                              <div className="flex-1 text-right">
-                                <p className="text-sm font-bold">{name}</p>
-                                <p className="text-xs text-muted-foreground">{qty} × {price.toFixed(2)} {tc('ر.س', 'SAR')}</p>
-                              </div>
-                              <p className="text-sm font-black text-primary">{lineTotal.toFixed(2)}</p>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {selectedPartialItems.length === 0 && (
-                        <p className="text-xs text-orange-500 mt-1">{tc('اختر صنفاً واحداً على الأقل', 'Select at least one item')}</p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* 3. Refund method */}
-                  <div>
-                    <p className="text-xs font-bold text-muted-foreground mb-2 uppercase tracking-wide">{tc('طريقة الاسترجاع', 'Refund Method')}</p>
-                    <div className="grid grid-cols-3 gap-2">
-                      {([
-                        { id: 'cash', labelAr: 'كاش', labelEn: 'Cash', icon: Banknote },
-                        { id: 'card', labelAr: 'بطاقة', labelEn: 'Card', icon: CreditCard },
-                        { id: 'split', labelAr: 'مختلط', labelEn: 'Split', icon: SplitSquareVertical },
-                      ] as const).map(m => (
-                        <button
-                          key={m.id}
-                          className={`rounded-xl border-2 p-3 text-sm font-bold transition-all ${refundMethod === m.id ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-border bg-card text-foreground'}`}
-                          onClick={() => setRefundMethod(m.id)}
-                          data-testid={`refund-method-${m.id}`}
-                        >
-                          <m.icon className="w-4 h-4 mx-auto mb-1" />
-                          {tc(m.labelAr, m.labelEn)}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Split cash entry */}
-                    {refundMethod === 'split' && (
-                      <div className="mt-3 space-y-2">
-                        <p className="text-xs font-bold">{tc('مبلغ الكاش المسترجع', 'Cash Amount to Refund')}</p>
-                        <div className="flex gap-2 items-center">
-                          <Input
-                            type="number"
-                            min="0"
-                            max={refundAmount}
-                            step="0.01"
-                            placeholder="0.00"
-                            value={refundCashInput}
-                            onChange={e => setRefundCashInput(e.target.value)}
-                            className="text-center font-bold text-lg"
-                            data-testid="refund-cash-input"
-                          />
-                          <span className="text-sm font-bold shrink-0">{tc('ر.س', 'SAR')}</span>
-                        </div>
-                        <div className="flex justify-between text-xs text-muted-foreground">
-                          <span>{tc('المتبقي على البطاقة', 'Rest on Card')}: <strong className="text-foreground">{Math.max(0, cardAmount).toFixed(2)} {tc('ر.س', 'SAR')}</strong></span>
-                          <button className="text-orange-500 font-bold" onClick={() => setRefundCashInput(String(refundAmount.toFixed(2)))}>
-                            {tc('كله كاش', 'All Cash')}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 4. Reason */}
-                  <div>
-                    <p className="text-xs font-bold text-muted-foreground mb-2 uppercase tracking-wide">{tc('سبب الاسترجاع', 'Refund Reason')}</p>
-                    <Input
-                      placeholder={tc('اكتب سبب الاسترجاع (اختياري)...', 'Enter refund reason (optional)...')}
-                      value={refundReason}
-                      onChange={e => setRefundReason(e.target.value)}
-                      data-testid="refund-reason-input"
-                    />
-                    <div className="flex flex-wrap gap-1 mt-2">
-                      {[tc('طلب العميل', 'Customer request'), tc('خطأ في الطلب', 'Wrong order'), tc('جودة غير مقبولة', 'Quality issue'), tc('تكرار الطلب', 'Duplicate order')].map(r => (
-                        <button key={r} className="text-xs px-2 py-1 rounded-lg border hover:bg-muted transition-colors" onClick={() => setRefundReason(r)}>{r}</button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* 5. Financial summary */}
-                  <div className="rounded-xl border-2 border-orange-200 bg-orange-50 p-4 space-y-2">
-                    <p className="text-sm font-black text-orange-700 flex items-center gap-1.5">
-                      <TrendingDown className="w-4 h-4" />
-                      {tc('ملخص الاسترجاع', 'Refund Summary')}
-                    </p>
-                    <Separator />
-                    <div className="space-y-1.5 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">{tc('المبلغ الكلي للاسترجاع', 'Total Refund Amount')}</span>
-                        <span className="font-black text-orange-700">− {refundAmount.toFixed(2)} {tc('ر.س', 'SAR')}</span>
-                      </div>
-                      {refundMethod === 'cash' && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground flex items-center gap-1"><Banknote className="w-3 h-3" />{tc('نقداً', 'Cash')}</span>
-                          <span className="font-bold">{cashAmount.toFixed(2)} {tc('ر.س', 'SAR')}</span>
-                        </div>
-                      )}
-                      {refundMethod === 'card' && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground flex items-center gap-1"><CreditCard className="w-3 h-3" />{tc('بطاقة', 'Card')}</span>
-                          <span className="font-bold">{cardAmount.toFixed(2)} {tc('ر.س', 'SAR')}</span>
-                        </div>
-                      )}
-                      {refundMethod === 'split' && (
-                        <>
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground flex items-center gap-1"><Banknote className="w-3 h-3" />{tc('نقداً', 'Cash')}</span>
-                            <span className="font-bold">{cashAmount.toFixed(2)} {tc('ر.س', 'SAR')}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground flex items-center gap-1"><CreditCard className="w-3 h-3" />{tc('بطاقة', 'Card')}</span>
-                            <span className="font-bold">{Math.max(0, cardAmount).toFixed(2)} {tc('ر.س', 'SAR')}</span>
-                          </div>
-                        </>
-                      )}
-                      <Separator />
-                      <div className="flex justify-between text-xs text-muted-foreground">
-                        <span>{tc('الضريبة المسترجعة (15%)', 'VAT Refunded (15%)')}</span>
-                        <span className="text-red-500">− {refundVat.toFixed(2)} {tc('ر.س', 'SAR')}</span>
-                      </div>
-                      <div className="flex justify-between text-xs text-muted-foreground">
-                        <span>{tc('الخصم من صافي الربح', 'Net Profit Deduction')}</span>
-                        <span className="text-red-500">− {refundNet.toFixed(2)} {tc('ر.س', 'SAR')}</span>
-                      </div>
-                    </div>
-                    <div className="mt-2 p-2 bg-orange-100 rounded-lg">
-                      <p className="text-xs text-orange-700 font-medium">
-                        {tc('سيتم تسجيل هذه العملية في المحاسبة وخصمها من إيرادات اليوم والأرباح تلقائياً.', 'This refund will be recorded in accounting and automatically deducted from today\'s revenue and profits.')}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* Actions */}
-          <div className="border-t p-4 flex gap-3 shrink-0 bg-background">
-            <Button
-              variant="outline"
-              className="flex-1"
-              onClick={() => { setShowRefundDialog(false); setRefundOrder(null); }}
-              disabled={refundMutation.isPending}
-              data-testid="refund-cancel-btn"
-            >
-              {tc('إلغاء', 'Cancel')}
-            </Button>
-            <Button
-              className="flex-1 bg-orange-600 hover:bg-orange-700 text-white font-bold"
-              disabled={refundMutation.isPending || !refundOrder || (() => {
-                const orderTotal = Number(refundOrder?.totalAmount || 0);
-                const orderItems: any[] = Array.isArray(refundOrder?.items) ? refundOrder.items : [];
-                const selectedPartialItems = orderItems.filter((_: any, idx: number) => refundSelectedItems[String(idx)]);
-                const partialAmount = selectedPartialItems.reduce((s: number, it: any) => (s + Number(it.price || it.coffeeItem?.price || 0) * Number(it.quantity || 1)), 0);
-                const refundAmount = refundType === 'full' ? orderTotal : Math.min(partialAmount, orderTotal);
-                const cashAmount = refundMethod === 'split' ? Math.min(Number(refundCashInput) || 0, refundAmount) : 0;
-                const cardAmount = refundAmount - cashAmount;
-                return refundAmount <= 0
-                  || (refundType === 'partial' && selectedPartialItems.length === 0)
-                  || (refundMethod === 'split' && (cashAmount < 0 || cardAmount < 0));
-              })()}
-              onClick={() => {
-                if (!refundOrder) return;
-                const orderTotal = Number(refundOrder.totalAmount || 0);
-                const orderItems: any[] = Array.isArray(refundOrder.items) ? refundOrder.items : [];
-                const selectedPartialItems = orderItems.filter((_: any, idx: number) => refundSelectedItems[String(idx)]);
-                const partialAmount = selectedPartialItems.reduce((s: number, it: any) => (s + Number(it.price || it.coffeeItem?.price || 0) * Number(it.quantity || 1)), 0);
-                const refundAmount = refundType === 'full' ? orderTotal : Math.min(partialAmount, orderTotal);
-                const cashAmount = refundMethod === 'split' ? Math.min(Number(refundCashInput) || 0, refundAmount) : 0;
-                refundMutation.mutate({
-                  orderId: refundOrder.id || refundOrder._id,
-                  refundType,
-                  refundMethod,
-                  refundCashAmount: cashAmount,
-                  reason: refundReason,
-                  items: refundType === 'partial' ? selectedPartialItems.map((it: any) => ({
-                    nameAr: it.coffeeItem?.nameAr || it.nameAr || it.name || '',
-                    price: Number(it.price || it.coffeeItem?.price || 0),
-                    quantity: Number(it.quantity || 1),
-                  })) : [],
-                });
-              }}
-              data-testid="refund-confirm-btn"
-            >
-              {refundMutation.isPending ? (
-                <><Loader2 className="w-4 h-4 animate-spin ml-2" />{tc('جاري الاسترجاع...', 'Processing...')}</>
-              ) : (
-                <><RotateCcw className="w-4 h-4 ml-2" />{tc('تأكيد الاسترجاع', 'Confirm Refund')}</>
-              )}
-            </Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -2645,10 +3502,9 @@ export default function PosSystem() {
           <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
             <div className="space-y-2">
               {orderItems.map((item) => {
-                const unitPrice = parseFloat(String(item.coffeeItem.price)) || 0;
+                const unitPrice = getPosItemUnitPrice(item);
+                const lineTotal = unitPrice * item.quantity;
                 const itemAddons = item.customization?.selectedItemAddons || [];
-                const addonsTotal = itemAddons.reduce((s: number, a: any) => s + (parseFloat(String(a.price)) || 0), 0);
-                const lineTotal = (unitPrice + addonsTotal) * item.quantity;
                 return (
                   <div
                     key={item.lineItemId}
@@ -2660,6 +3516,9 @@ export default function PosSystem() {
                       <p className="font-bold text-sm leading-snug">{item.coffeeItem.nameAr}</p>
                       {item.coffeeItem.nameEn && (
                         <p className="text-xs text-muted-foreground">{item.coffeeItem.nameEn}</p>
+                      )}
+                      {item.selectedSize && (
+                        <p className="text-[10px] text-blue-600 mt-0.5">الحجم: {item.selectedSize}</p>
                       )}
                       {itemAddons.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-1">
@@ -2729,7 +3588,7 @@ export default function PosSystem() {
               </div>
               {usePoints && pointsDiscount > 0 && (
                 <div className="flex justify-between text-sm text-amber-600">
-                  <span className="font-bold">{i18n.language === 'ar' ? 'خصم بطاقة تسالي كرومش' : 'بطاقة تسالي Discount'}</span>
+                  <span className="font-bold">{i18n.language === 'ar' ? 'خصم بطاقة تسالي' : 'Black Rose Card Discount'}</span>
                   <span className="font-bold">- {pointsDiscount.toFixed(2)} {t('pos.currency')}</span>
                 </div>
               )}
@@ -2818,8 +3677,8 @@ export default function PosSystem() {
       </Dialog>
 
       <Dialog open={showReceiptDialog} onOpenChange={setShowReceiptDialog}>
-        <DialogContent className="max-w-sm max-h-[92vh] overflow-y-auto" dir={dir}>
-          <DialogHeader>
+        <DialogContent className="max-w-sm max-h-[94vh] p-0 overflow-hidden flex flex-col" dir={dir}>
+          <DialogHeader className="px-4 pt-3 pb-2 border-b shrink-0">
             <DialogTitle className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Receipt className="w-5 h-5 text-primary" />
@@ -2832,130 +3691,55 @@ export default function PosSystem() {
               )}
             </DialogTitle>
           </DialogHeader>
-          {lastOrder && (
-            <div className="space-y-4">
-              <div className="text-center space-y-2 border-b pb-4">
-                <img
-                  src="/logo.png"
-                  alt="Tasali Qurumsh"
-                  className="w-20 h-20 object-contain mx-auto mb-1"
-                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                />
-                <h3 className="font-black text-xl text-primary">تسالي كرومش</h3>
-                {lastOrder.isOffline && (
-                  <div className="flex items-center justify-center gap-1.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 rounded-xl px-3 py-2">
-                    <span className="text-amber-600 dark:text-amber-400 text-sm">📶</span>
-                    <div className="text-right">
-                      <p className="text-xs font-bold text-amber-700 dark:text-amber-400">
-                        {i18n.language === 'ar' ? 'طلب محفوظ بدون إنترنت' : 'Saved Offline'}
-                      </p>
-                      <p className="text-xs text-amber-600 dark:text-amber-500">
-                        {i18n.language === 'ar' ? 'سيُرسل تلقائياً عند استعادة الاتصال' : 'Will sync when back online'}
-                      </p>
-                    </div>
-                  </div>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  {new Date(lastOrder.date).toLocaleDateString()} - {new Date(lastOrder.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </p>
-                <div className={`mt-2 py-3 px-4 rounded-2xl border ${lastOrder.isOffline ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-700' : 'bg-primary/10 border-primary/20'}`} data-testid="text-receipt-order-number">
-                  <p className="text-xs text-muted-foreground font-medium mb-0.5">
-                    {i18n.language === 'ar' ? 'رقم الطلب' : 'Order Number'}
-                  </p>
-                  <p className={`text-4xl font-black tracking-wide ${lastOrder.isOffline ? 'text-amber-600 dark:text-amber-400' : 'text-primary'}`}>
-                    {fmtOrderNum(lastOrder.orderNumber)}
-                  </p>
-                  {lastOrder.isOffline && (
-                    <p className="text-xs text-amber-500 dark:text-amber-500 mt-1">
-                      {i18n.language === 'ar' ? 'رقم مؤقت — سيتغير عند المزامنة' : 'Temp number — will update on sync'}
-                    </p>
-                  )}
-                </div>
-              </div>
 
-              {(lastOrder.customerName || lastOrder.customerPhone) && (
-                <div className="text-xs space-y-0.5 border-b pb-2">
-                  {lastOrder.customerName && <p>{t('pos.customer_label')} <span className="font-bold">{lastOrder.customerName}</span></p>}
-                  {lastOrder.customerPhone && <p>{t('pos.phone_label')} <span className="font-bold" dir="ltr">{lastOrder.customerPhone}</span></p>}
+          {lastOrder && (
+            <div className="flex flex-col flex-1 overflow-hidden">
+              {/* ── Offline warning ── */}
+              {lastOrder.isOffline && (
+                <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-300 dark:border-amber-700 px-3 py-2 shrink-0">
+                  <span className="text-amber-600 dark:text-amber-400">📶</span>
+                  <div className="text-right">
+                    <p className="text-xs font-bold text-amber-700 dark:text-amber-400">
+                      {i18n.language === 'ar' ? 'طلب محفوظ بدون إنترنت' : 'Saved Offline'}
+                    </p>
+                    <p className="text-xs text-amber-600 dark:text-amber-500">
+                      {i18n.language === 'ar' ? 'سيُرسل تلقائياً عند استعادة الاتصال' : 'Will sync when back online'}
+                    </p>
+                  </div>
                 </div>
               )}
 
-              <div className="space-y-2">
-                {lastOrder.items.map((item: any, idx: number) => {
-                  const addons = item.customization?.selectedItemAddons || [];
-                  const nameEn = item.coffeeItem?.nameEn || '';
-                  const nameAr = item.coffeeItem?.nameAr || '';
-                  return (
-                    <div key={idx} className="text-sm" data-testid={`receipt-item-${idx}`}>
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <span className="font-medium">{nameAr}</span>
-                          {nameEn && nameEn !== nameAr && (
-                            <span className="text-muted-foreground text-xs block">{nameEn}</span>
-                          )}
-                          {addons.length > 0 && (
-                            <div className="text-xs text-muted-foreground mt-0.5 space-y-0.5">
-                              {addons.map((a: any, ai: number) => (
-                                <div key={ai}>
-                                  + {a.nameAr}{a.nameEn && a.nameEn !== a.nameAr ? ` / ${a.nameEn}` : ''}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                        <span className="text-muted-foreground mr-1 shrink-0">x{item.quantity}</span>
-                        <span className="font-bold shrink-0 mr-2">{(Number(item.coffeeItem.price) * item.quantity).toFixed(2)} {t('pos.currency')}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <Separator />
-
-              <div className="space-y-1.5 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">{t('pos.subtotal')}</span>
-                  <span className="font-bold">{lastOrder.subtotal.toFixed(2)} {t('pos.currency')}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">{t('pos.tax')}</span>
-                  <span className="font-bold">{lastOrder.tax.toFixed(2)} {t('pos.currency')}</span>
-                </div>
-                <Separator />
-                <div className="flex justify-between items-center">
-                  <span className="font-black text-base">{t('pos.total')}</span>
-                  <span className="font-black text-lg text-primary">{lastOrder.total.toFixed(2)} {t('pos.currency')}</span>
-                </div>
-              </div>
-
-              <div className="text-xs space-y-0.5 border-t pt-2">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">{t('pos.payment_label')}</span>
-                  <span className="font-bold">{PAYMENT_METHOD_LABELS[lastOrder.paymentMethod] || lastOrder.paymentMethod}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">{t('pos.employee_label')}</span>
-                  <span className="font-bold">{lastOrder.employeeName}</span>
-                </div>
-                {lastOrder.tableNumber && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{t('pos.table_label_receipt')}</span>
-                    <span className="font-bold">{lastOrder.tableNumber}</span>
+              {/* ── New-design receipt iframe ── */}
+              <div className="flex-1 overflow-y-auto bg-[#e0ddd8]" data-testid="text-receipt-order-number">
+                {receiptPreviewHtml ? (
+                  <iframe
+                    srcDoc={receiptPreviewHtml}
+                    title="customer-receipt"
+                    className="w-full border-0"
+                    style={{ height: '580px', minHeight: '400px' }}
+                    sandbox="allow-same-origin"
+                  />
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-48 gap-3 text-muted-foreground">
+                    <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                    <span className="text-sm">{tc('جاري تحضير الفاتورة…', 'Preparing receipt…')}</span>
                   </div>
                 )}
               </div>
 
+              {/* ── Print error banner ── */}
               {lastPrintFailed && (
-                <div className="flex items-start gap-2 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-xl px-3 py-2.5 text-right">
-                  <span className="text-lg mt-0.5">⚠️</span>
+                <div className="flex items-start gap-2 bg-red-50 dark:bg-red-950/30 border-t border-red-200 dark:border-red-800 px-3 py-2 shrink-0 text-right">
+                  <span className="text-lg">⚠️</span>
                   <div className="flex-1 text-xs text-red-700 dark:text-red-400">
-                    <p className="font-bold mb-1">لم تتم الطباعة</p>
+                    <p className="font-bold mb-0.5">لم تتم الطباعة</p>
                     <p>افتح إعدادات الطابعة ← اختر الطابعة (USB) ← ثم اضغط "طباعة" أدناه</p>
                   </div>
                 </div>
               )}
-              <div className="flex flex-col gap-2 pt-2 sticky bottom-0 bg-background pb-1">
+
+              {/* ── Action buttons (5-action panel) ── */}
+              <div className="flex flex-col gap-2 p-3 border-t bg-background shrink-0">
                 <Button
                   className="w-full gap-2 h-11 text-base font-bold"
                   onClick={() => { setShowReceiptDialog(false); }}
@@ -2967,49 +3751,58 @@ export default function PosSystem() {
                     <span className="mr-1 text-xs opacity-70">({receiptCountdown})</span>
                   )}
                 </Button>
+
+                {/* Row 1: full-width preview */}
+                <Button
+                  variant="secondary"
+                  className="w-full gap-2"
+                  onClick={handlePreviewBoth}
+                  data-testid="button-preview-receipt"
+                >
+                  <Receipt className="w-4 h-4" />
+                  {tc('معاينة الفواتير', 'Preview Invoices')}
+                </Button>
+
+                {/* Row 2: customer + kitchen */}
                 <div className="flex gap-2">
                   <Button
                     variant="outline"
-                    className={`flex-1 gap-2 ${lastPrintFailed ? 'border-red-400 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30' : ''}`}
-                    onClick={() => { setLastPrintFailed(false); setReceiptCountdown(0); handlePrintReceipt(); }}
+                    className={`flex-1 gap-2 ${lastPrintFailed ? 'border-red-400 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30' : 'border-blue-300 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/30'}`}
+                    onClick={() => { setLastPrintFailed(false); setReceiptCountdown(0); handlePrintCustomerOnly(); }}
                     data-testid="button-print-receipt"
                   >
                     <Printer className="w-4 h-4" />
-                    {lastPrintFailed ? tc('إعادة الطباعة', 'Retry Print') : t('pos.print_invoice')}
+                    {lastPrintFailed ? tc('إعادة الطباعة', 'Retry') : tc('فاتورة العميل', 'Customer')}
                   </Button>
                   <Button
-                    variant="secondary"
-                    className="flex-1 gap-2"
-                    data-testid="button-preview-receipt"
-                    onClick={async () => {
-                      if (!lastOrder) return;
-                      const previewData = {
-                        orderNumber: lastOrder.orderNumber,
-                        customerName: lastOrder.customerName,
-                        customerPhone: lastOrder.customerPhone,
-                        items: lastOrder.items,
-                        subtotal: lastOrder.subtotal.toFixed(2),
-                        total: lastOrder.total.toFixed(2),
-                        paymentMethod: lastOrder.paymentMethod,
-                        employeeName: lastOrder.employeeName,
-                        tableNumber: lastOrder.tableNumber,
-                        orderType: lastOrder.orderType,
-                        date: lastOrder.date,
-                        splitPayment: lastOrder.splitPayment,
-                        notes: (lastOrder as any).notes || undefined,
-                      };
-                      const [custHtml, empHtml] = await Promise.all([
-                        buildReceiptPreviewHtml(previewData),
-                        Promise.resolve(buildEmployeeReceiptPreviewHtml(previewData)),
-                      ]);
-                      setReceiptPreviewHtml(custHtml);
-                      setEmployeeReceiptPreviewHtml(empHtml);
-                      setPreviewTab('customer');
-                      setShowReceiptPreview(true);
-                    }}
+                    variant="outline"
+                    className="flex-1 gap-2 border-amber-300 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                    onClick={handlePrintKitchenOnly}
+                    data-testid="button-print-kitchen"
                   >
-                    <Receipt className="w-4 h-4" />
-                    {tc('معاينة', 'Preview')}
+                    <Printer className="w-4 h-4" />
+                    {tc('طلب المطبخ', 'Kitchen')}
+                  </Button>
+                </div>
+
+                {/* Row 3: print both + edit */}
+                <div className="flex gap-2">
+                  <Button
+                    className="flex-1 gap-2 bg-slate-900 hover:bg-black text-white"
+                    onClick={handlePrintBoth}
+                    data-testid="button-print-both"
+                  >
+                    <Printer className="w-4 h-4" />
+                    {tc('طباعة الكل', 'Print Both')}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="flex-1 gap-2 border-rose-300 text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                    onClick={handleEditLastOrder}
+                    data-testid="button-edit-order"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    {tc('تعديل الطلب', 'Edit Order')}
                   </Button>
                 </div>
               </div>
@@ -3020,7 +3813,7 @@ export default function PosSystem() {
 
       {/* ── Receipt visual preview modal ──────────────────────────────────── */}
       <Dialog open={showReceiptPreview} onOpenChange={setShowReceiptPreview}>
-        <DialogContent className="max-w-md max-h-[96vh] p-0 overflow-hidden flex flex-col" dir="rtl">
+        <DialogContent className="max-w-md max-h-[96vh] p-0 overflow-hidden flex flex-col">
           <DialogHeader className="px-4 pt-4 pb-2 border-b shrink-0">
             <DialogTitle className="flex items-center gap-2 text-base">
               <Receipt className="w-4 h-4 text-primary" />
@@ -3085,33 +3878,33 @@ export default function PosSystem() {
         </DialogContent>
       </Dialog>
 
+      {qrPayOrder && (
+        <QrPayModal
+          open={qrPayOpen}
+          onClose={() => setQrPayOpen(false)}
+          payId={qrPayOrder.id}
+          orderNumber={qrPayOrder.orderNumber}
+          amount={qrPayOrder.amount}
+          onPaid={handleQrPaymentConfirmed}
+        />
+      )}
+
       <DrinkCustomizationDialog
         coffeeItem={posCustomizationItem?.item || null}
         variants={posCustomizationItem?.group || []}
         open={!!posCustomizationItem}
         modal={false}
+        initialCustomization={posCustomizationItem?.initialCustomization}
         onClose={() => setPosCustomizationItem(null)}
         onConfirm={(customization: DrinkCustomization, quantity: number, selectedVariant?: CoffeeItem) => {
           const targetItem = selectedVariant || posCustomizationItem?.item;
           if (!targetItem) return;
-          let finalItem = targetItem;
-          let resolvedSize: string | undefined;
-          if (customization.selectedSize && targetItem.availableSizes) {
-            const sizeInfo = targetItem.availableSizes.find(s => s.nameAr === customization.selectedSize);
-            if (sizeInfo) {
-              finalItem = { ...targetItem, price: sizeInfo.price };
-              resolvedSize = sizeInfo.nameAr;
-            }
-          }
           const selectedItemAddons = customization.selectedAddons.map(addon => ({
             nameAr: addon.nameAr + (addon.quantity > 1 ? ` ×${addon.quantity}` : ''),
             nameEn: addon.nameAr,
             price: addon.price * addon.quantity,
           }));
-          addToOrder(finalItem, {
-            ...(selectedItemAddons.length > 0 ? { selectedItemAddons } : {}),
-            ...(resolvedSize ? { _selectedSize: resolvedSize } : {}),
-          }, quantity);
+          addToOrder(targetItem, selectedItemAddons.length > 0 ? { selectedItemAddons } : undefined, customization.selectedSize || null, quantity, customization);
           setPosCustomizationItem(null);
         }}
       />
@@ -3219,8 +4012,13 @@ export default function PosSystem() {
                   const isSelectedForClose = selectedTableForBill?.id === order.id;
                   const statusLabels: Record<string, string> = {
                     'pending': t('pos.status_pending'),
+                    'payment_confirmed': t('pos.status_payment_confirmed', { defaultValue: 'تأكيد الدفع' }),
+                    'confirmed': t('pos.status_confirmed', { defaultValue: 'مؤكد' }),
                     'in_progress': t('pos.status_in_progress'),
                     'ready': t('pos.status_ready'),
+                    'delivered': t('pos.status_delivered', { defaultValue: 'تم التسليم' }),
+                    'received': t('pos.status_received', { defaultValue: 'تم الاستلام' }),
+                    'suspended': t('pos.status_suspended', { defaultValue: 'معلق' }),
                   };
 
                   return (
@@ -3328,6 +4126,87 @@ export default function PosSystem() {
         </DialogContent>
       </Dialog>
 
+      {/* ─── Car Orders Panel ────────────────────────────────────────────────── */}
+      <Dialog open={showCarOrdersPanel} onOpenChange={setShowCarOrdersPanel}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col" dir={dir}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Car className="w-5 h-5 text-primary" />
+              {tc("طلبات السيارات", "Car Orders")}
+              {carPreparationAlerts.length > 0 && (
+                <Badge className="bg-amber-500 text-white animate-pulse">{carPreparationAlerts.length} {tc("يحتاج تحضير", "needs prep")}</Badge>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto space-y-3 p-1">
+            {carPreparationAlerts.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-black text-amber-600 flex items-center gap-1 px-1">
+                  <Bell className="w-3.5 h-3.5 animate-bounce" />
+                  {tc("تنبيهات — العميل يصل خلال دقائق!", "Alerts — Customer arriving soon!")}
+                </p>
+                {carPreparationAlerts.map((order: any) => (
+                  <div key={order._id} className="border-2 border-amber-400 bg-amber-50 rounded-xl p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Badge className="bg-amber-500 text-white text-xs">🚗 يصل {order.arrivalTime}</Badge>
+                        <span className="font-black text-sm">#{String(order.orderNumber || order.dailyNumber || '').padStart(3, '0')}</span>
+                      </div>
+                      <button onClick={() => setCarPreparationAlerts(prev => prev.filter(a => a._id !== order._id))} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+                    </div>
+                    <div className="text-sm space-y-0.5">
+                      <p><span className="text-gray-500">العميل:</span> <strong>{order.customerName}</strong> — {order.customerPhone}</p>
+                      <p><span className="text-gray-500">السيارة:</span> <strong>{order.carColor} {order.carType}</strong> | لوحة: <strong className="font-mono">{order.plateNumber || '—'}</strong></p>
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {(order.items || []).map((item: any, i: number) => (
+                        <span key={i}>{item.coffeeItem?.nameAr || item.nameAr} ×{item.quantity}{i < order.items.length - 1 ? '، ' : ''}</span>
+                      ))}
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="font-black text-primary">{Number(order.totalAmount || 0).toFixed(2)} ر.س</span>
+                      <Button size="sm" className="text-xs h-7 bg-amber-500 hover:bg-amber-600 text-white" onClick={() => {
+                        import('@/lib/print-utils').then(({ printTaxInvoice }) => {
+                          printTaxInvoice({
+                            orderNumber: String(order.orderNumber || order.dailyNumber || ''),
+                            customerName: order.customerName || 'سيارة',
+                            customerPhone: order.customerPhone || '',
+                            items: (order.items || []).map((item: any) => ({
+                              coffeeItem: { nameAr: item.coffeeItem?.nameAr || item.nameAr || '', nameEn: '', price: String(item.coffeeItem?.price || item.price || 0) },
+                              quantity: item.quantity || 1,
+                            })),
+                            subtotal: String(Number(order.totalAmount || 0) / 1.15),
+                            total: String(order.totalAmount || 0),
+                            paymentMethod: 'نقدي عند الاستلام',
+                            employeeName: employee?.fullName || '',
+                            orderType: 'car_pickup' as any,
+                            orderTypeName: `🚗 ${order.carColor || ''} ${order.carType || ''} (${order.plateNumber || ''})`,
+                            date: new Date().toISOString(),
+                          }, { autoPrint: true });
+                        });
+                      }}>
+                        <Printer className="w-3 h-3 ml-1" /> طباعة
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <CurbsideOrdersList employeeName={employee?.fullName || ''} />
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Refund Dialog ───────────────────────────────────────────────────── */}
+      <RefundDialog
+        open={showRefundDialog}
+        onOpenChange={setShowRefundDialog}
+        branchId={employee?.branchId?.toString()}
+        employeeId={employee?.id?.toString()}
+        employeeName={employee?.fullName}
+        tenantId={employee?.tenantId?.toString()}
+      />
+
       {/* ─── Printer Settings Dialog ─────────────────────────────────────────── */}
       <Dialog open={showPrinterSettings} onOpenChange={setShowPrinterSettings}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" dir={dir}>
@@ -3420,7 +4299,7 @@ export default function PosSystem() {
                   <span className="text-lg font-bold">−</span>
                 </Button>
                 <div className="flex-1 flex justify-center gap-1">
-                  {[30, 50, 70, 100].map(v => (
+                  {[30, 60, 80, 100].map(v => (
                     <Button
                       key={v}
                       variant={posZoom === v ? "default" : "outline"}
@@ -3459,7 +4338,290 @@ export default function PosSystem() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ── Held Orders Dialog ──────────────────────────────────────────── */}
+      <Dialog open={showHeldCarts} onOpenChange={setShowHeldCarts}>
+        <DialogContent className="max-w-md" dir={dir}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Archive className="w-5 h-5 text-amber-500" />
+              {tc('الطلبات المحجوزة','Held Orders')}
+              <Badge variant="outline">{heldCarts.length}</Badge>
+            </DialogTitle>
+          </DialogHeader>
+          {heldCarts.length === 0 ? (
+            <div className="text-center text-muted-foreground py-8">
+              <Archive className="w-10 h-10 mx-auto mb-3 opacity-30" />
+              <p className="text-sm">{tc('لا توجد طلبات محجوزة','No held orders')}</p>
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-80 overflow-y-auto">
+              {heldCarts.map(held => (
+                <div key={held.id} className="rounded-xl border p-3 flex items-center justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-sm truncate">{held.name}</p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {held.orderItems.length} {tc('منتج','items')} · {held.totalAmount.toFixed(2)} <SarIcon size={10} />
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">{new Date(held.heldAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}</p>
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <Button size="sm" className="h-8 text-xs" onClick={() => resumeHeldCart(held.id)} data-testid={`button-resume-held-${held.id}`}>
+                      <FolderOpen className="w-3.5 h-3.5 ml-1" />
+                      {tc('استرداد','Resume')}
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-destructive" onClick={() => deleteHeldCart(held.id)} data-testid={`button-delete-held-${held.id}`}>
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Per-Item Discount Dialog ────────────────────────────────────── */}
+      {showItemDiscountFor && (() => {
+        const item = orderItems.find(i => i.lineItemId === showItemDiscountFor);
+        if (!item) return null;
+        return (
+          <Dialog open={true} onOpenChange={() => setShowItemDiscountFor(null)}>
+            <DialogContent className="max-w-xs" dir={dir}>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Percent className="w-4 h-4 text-green-600" />
+                  {tc('خصم على المنتج','Item Discount')}
+                </DialogTitle>
+              </DialogHeader>
+              <p className="text-sm font-bold text-muted-foreground line-clamp-1">{getItemDisplayName(item.coffeeItem)}</p>
+              <div className="space-y-3">
+                <div className="flex gap-2">
+                  <Button
+                    size="sm" variant={itemDiscountType === 'percent' ? 'default' : 'outline'}
+                    onClick={() => setItemDiscountType('percent')} className="flex-1 h-8 text-xs"
+                  >
+                    <Percent className="w-3 h-3 ml-1" /> {tc('نسبة %','Percent %')}
+                  </Button>
+                  <Button
+                    size="sm" variant={itemDiscountType === 'amount' ? 'default' : 'outline'}
+                    onClick={() => setItemDiscountType('amount')} className="flex-1 h-8 text-xs"
+                  >
+                    <DollarSign className="w-3 h-3 ml-1" /> {tc('مبلغ ثابت','Fixed SAR')}
+                  </Button>
+                </div>
+                <Input
+                  type="number" min={0} step={itemDiscountType === 'percent' ? 1 : 0.01}
+                  max={itemDiscountType === 'percent' ? 100 : getPosItemUnitPrice(item) * item.quantity}
+                  placeholder={itemDiscountType === 'percent' ? tc('الخصم %','Discount %') : tc('مبلغ الخصم','Discount SAR')}
+                  value={itemDiscountInput}
+                  onChange={e => setItemDiscountInput(e.target.value)}
+                  className="h-10 text-center text-base font-bold"
+                  autoFocus
+                  onKeyDown={e => { if (e.key === 'Enter') applyItemDiscount(showItemDiscountFor); if (e.key === 'Escape') setShowItemDiscountFor(null); }}
+                  data-testid="input-item-discount"
+                />
+                <div className="flex gap-2">
+                  <Button className="flex-1" onClick={() => applyItemDiscount(showItemDiscountFor)} data-testid="button-apply-item-discount">
+                    {tc('تطبيق','Apply')}
+                  </Button>
+                  {itemDiscounts[showItemDiscountFor] && (
+                    <Button variant="outline" className="text-destructive" onClick={() => { clearItemDiscount(showItemDiscountFor); setShowItemDiscountFor(null); }}>
+                      {tc('إزالة','Remove')}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
+
+      {/* ── Manual Order Discount Dialog ────────────────────────────────── */}
+      <Dialog open={showManualDiscount} onOpenChange={setShowManualDiscount}>
+        <DialogContent className="max-w-xs" dir={dir}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <DollarSign className="w-4 h-4 text-green-600" />
+              {tc('خصم يدوي على الطلب','Manual Order Discount')}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex gap-2">
+              <Button size="sm" variant={manualDiscountType === 'percent' ? 'default' : 'outline'} onClick={() => setManualDiscountType('percent')} className="flex-1 h-8 text-xs">
+                <Percent className="w-3 h-3 ml-1" /> {tc('نسبة %','Percent %')}
+              </Button>
+              <Button size="sm" variant={manualDiscountType === 'amount' ? 'default' : 'outline'} onClick={() => setManualDiscountType('amount')} className="flex-1 h-8 text-xs">
+                <DollarSign className="w-3 h-3 ml-1" /> {tc('مبلغ ثابت','Fixed SAR')}
+              </Button>
+            </div>
+            <Input
+              type="number" min={0} step={manualDiscountType === 'percent' ? 1 : 0.01}
+              max={manualDiscountType === 'percent' ? 100 : finalGrandTotal}
+              placeholder={manualDiscountType === 'percent' ? tc('الخصم %','Discount %') : tc('مبلغ الخصم','Discount SAR')}
+              value={manualDiscountInput}
+              onChange={e => setManualDiscountInput(e.target.value)}
+              className="h-10 text-center text-base font-bold"
+              autoFocus
+              onKeyDown={e => { if (e.key === 'Enter') applyManualDiscount(); if (e.key === 'Escape') setShowManualDiscount(false); }}
+              data-testid="input-manual-discount"
+            />
+            {/* Service charge toggle inside manual discount dialog */}
+            <div className="border rounded-lg p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-muted-foreground">{tc('رسوم الخدمة','Service Charge')}</span>
+                <Switch checked={serviceCharge.enabled} onCheckedChange={v => setServiceCharge(prev => ({...prev, enabled: v}))} />
+              </div>
+              {serviceCharge.enabled && (
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number" min={0} max={serviceCharge.type === 'percent' ? 100 : undefined} step={1}
+                    value={serviceCharge.value}
+                    onChange={e => setServiceCharge(prev => ({...prev, value: parseFloat(e.target.value) || 0}))}
+                    className="h-8 text-sm text-center flex-1"
+                  />
+                  <Button size="sm" variant={serviceCharge.type === 'percent' ? 'default' : 'outline'} className="h-8 text-xs px-2" onClick={() => setServiceCharge(prev => ({...prev, type: 'percent'}))}>%</Button>
+                  <Button size="sm" variant={serviceCharge.type === 'fixed' ? 'default' : 'outline'} className="h-8 text-xs px-2" onClick={() => setServiceCharge(prev => ({...prev, type: 'fixed'}))}><SarIcon size={12} /></Button>
+                </div>
+              )}
+            </div>
+            <Button className="w-full" onClick={applyManualDiscount} data-testid="button-apply-manual-discount">
+              {tc('تطبيق','Apply')}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Merge Bills Dialog ──────────────────────────────────────────── */}
+      <Dialog open={showMergeBills} onOpenChange={setShowMergeBills}>
+        <DialogContent className="max-w-sm" dir={dir}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Merge className="w-5 h-5" />
+              {tc('دمج الفواتير','Merge Bills')}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">{tc('اختر الطلب الذي تريد دمجه في الطلب الحالي','Choose which order to merge into the current one')}</p>
+          <div className="space-y-2">
+            {cartTabs.filter(t => t.id !== activeTabId).map(tab => {
+              const saved = savedTabsRef.current[tab.id];
+              const items = saved?.orderItems || [];
+              const total = items.reduce((s: number, i: any) => s + getPosItemUnitPriceEarly(i) * i.quantity, 0);
+              return (
+                <div key={tab.id} className="rounded-xl border p-3 flex items-center justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-sm">{tab.name}</p>
+                    <p className="text-[10px] text-muted-foreground">{items.length} {tc('منتج','items')} · {total.toFixed(2)} <SarIcon size={10} /></p>
+                  </div>
+                  <Button size="sm" className="h-8 text-xs" onClick={() => mergeTabIntoActive(tab.id)} data-testid={`button-merge-tab-${tab.id}`}>
+                    <Merge className="w-3.5 h-3.5 ml-1" />
+                    {tc('دمج','Merge')}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
+      <MobileBottomNav />
     </div>
+    </div>
+  );
+}
+
+// ─── Curbside Orders List (sub-component for Car Orders Panel) ────────────────
+function CurbsideOrdersList({ employeeName }: { employeeName: string }) {
+  const { data: curbsideOrders, isLoading } = useQuery<any[]>({
+    queryKey: ["/api/orders/curbside"],
+    refetchInterval: 30000,
+  });
+
+  const orders = curbsideOrders || [];
+
+  if (isLoading) return (
+    <div className="flex items-center justify-center py-8 text-muted-foreground">
+      <Loader2 className="w-5 h-5 animate-spin ml-2" />
+      <span>جاري التحميل...</span>
+    </div>
+  );
+
+  if (orders.length === 0) return (
+    <div className="text-center py-8 text-muted-foreground text-sm">
+      <Car className="w-10 h-10 mx-auto mb-2 opacity-30" />
+      <p>لا توجد طلبات سيارات نشطة</p>
+    </div>
+  );
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-bold text-muted-foreground px-1">كل طلبات السيارات النشطة ({orders.length})</p>
+      {orders.map((order: any) => (
+        <div key={order._id} className="border rounded-xl p-3 space-y-2 bg-white">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="text-xs border-primary/30 text-primary">
+                🚗 يصل {order.arrivalTime || '—'}
+              </Badge>
+              <span className="font-black text-sm">#{String(order.orderNumber || order.dailyNumber || '').padStart(3, '0')}</span>
+            </div>
+            <Badge className={`text-xs ${
+              order.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+              order.status === 'preparing' ? 'bg-blue-100 text-blue-700' :
+              order.status === 'ready' ? 'bg-green-100 text-green-700' :
+              'bg-gray-100 text-gray-600'
+            }`}>
+              {order.status === 'pending' ? 'معلّق' :
+               order.status === 'preparing' ? 'يُحضَّر' :
+               order.status === 'ready' ? 'جاهز' :
+               order.status || '—'}
+            </Badge>
+          </div>
+          <div className="text-sm space-y-0.5 text-gray-700">
+            <p><span className="text-gray-400 text-xs">العميل:</span> <strong>{order.customerName || '—'}</strong> {order.customerPhone ? `| ${order.customerPhone}` : ''}</p>
+            <p><span className="text-gray-400 text-xs">السيارة:</span> <strong>{order.carColor || ''} {order.carType || ''}</strong>{order.plateNumber ? ` | ${order.plateNumber}` : ''}</p>
+          </div>
+          <div className="text-xs text-gray-500 leading-relaxed">
+            {(order.items || []).map((item: any, i: number) => (
+              <span key={i}>{item.coffeeItem?.nameAr || item.nameAr || ''} ×{item.quantity || 1}{i < (order.items?.length || 0) - 1 ? '، ' : ''}</span>
+            ))}
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="font-black text-primary">{Number(order.totalAmount || 0).toFixed(2)} ر.س</span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-xs h-7 gap-1"
+              onClick={() => {
+                import('@/lib/print-utils').then(({ printTaxInvoice }) => {
+                  printTaxInvoice({
+                    orderNumber: String(order.orderNumber || order.dailyNumber || ''),
+                    customerName: order.customerName || 'سيارة',
+                    customerPhone: order.customerPhone || '',
+                    items: (order.items || []).map((item: any) => ({
+                      coffeeItem: {
+                        nameAr: item.coffeeItem?.nameAr || item.nameAr || '',
+                        nameEn: item.coffeeItem?.nameEn || item.nameEn || '',
+                        price: String(item.coffeeItem?.price || item.price || 0),
+                      },
+                      quantity: item.quantity || 1,
+                    })),
+                    subtotal: String(Number(order.totalAmount || 0) / 1.15),
+                    total: String(order.totalAmount || 0),
+                    paymentMethod: 'نقدي عند الاستلام',
+                    employeeName,
+                    orderType: 'car_pickup' as any,
+                    orderTypeName: `🚗 ${order.carColor || ''} ${order.carType || ''} (${order.plateNumber || ''})`,
+                    date: new Date().toISOString(),
+                  }, { autoPrint: true });
+                });
+              }}
+            >
+              <Printer className="w-3 h-3" />
+              طباعة
+            </Button>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

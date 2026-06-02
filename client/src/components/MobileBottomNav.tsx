@@ -55,25 +55,32 @@ export function MobileBottomNav({ employeeRole, onLogout }: MobileBottomNavProps
 
   const allPages = [
     { path: "/employee/home",        icon: Home,        label: t('mobile_nav.home') },
+    { path: "/employee/dashboard",   icon: BarChart3,   label: t('mobile_nav.dashboard') },
     { path: "/employee/pos",         icon: CreditCard,  label: t('mobile_nav.pos') },
     { path: "/employee/orders",      icon: ClipboardList, label: t('mobile_nav.orders') },
+    { path: "/employee/cashier",     icon: ShoppingCart, label: t('mobile_nav.cashier') },
     { path: "/employee/kitchen",     icon: ChefHat,     label: t('mobile_nav.kitchen') },
-    { path: "/employee/shifts",      icon: Calendar,    label: 'الورديات' },
+    { path: "/employee/table-orders",icon: Table,       label: t('mobile_nav.tables') },
+    { path: "/employee/loyalty",     icon: Users,       label: t('mobile_nav.loyalty') },
     { path: "/employee/attendance",  icon: Calendar,    label: t('mobile_nav.attendance') },
+    { path: "/employee/leave-request", icon: FileText,  label: t('mobile_nav.leave') },
+    { path: "/notifications",        icon: Bell,        label: 'الإشعارات' },
     ...(isManager ? [
-      { path: "/employee/menu-management",         icon: Coffee,    label: 'القائمة' },
-      { path: "/manager/inventory",                icon: Warehouse, label: t('mobile_nav.inventory') },
-      { path: "/manager/accounting",               icon: Wallet,    label: t('mobile_nav.accounting') },
+      { path: "/employee/menu-management",         icon: Coffee,    label: t('mobile_nav.drinks') },
+      { path: "/employee/menu-management?type=food", icon: Utensils, label: t('mobile_nav.food') },
       { path: "/admin/settings",                   icon: Settings,  label: t('mobile_nav.settings') },
+      { path: "/manager/accounting",               icon: Wallet,    label: t('mobile_nav.accounting') },
+      { path: "/manager/inventory",                icon: Warehouse, label: t('mobile_nav.inventory') },
     ] : []),
   ];
 
   const visibleNav = [
     { path: "/employee/home",        icon: Home,         label: t('mobile_nav.home') },
-    { path: "/employee/pos",         icon: CreditCard,   label: t('mobile_nav.pos') },
     { path: "/employee/orders",      icon: ClipboardList, label: t('mobile_nav.orders') },
-    { path: "/employee/kitchen",     icon: ChefHat,      label: t('mobile_nav.kitchen') },
+    { path: "/employee/pos",         icon: CreditCard,   label: t('mobile_nav.pos') },
     { path: "/employee/attendance",  icon: Calendar,     label: t('mobile_nav.attendance') },
+    { path: "/notifications",        icon: Bell,         label: 'إشعارات', isNotifications: true },
+    ...(isManager ? [{ path: "/employee/menu-management", icon: Coffee, label: t('mobile_nav.drinks') }] : []),
   ];
 
   return (
@@ -115,6 +122,15 @@ export function MobileBottomNav({ employeeRole, onLogout }: MobileBottomNavProps
             </Link>
           );
         })}
+
+        <button
+          onClick={handleLogout}
+          className="flex flex-col items-center gap-0.5 min-w-[56px] px-2 py-1.5 rounded-xl text-[10px] whitespace-nowrap shrink-0 transition-all active:scale-95 text-destructive hover:bg-destructive/10 mr-auto"
+          data-testid="mobile-nav-logout"
+        >
+          <LogOut className="h-5 w-5" />
+          <span className="leading-none mt-0.5">{t('mobile_nav.logout')}</span>
+        </button>
 
         <Sheet open={showMenu} onOpenChange={setShowMenu}>
           <SheetTrigger asChild>

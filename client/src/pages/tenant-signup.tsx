@@ -1,3 +1,4 @@
+import brand from "@/lib/brand";
 import { useState } from "react";
 import { useTranslate, tc } from "@/lib/useTranslate";
 import { useLocation } from "wouter";
@@ -11,7 +12,7 @@ import { CheckCircle2, AlertCircle, Loader } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import SarIcon from "@/components/sar-icon";
-import tasaliLogo from "@assets/logo.png";
+import blackroseLogo from "@assets/logo.png";
 
 const SUBSCRIPTION_PLANS = [
   {
@@ -179,10 +180,10 @@ export default function TenantSignup() {
         {/* Header */}
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
-            <img src={tasaliLogo} alt="تسالي كرومش" className="w-16 h-16 object-contain rounded-xl" />
+            <img src={blackroseLogo} alt={brand.nameEn} className="w-16 h-16 object-contain rounded-xl" />
           </div>
           <h1 className="text-4xl font-bold text-foreground mb-2">
-            انضم إلى تسالي كرومش
+            انضم إلى TASALI QURUMSH
           </h1>
           <p className="text-muted-foreground text-lg">
             أكمل البيانات الخاصة بمتجرك لبدء رحلتك مع نظام إدارة المقاهي الأفضل

@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useTranslate } from "@/lib/useTranslate";
+import SarIcon from "@/components/sar-icon";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Save, Shield, Bell, Palette, Database, Plus, Store, Utensils, Coffee, AlertTriangle, Layout, ShieldAlert, Users, Loader2, Trash2, FolderTree, Flame, Snowflake, Star, Cake, Sparkles, GripVertical, Pencil, CreditCard, Wifi, WifiOff, Eye, EyeOff, ExternalLink, CheckCircle, XCircle, Banknote, Smartphone, Gift, Percent, Tag, Ticket, Download, Globe, Package, ChevronDown, ChevronUp, MonitorSmartphone, MapPin, Navigation, FlaskConical, ShoppingBag, Truck, Timer, Car, Clock } from 'lucide-react';
+import { Save, Shield, Bell, Palette, Database, Plus, Store, Utensils, Coffee, AlertTriangle, Layout, ShieldAlert, Users, Loader2, Trash2, FolderTree, Flame, Snowflake, Star, Cake, Sparkles, GripVertical, Pencil, CreditCard, Wifi, WifiOff, Eye, EyeOff, ExternalLink, CheckCircle, XCircle, Banknote, Smartphone, Gift, Percent, Tag, Ticket, Download, Globe, Package, ChevronDown, ChevronUp, MonitorSmartphone, MapPin, Navigation, FlaskConical, ShoppingBag, Truck, Timer, Car, Clock, Zap } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -36,6 +37,337 @@ interface MenuCategory {
   department: 'drinks' | 'food';
   orderIndex: number;
   isSystem?: boolean;
+}
+
+function ShiftTimeSettingsCard() {
+  const tc = useTranslate();
+  const { toast } = useToast();
+  const { data: config } = useQuery<any>({ queryKey: ["/api/business-config"] });
+  const [periods, setPeriods] = useState<Array<{start: number; end: number}>>([
+    { start: 6, end: 18 },
+    { start: 18, end: 6 },
+  ]);
+  const [tzOffset, setTzOffset] = useState<number>(3);
+  const [manualLocalTime, setManualLocalTime] = useState("");
+  const [computedOffset, setComputedOffset] = useState<number | null>(null);
+  const [autoShiftsEnabled, setAutoShiftsEnabled] = useState<boolean>(true);
+  const [dayShiftConfig, setDayShiftConfig] = useState<Record<number, Array<{start: number; end: number}>>>({});
+  const [selectedDay, setSelectedDay] = useState<number>(-1);
+
+  useEffect(() => {
+    if (config?.shiftPeriods) setPeriods(config.shiftPeriods);
+    if (config?.timezoneOffsetHours !== undefined) setTzOffset(Number(config.timezoneOffsetHours));
+    if (config?.autoShiftsEnabled !== undefined) setAutoShiftsEnabled(config.autoShiftsEnabled);
+    if (config?.dayShiftConfig) setDayShiftConfig(config.dayShiftConfig);
+  }, [config]);
+
+  const saveMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("PATCH", "/api/business-config", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/business-config"] });
+      toast({ title: tc("تم الحفظ", "Saved"), description: tc("تم تحديث إعدادات الورديات", "Shift settings updated") });
+    },
+    onError: () => toast({ title: tc("خطأ", "Error"), description: tc("فشل في الحفظ", "Save failed"), variant: "destructive" }),
+  });
+
+  const hours = Array.from({ length: 24 }, (_, i) => i);
+
+  // Current server UTC time
+  const nowUtc = new Date();
+  const currentComputedLocal = new Date(nowUtc.getTime() + tzOffset * 3600000);
+  const computedLocalStr = currentComputedLocal.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', hour12: false });
+
+  const handleComputeOffset = () => {
+    if (!manualLocalTime) return;
+    const [hStr, mStr] = manualLocalTime.split(':');
+    const localH = Number(hStr);
+    const localM = Number(mStr) || 0;
+    const utcH = nowUtc.getUTCHours();
+    const utcM = nowUtc.getUTCMinutes();
+    let diff = (localH * 60 + localM) - (utcH * 60 + utcM);
+    if (diff > 14 * 60) diff -= 24 * 60;
+    if (diff < -14 * 60) diff += 24 * 60;
+    const offsetHours = Math.round(diff / 60 * 2) / 2;
+    setComputedOffset(offsetHours);
+    setTzOffset(offsetHours);
+    toast({ title: tc("تم الحساب", "Computed"), description: tc(`فارق التوقيت: UTC+${offsetHours}`, `Timezone offset: UTC+${offsetHours}`) });
+  };
+
+  return (
+    <Card className="hover-elevate border-primary/10">
+      <CardHeader>
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-primary/10 rounded-lg">
+            <Zap className="w-6 h-6 text-primary" />
+          </div>
+          <div>
+            <CardTitle className="text-xl font-bold">{tc("إعدادات الورديات التلقائية", "Automatic Shift Settings")}</CardTitle>
+            <CardDescription>{tc("حدد أوقات الورديات وضبط التوقيت المحلي للمكان", "Define shift times and set the local timezone")}</CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-5">
+
+        {/* ── Timezone Offset Section ── */}
+        <div className="border rounded-lg p-4 space-y-3 bg-amber-50/30 dark:bg-amber-950/10 border-amber-200 dark:border-amber-800">
+          <div className="flex items-center gap-2 text-sm font-semibold text-amber-800 dark:text-amber-300">
+            <Clock className="w-4 h-4" />
+            {tc("ضبط التوقيت المحلي", "Local Timezone Setup")}
+          </div>
+          <p className="text-xs text-muted-foreground">{tc("إذا كانت حسابات الوردية تظهر في وقت خاطئ، أدخل الوقت الحالي في مكانك لضبط الفارق تلقائياً.", "If shift calculations show the wrong time, enter your current local time to compute the offset automatically.")}</p>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">{tc("فارق التوقيت الحالي (ساعات)", "Current timezone offset (hours)")}</label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  step="0.5"
+                  min="-12"
+                  max="14"
+                  value={tzOffset}
+                  onChange={e => setTzOffset(Number(e.target.value))}
+                  className="w-24 text-center font-mono"
+                  dir="ltr"
+                />
+                <span className="text-xs text-muted-foreground">UTC +</span>
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">{tc("الوقت المحلي المحسوب الآن", "Current computed local time")}</label>
+              <div className="flex items-center gap-2 h-10 border rounded-md px-3 bg-muted/30 font-mono text-sm text-foreground">
+                {computedLocalStr}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <label className="text-xs text-muted-foreground block mb-1">{tc("الوقت الحالي في مكانك (أدخله لحساب الفارق)", "Your current local time (enter to compute offset)")}</label>
+              <Input
+                type="time"
+                value={manualLocalTime}
+                onChange={e => setManualLocalTime(e.target.value)}
+                className="font-mono"
+                dir="ltr"
+              />
+            </div>
+            <Button size="sm" variant="outline" onClick={handleComputeOffset} className="gap-1 shrink-0">
+              <Clock className="w-3 h-3" />
+              {tc("حساب الفارق", "Compute Offset")}
+            </Button>
+          </div>
+
+          {computedOffset !== null && (
+            <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 rounded p-2 text-xs text-green-700 dark:text-green-300">
+              {tc(`✓ الفارق المحسوب: UTC+${computedOffset} — سيُطبَّق على الورديات التلقائية عند الحفظ`, `✓ Computed offset: UTC+${computedOffset} — will be applied to auto shifts on save`)}
+            </div>
+          )}
+        </div>
+
+        {/* ── Shift Periods ── */}
+        <div className="space-y-3">
+          <div className="text-sm font-semibold flex items-center gap-2">
+            <Zap className="w-4 h-4 text-blue-500" />
+            {tc("فترات الورديات", "Shift Periods")}
+          </div>
+          {periods.map((p, i) => (
+            <div key={i} className="flex items-center gap-3 p-3 bg-muted/40 rounded-lg border">
+              <Zap className="w-4 h-4 text-blue-500 shrink-0" />
+              <span className="text-sm font-medium shrink-0">{tc(`وردية ${i + 1}`, `Shift ${i + 1}`)}</span>
+              <div className="flex items-center gap-2 flex-1">
+                <div>
+                  <label className="text-xs text-muted-foreground block mb-1">{tc("من", "From")}</label>
+                  <select
+                    value={p.start}
+                    onChange={e => {
+                      const updated = [...periods];
+                      updated[i] = { ...updated[i], start: Number(e.target.value) };
+                      setPeriods(updated);
+                    }}
+                    className="border rounded px-2 py-1 text-sm bg-background w-20"
+                  >
+                    {hours.map(h => <option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>)}
+                  </select>
+                </div>
+                <span className="text-muted-foreground mt-4">—</span>
+                <div>
+                  <label className="text-xs text-muted-foreground block mb-1">{tc("إلى", "To")}</label>
+                  <select
+                    value={p.end}
+                    onChange={e => {
+                      const updated = [...periods];
+                      updated[i] = { ...updated[i], end: Number(e.target.value) };
+                      setPeriods(updated);
+                    }}
+                    className="border rounded px-2 py-1 text-sm bg-background w-20"
+                  >
+                    {hours.map(h => <option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>)}
+                  </select>
+                </div>
+                {p.end < p.start && (
+                  <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded mt-4">{tc("تمتد لليوم التالي", "Extends to next day")}</span>
+                )}
+              </div>
+              {periods.length > 1 && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-red-500 hover:bg-red-50 shrink-0 mt-4"
+                  onClick={() => setPeriods(periods.filter((_, j) => j !== i))}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            onClick={() => setPeriods([...periods, { start: 0, end: 12 }])}
+          >
+            <Plus className="w-4 h-4" />
+            {tc("إضافة وردية", "Add Shift")}
+          </Button>
+          <Button
+            size="sm"
+            className="gap-2"
+            disabled={saveMutation.isPending}
+            onClick={() => saveMutation.mutate({ shiftPeriods: periods, timezoneOffsetHours: tzOffset, autoShiftsEnabled, dayShiftConfig })}
+          >
+            <Save className="w-4 h-4" />
+            {saveMutation.isPending ? tc("جاري الحفظ...", "Saving...") : tc("حفظ الإعدادات", "Save Settings")}
+          </Button>
+        </div>
+
+        {/* ── Auto-shifts enable/disable toggle ── */}
+        <div className="border rounded-lg p-4 space-y-3 bg-muted/20">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold">{tc("الورديات التلقائية", "Automatic Shifts")}</p>
+              <p className="text-xs text-muted-foreground">{tc("تعطيل هذا الخيار يجعل الورديات يدوية فقط", "Disabling this makes shifts manual-only")}</p>
+            </div>
+            <Switch checked={autoShiftsEnabled} onCheckedChange={setAutoShiftsEnabled} />
+          </div>
+          {!autoShiftsEnabled && (
+            <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-700 rounded p-2 text-xs text-amber-700 dark:text-amber-300 flex items-center gap-2">
+              <Clock className="w-3 h-3 shrink-0" />
+              {tc("الورديات التلقائية معطّلة — يجب فتح وردية يدوياً من شاشة الكاشير", "Auto-shifts disabled — cashier must open shifts manually")}
+            </div>
+          )}
+        </div>
+
+        {/* ── Per-day shift configuration ── */}
+        <div className="space-y-3">
+          <div className="text-sm font-semibold flex items-center gap-2">
+            <Timer className="w-4 h-4 text-purple-500" />
+            {tc("جدول الورديات حسب اليوم", "Per-Day Shift Schedule")}
+          </div>
+          <p className="text-xs text-muted-foreground">{tc("اختر يوماً لتخصيص أوقات ورديات مختلفة عن الافتراضي. أيام بدون تخصيص تستخدم الأوقات الافتراضية أعلاه.", "Select a day to set custom shift times. Days without custom config use the default periods above.")}</p>
+          {(() => {
+            const dayNames: Record<number, string> = { 0: 'الأحد', 1: 'الاثنين', 2: 'الثلاثاء', 3: 'الأربعاء', 4: 'الخميس', 5: 'الجمعة', 6: 'السبت' };
+            const dayNamesEn: Record<number, string> = { 0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat' };
+            const currentDayPeriods: Array<{start: number; end: number}> = selectedDay === -1 ? periods : (dayShiftConfig[selectedDay] || []);
+            const setCurrentDayPeriods = (newPeriods: Array<{start: number; end: number}>) => {
+              if (selectedDay === -1) setPeriods(newPeriods);
+              else setDayShiftConfig(prev => ({ ...prev, [selectedDay]: newPeriods }));
+            };
+            const resetDay = (day: number) => setDayShiftConfig(prev => { const next = {...prev}; delete next[day]; return next; });
+            return (
+              <>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    onClick={() => setSelectedDay(-1)}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold border transition-colors ${selectedDay === -1 ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border hover:border-primary/50'}`}
+                  >{tc("الافتراضي", "Default")}</button>
+                  {[0,1,2,3,4,5,6].map(day => (
+                    <button
+                      key={day}
+                      onClick={() => setSelectedDay(day)}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold border transition-colors relative ${selectedDay === day ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border hover:border-primary/50'}`}
+                    >
+                      {tc(dayNames[day], dayNamesEn[day])}
+                      {dayShiftConfig[day] && (
+                        <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-purple-500" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+                {selectedDay !== -1 && (
+                  <div className="text-xs text-muted-foreground flex items-center gap-2">
+                    <span>{tc(`إعدادات: ${dayNames[selectedDay]}`, `Settings: ${dayNamesEn[selectedDay]}`)}</span>
+                    {dayShiftConfig[selectedDay] && (
+                      <button onClick={() => resetDay(selectedDay)} className="text-red-500 underline text-[10px]">
+                        {tc("إعادة للافتراضي", "Reset to default")}
+                      </button>
+                    )}
+                  </div>
+                )}
+                {currentDayPeriods.length === 0 && selectedDay !== -1 && (
+                  <div className="text-xs text-muted-foreground bg-muted/30 rounded p-3 text-center">
+                    {tc("هذا اليوم يستخدم الأوقات الافتراضية — أضف وردية لتخصيصه", "This day uses default times — add a shift to customize")}
+                  </div>
+                )}
+                {currentDayPeriods.map((p, i) => (
+                  <div key={i} className="flex items-center gap-3 p-3 bg-muted/40 rounded-lg border">
+                    <Timer className="w-4 h-4 text-purple-500 shrink-0" />
+                    <span className="text-sm font-medium shrink-0">{tc(`وردية ${i + 1}`, `Shift ${i + 1}`)}</span>
+                    <div className="flex items-center gap-2 flex-1">
+                      <div>
+                        <label className="text-xs text-muted-foreground block mb-1">{tc("من", "From")}</label>
+                        <select value={p.start} onChange={e => { const u=[...currentDayPeriods]; u[i]={...u[i],start:Number(e.target.value)}; setCurrentDayPeriods(u); }} className="border rounded px-2 py-1 text-sm bg-background w-20">
+                          {hours.map(h => <option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>)}
+                        </select>
+                      </div>
+                      <span className="text-muted-foreground mt-4">—</span>
+                      <div>
+                        <label className="text-xs text-muted-foreground block mb-1">{tc("إلى", "To")}</label>
+                        <select value={p.end} onChange={e => { const u=[...currentDayPeriods]; u[i]={...u[i],end:Number(e.target.value)}; setCurrentDayPeriods(u); }} className="border rounded px-2 py-1 text-sm bg-background w-20">
+                          {hours.map(h => <option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>)}
+                        </select>
+                      </div>
+                      {p.end < p.start && (
+                        <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded mt-4">{tc("تمتد لليوم التالي", "Extends to next day")}</span>
+                      )}
+                    </div>
+                    {currentDayPeriods.length > 1 && (
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:bg-red-50 shrink-0 mt-4" onClick={() => setCurrentDayPeriods(currentDayPeriods.filter((_,j)=>j!==i))}>
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                {(selectedDay === -1 || dayShiftConfig[selectedDay] !== undefined || currentDayPeriods.length === 0) && (
+                  <Button variant="outline" size="sm" className="gap-2" onClick={() => setCurrentDayPeriods([...currentDayPeriods, { start: 0, end: 12 }])}>
+                    <Plus className="w-4 h-4" />
+                    {tc("إضافة وردية", "Add Shift")}
+                  </Button>
+                )}
+                {selectedDay !== -1 && currentDayPeriods.length === 0 && (
+                  <Button variant="outline" size="sm" className="gap-2" onClick={() => setCurrentDayPeriods([{ start: 0, end: 12 }])}>
+                    <Plus className="w-4 h-4" />
+                    {tc("إضافة وردية مخصصة", "Add custom shift")}
+                  </Button>
+                )}
+              </>
+            );
+          })()}
+        </div>
+
+        <div className="bg-blue-50 dark:bg-blue-950/20 p-3 rounded-lg text-xs text-blue-700 dark:text-blue-300 flex items-start gap-2">
+          <Zap className="w-4 h-4 shrink-0 mt-0.5" />
+          <p>{tc("الورديات التلقائية تُحسب من الطلبات المُسجَّلة في كل فترة. ضبط التوقيت يضمن أن الوردية تبدأ وتنتهي في الوقت الصحيح حسب موقعك.", "Automatic shifts are calculated from orders recorded in each period. Setting the timezone ensures shifts start and end at the correct local time.")}</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function AdminSettings() {
@@ -143,10 +475,10 @@ export default function AdminSettings() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/payment-gateway/config"] });
       queryClient.invalidateQueries({ queryKey: ["/api/payment-methods"] });
-      toast({ title: "تم الحفظ", description: "تم حفظ إعدادات الدفع بنجاح" });
+      toast({ title: tc("تم الحفظ","Saved"), description: tc("تم حفظ إعدادات الدفع بنجاح","Payment settings saved successfully") });
     },
     onError: (error: Error) => {
-      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+      toast({ title: tc("خطأ","Error"), description: error.message, variant: "destructive" });
     },
   });
 
@@ -199,7 +531,7 @@ export default function AdminSettings() {
       const data = await res.json();
       setTestResult(data);
     } catch {
-      setTestResult({ success: false, message: "فشل في الاتصال" });
+      setTestResult({ success: false, message: tc("فشل في الاتصال","Connection failed") });
     } finally {
       setIsTesting(false);
     }
@@ -241,13 +573,13 @@ export default function AdminSettings() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/business-config"] });
       toast({
-        title: "تم التحديث",
-        description: "تم حفظ التغييرات بنجاح",
+        title: tc("تم التحديث","Updated"),
+        description: tc("تم حفظ التغييرات بنجاح","Changes saved successfully"),
       });
     },
     onError: (error: Error) => {
       toast({
-        title: "خطأ",
+        title: tc("خطأ","Error"),
         description: error.message,
         variant: "destructive",
       });
@@ -425,10 +757,10 @@ export default function AdminSettings() {
       setNewCodeValue(10);
       setNewCodeMaxUses(100);
       setNewCodeVisible(true);
-      toast({ title: "تم إنشاء كود الخصم بنجاح" });
+      toast({ title: tc("تم إنشاء كود الخصم بنجاح","Discount code created successfully") });
     },
     onError: (error: Error) => {
-      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+      toast({ title: tc("خطأ","Error"), description: error.message, variant: "destructive" });
     },
   });
 
@@ -439,10 +771,10 @@ export default function AdminSettings() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/discount-codes"] });
-      toast({ title: "تم تحديث حالة الكود" });
+      toast({ title: tc("تم تحديث حالة الكود","Code status updated") });
     },
     onError: (error: Error) => {
-      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+      toast({ title: tc("خطأ","Error"), description: error.message, variant: "destructive" });
     },
   });
 
@@ -453,10 +785,10 @@ export default function AdminSettings() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/discount-codes"] });
-      toast({ title: "تم تحديث ظهور الكود" });
+      toast({ title: tc("تم تحديث ظهور الكود","Code visibility updated") });
     },
     onError: (error: Error) => {
-      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+      toast({ title: tc("خطأ","Error"), description: error.message, variant: "destructive" });
     },
   });
 
@@ -491,14 +823,23 @@ export default function AdminSettings() {
   };
 
   const daysAr: Record<string, string> = {
-    monday: "الإثنين",
-    tuesday: "الثلاثاء",
-    wednesday: "الأربعاء",
-    thursday: "الخميس",
-    friday: "الجمعة",
-    saturday: "السبت",
-    sunday: "الأحد",
+    monday: tc("الإثنين", "Monday"),
+    tuesday: tc("الثلاثاء", "Tuesday"),
+    wednesday: tc("الأربعاء", "Wednesday"),
+    thursday: tc("الخميس", "Thursday"),
+    friday: tc("الجمعة", "Friday"),
+    saturday: tc("السبت", "Saturday"),
+    sunday: tc("الأحد", "Sunday"),
   };
+
+  const [activeTab, setActiveTab] = useState<string>('store');
+  const settingsTabs = [
+    { key: 'store',      labelAr: 'المتجر',     labelEn: 'Store',      icon: Store },
+    { key: 'operations', labelAr: 'التشغيل',    labelEn: 'Operations', icon: Truck },
+    { key: 'menu',       labelAr: 'القائمة',    labelEn: 'Menu',       icon: Utensils },
+    { key: 'payments',   labelAr: 'الدفع',      labelEn: 'Payments',   icon: CreditCard },
+    { key: 'loyalty',    labelAr: 'الولاء',     labelEn: 'Loyalty',    icon: Gift },
+  ];
 
   const createCategoryMutation = useMutation({
     mutationFn: async (data: { nameAr: string; nameEn?: string; icon?: string; department: string }) => {
@@ -511,10 +852,10 @@ export default function AdminSettings() {
       setNewCategoryNameEn("");
       setNewCategoryDepartment('drinks');
       setNewCategoryIcon('Coffee');
-      toast({ title: "تم إضافة القسم الفرعي بنجاح" });
+      toast({ title: tc("تم إضافة القسم الفرعي بنجاح","Sub-category added successfully") });
     },
     onError: () => {
-      toast({ title: "فشل في إضافة القسم", variant: "destructive" });
+      toast({ title: tc("فشل في إضافة القسم","Failed to add category"), variant: "destructive" });
     }
   });
 
@@ -525,10 +866,10 @@ export default function AdminSettings() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/menu-categories"] });
       setEditingCategoryId(null);
-      toast({ title: "تم تحديث القسم بنجاح" });
+      toast({ title: tc("تم تحديث القسم بنجاح","Category updated successfully") });
     },
     onError: () => {
-      toast({ title: "فشل في تحديث القسم", variant: "destructive" });
+      toast({ title: tc("فشل في تحديث القسم","Failed to update category"), variant: "destructive" });
     }
   });
 
@@ -542,13 +883,15 @@ export default function AdminSettings() {
       setDeletingCategory(null);
       const moved = data?.reassignedCount || 0;
       toast({
-        title: "تم حذف القسم بنجاح",
-        description: moved > 0 ? `تم نقل ${moved} صنف إلى أقسام مناسبة تلقائياً` : "لم تكن هناك أصناف في هذا القسم",
+        title: tc("تم حذف القسم بنجاح","Category deleted successfully"),
+        description: moved > 0
+          ? tc(`تم نقل ${moved} صنف إلى أقسام مناسبة تلقائياً`, `${moved} item(s) automatically moved to suitable categories`)
+          : tc("لم تكن هناك أصناف في هذا القسم","There were no items in this category"),
         className: "bg-green-600 text-white"
       });
     },
     onError: (error: any) => {
-      const msg = error?.message || "فشل في حذف القسم";
+      const msg = error?.message || tc("فشل في حذف القسم","Failed to delete category");
       toast({ title: msg, variant: "destructive" });
     }
   });
@@ -568,13 +911,13 @@ export default function AdminSettings() {
   };
 
   const iconOptions = [
-    { value: 'Coffee', label: 'مطعم', Icon: Coffee },
-    { value: 'Flame', label: 'ساخن', Icon: Flame },
-    { value: 'Snowflake', label: 'بارد', Icon: Snowflake },
-    { value: 'Star', label: 'مميز', Icon: Star },
-    { value: 'Cake', label: 'حلويات', Icon: Cake },
-    { value: 'Utensils', label: 'مأكولات', Icon: Utensils },
-    { value: 'Sparkles', label: 'خاص', Icon: Sparkles },
+    { value: 'Coffee', label: tc('قهوة','Coffee'), Icon: Coffee },
+    { value: 'Flame', label: tc('ساخن','Hot'), Icon: Flame },
+    { value: 'Snowflake', label: tc('بارد','Cold'), Icon: Snowflake },
+    { value: 'Star', label: tc('مميز','Featured'), Icon: Star },
+    { value: 'Cake', label: tc('حلويات','Desserts'), Icon: Cake },
+    { value: 'Utensils', label: tc('مأكولات','Food'), Icon: Utensils },
+    { value: 'Sparkles', label: tc('خاص','Special'), Icon: Sparkles },
   ];
 
   const getIconComponent = (iconName: string) => {
@@ -591,36 +934,37 @@ export default function AdminSettings() {
   }
 
   return (
-    <div className="p-6 space-y-6 bg-white dark:bg-background min-h-screen" dir="rtl">
+    <div className="p-6 space-y-6 bg-white dark:bg-background min-h-screen" dir={tc('rtl','ltr')}>
 
       {/* Smart Delete Category Dialog */}
       <Dialog open={!!deletingCategory} onOpenChange={(open) => { if (!open) setDeletingCategory(null); }}>
-        <DialogContent className="max-w-md" dir="rtl">
+        <DialogContent className="max-w-md" dir={tc('rtl','ltr')}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-600">
               <Trash2 className="w-5 h-5" />
-              حذف القسم: {deletingCategory?.nameAr}
+              {tc(`حذف القسم: ${deletingCategory?.nameAr || ''}`, `Delete Category: ${deletingCategory?.nameEn || deletingCategory?.nameAr || ''}`)}
             </DialogTitle>
             <DialogDescription>
-              سيتم نقل الأصناف الموجودة في هذا القسم تلقائياً إلى أقسام مناسبة بناءً على نوعها.
+              {tc("سيتم نقل الأصناف الموجودة في هذا القسم تلقائياً إلى أقسام مناسبة بناءً على نوعها.",
+                  "Items in this category will be automatically moved to suitable categories based on their type.")}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
             {loadingPreview ? (
               <div className="flex items-center justify-center py-6 text-muted-foreground">
                 <Loader2 className="w-5 h-5 animate-spin ml-2" />
-                جاري فحص الأصناف...
+                {tc("جاري فحص الأصناف...","Scanning items...")}
               </div>
             ) : categoryItemsPreview.length === 0 ? (
               <div className="flex items-center gap-2 p-3 bg-green-50 rounded-lg text-green-700 text-sm">
                 <CheckCircle className="w-4 h-4 flex-shrink-0" />
-                لا توجد أصناف في هذا القسم، يمكن الحذف بأمان.
+                {tc("لا توجد أصناف في هذا القسم، يمكن الحذف بأمان.","No items in this category — safe to delete.")}
               </div>
             ) : (
               <div className="space-y-2">
                 <p className="text-sm font-medium text-amber-700 flex items-center gap-1.5">
                   <AlertTriangle className="w-4 h-4" />
-                  {categoryItemsPreview.length} صنف سيتم نقله تلقائياً:
+                  {tc(`${categoryItemsPreview.length} صنف سيتم نقله تلقائياً:`, `${categoryItemsPreview.length} item(s) will be moved automatically:`)}
                 </p>
                 <div className="bg-amber-50 rounded-lg p-3 max-h-40 overflow-y-auto space-y-1">
                   {categoryItemsPreview.map((item, i) => (
@@ -630,7 +974,7 @@ export default function AdminSettings() {
                     </div>
                   ))}
                 </div>
-                <p className="text-xs text-muted-foreground">سيقوم النظام بتحليل كل صنف وإعادة تصنيفه بذكاء للقسم الأنسب.</p>
+                <p className="text-xs text-muted-foreground">{tc("سيقوم النظام بتحليل كل صنف وإعادة تصنيفه بذكاء للقسم الأنسب.","The system will analyze each item and intelligently reassign it to the most suitable category.")}</p>
               </div>
             )}
           </div>
@@ -642,10 +986,10 @@ export default function AdminSettings() {
               data-testid="button-confirm-delete-category"
             >
               {deleteCategoryMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin ml-1" /> : <Trash2 className="w-4 h-4 ml-1" />}
-              {categoryItemsPreview.length > 0 ? "حذف ونقل الأصناف" : "حذف القسم"}
+              {categoryItemsPreview.length > 0 ? tc("حذف ونقل الأصناف","Delete & Move Items") : tc("حذف القسم","Delete Category")}
             </Button>
             <Button variant="outline" onClick={() => setDeletingCategory(null)} data-testid="button-cancel-delete-category">
-              إلغاء
+              {tc("إلغاء","Cancel")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -662,6 +1006,31 @@ export default function AdminSettings() {
         </div>
       </div>
 
+      {/* Tab Navigation */}
+      <div className="sticky top-0 z-20 bg-white dark:bg-background border-b -mx-6 px-6 mb-6">
+        <div className="flex items-center gap-0 overflow-x-auto scrollbar-none">
+          {settingsTabs.map(tab => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`flex items-center gap-2 px-4 py-3.5 text-sm font-medium whitespace-nowrap border-b-2 transition-all shrink-0 ${
+                  activeTab === tab.key
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                {tc(tab.labelAr, tab.labelEn)}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Tab: Store ── */}
+      {activeTab === 'store' && (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Store Hours & Social Links */}
         <Card className="hover-elevate border-primary/20 md:col-span-2 shadow-lg">
@@ -752,7 +1121,7 @@ export default function AdminSettings() {
                             {!storeHours[day]?.isAlwaysOpen && (
                               <div className="flex items-center gap-2">
                                 <div className="flex flex-col gap-1">
-                                  <span className="text-[10px] text-muted-foreground px-1">من</span>
+                                  <span className="text-[10px] text-muted-foreground px-1">{tc("من","From")}</span>
                                   <Input
                                     type="time"
                                     className="w-32 h-9 text-sm font-medium focus:ring-primary/20"
@@ -765,7 +1134,7 @@ export default function AdminSettings() {
                                 </div>
                                 <span className="text-primary/40 mt-4">←</span>
                                 <div className="flex flex-col gap-1">
-                                  <span className="text-[10px] text-muted-foreground px-1">إلى</span>
+                                  <span className="text-[10px] text-muted-foreground px-1">{tc("إلى","To")}</span>
                                   <Input
                                     type="time"
                                     className="w-32 h-9 text-sm font-medium focus:ring-primary/20"
@@ -891,6 +1260,9 @@ export default function AdminSettings() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Shift Time Settings */}
+        <ShiftTimeSettingsCard />
 
         {/* Layout Settings */}
         <Card className="hover-elevate border-primary/10">
@@ -1059,9 +1431,9 @@ export default function AdminSettings() {
                   <SelectValue placeholder={tc("اختر نوع النشاط","Select business type")} />
                 </SelectTrigger>
                 <SelectContent className="font-ibm-arabic">
-                  <SelectItem value="cafe">{tc("نظام مطعم فقط","Café System Only")}</SelectItem>
+                  <SelectItem value="cafe">{tc("نظام كافيه فقط","Café System Only")}</SelectItem>
                   <SelectItem value="restaurant">{tc("نظام مطعم فقط","Restaurant System Only")}</SelectItem>
-                  <SelectItem value="both">{tc("نظام مطعم ومطعم معاً","Restaurant & Snacks System")}</SelectItem>
+                  <SelectItem value="both">{tc("نظام مطعم وكافيه معاً","Restaurant & Café System")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1121,7 +1493,7 @@ export default function AdminSettings() {
                 <div className="flex items-center justify-between p-2 bg-white dark:bg-gray-800 rounded border">
                   <div className="flex items-center gap-2">
                     <Coffee className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-xs">{tc("إدارة الأطباق","Drinks Management")}</span>
+                    <span className="text-xs">{tc("إدارة المشروبات","Drinks Management")}</span>
                   </div>
                   <Switch
                     checked={config?.isDrinksEnabled}
@@ -1133,6 +1505,12 @@ export default function AdminSettings() {
             </div>
           </CardContent>
         </Card>
+      </div>
+      )}
+
+      {/* ── Tab: Operations ── */}
+      {activeTab === 'operations' && (
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
         {/* Order Methods Config */}
         <Card className="hover-elevate border-green-100 dark:border-green-900/30">
@@ -1206,7 +1584,7 @@ export default function AdminSettings() {
                       })}
                       data-testid="input-delivery-fee"
                     />
-                    <span className="text-sm text-muted-foreground">{tc('ريال','SAR')}</span>
+                    <span className="text-sm text-muted-foreground"><SarIcon size={13} /></span>
                   </div>
                 </div>
               </div>
@@ -1299,6 +1677,13 @@ export default function AdminSettings() {
           </CardContent>
         </Card>
 
+      </div>
+      )}
+
+      {/* ── Tab: Menu ── */}
+      {activeTab === 'menu' && (
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
         {/* Menu Categories Management */}
         <Card className="hover-elevate border-teal-100 dark:border-teal-900/30 md:col-span-2">
           <CardHeader>
@@ -1308,8 +1693,8 @@ export default function AdminSettings() {
                   <FolderTree className="w-5 h-5 text-teal-600" />
                 </div>
                 <div>
-                  <CardTitle className="text-lg font-bold">إدارة الأقسام الفرعية</CardTitle>
-                  <CardDescription>إضافة وتعديل أقسام المنيو وتعيينها لإدارة الأطباق أو المأكولات</CardDescription>
+                  <CardTitle className="text-lg font-bold">{tc("إدارة الأقسام الفرعية","Menu Categories")}</CardTitle>
+                  <CardDescription>{tc("إضافة وتعديل أقسام المنيو وتعيينها لإدارة المشروبات أو المأكولات","Add and edit menu categories and assign them to drinks or food")}</CardDescription>
                 </div>
               </div>
               <Button
@@ -1319,27 +1704,27 @@ export default function AdminSettings() {
                 data-testid="button-add-menu-category"
               >
                 <Plus className="w-4 h-4 ml-1" />
-                إضافة قسم
+                {tc("إضافة قسم","Add Category")}
               </Button>
             </div>
           </CardHeader>
           <CardContent className="space-y-4 pt-2">
             {isAddingCategory && (
               <div className="p-4 bg-teal-50/50 dark:bg-teal-900/10 rounded-lg border border-teal-200 dark:border-teal-800 space-y-3">
-                <Label className="text-sm font-bold text-teal-800 dark:text-teal-300">إضافة قسم فرعي جديد</Label>
+                <Label className="text-sm font-bold text-teal-800 dark:text-teal-300">{tc("إضافة قسم فرعي جديد","Add New Category")}</Label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <Label className="text-xs">اسم القسم (عربي)</Label>
+                    <Label className="text-xs">{tc("اسم القسم (عربي)","Category Name (Arabic)")}</Label>
                     <Input
                       value={newCategoryName}
                       onChange={(e) => setNewCategoryName(e.target.value)}
-                      placeholder="مثال: أطباق خاصة"
+                      placeholder="مثال: مشروبات خاصة"
                       className="text-right"
                       data-testid="input-new-category-name-ar"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs">اسم القسم (إنجليزي) - اختياري</Label>
+                    <Label className="text-xs">{tc("اسم القسم (إنجليزي) - اختياري","Category Name (English) — optional")}</Label>
                     <Input
                       value={newCategoryNameEn}
                       onChange={(e) => setNewCategoryNameEn(e.target.value)}
@@ -1350,7 +1735,7 @@ export default function AdminSettings() {
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <Label className="text-xs">تابع لقسم</Label>
+                    <Label className="text-xs">{tc("تابع لقسم","Department")}</Label>
                     <Select
                       value={newCategoryDepartment}
                       onValueChange={(v) => setNewCategoryDepartment(v as 'drinks' | 'food')}
@@ -1362,20 +1747,20 @@ export default function AdminSettings() {
                         <SelectItem value="drinks">
                           <div className="flex items-center gap-2">
                             <Coffee className="w-4 h-4" />
-                            <span>إدارة الأطباق</span>
+                            <span>{tc("المشروبات","Drinks")}</span>
                           </div>
                         </SelectItem>
                         <SelectItem value="food">
                           <div className="flex items-center gap-2">
                             <Utensils className="w-4 h-4" />
-                            <span>إدارة المأكولات</span>
+                            <span>{tc("المأكولات","Food")}</span>
                           </div>
                         </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs">الأيقونة</Label>
+                    <Label className="text-xs">{tc("الأيقونة","Icon")}</Label>
                     <Select
                       value={newCategoryIcon}
                       onValueChange={setNewCategoryIcon}
@@ -1407,7 +1792,7 @@ export default function AdminSettings() {
                     }}
                     data-testid="button-cancel-add-category"
                   >
-                    إلغاء
+                    {tc("إلغاء","Cancel")}
                   </Button>
                   <Button
                     size="sm"
@@ -1424,7 +1809,7 @@ export default function AdminSettings() {
                     disabled={!newCategoryName.trim() || createCategoryMutation.isPending}
                     data-testid="button-save-new-category"
                   >
-                    {createCategoryMutation.isPending ? "جاري الحفظ..." : "حفظ القسم"}
+                    {createCategoryMutation.isPending ? tc("جاري الحفظ...","Saving...") : tc("حفظ القسم","Save Category")}
                   </Button>
                 </div>
               </div>
@@ -1434,11 +1819,11 @@ export default function AdminSettings() {
               <div className="space-y-3">
                 <div className="flex items-center gap-2 pb-1">
                   <Coffee className="w-4 h-4 text-teal-600" />
-                  <Label className="text-sm font-bold">أقسام إدارة الأطباق</Label>
+                  <Label className="text-sm font-bold">{tc("أقسام المشروبات","Drinks Categories")}</Label>
                   <Badge variant="secondary" className="text-[10px]">{drinkCategories.length}</Badge>
                 </div>
                 {drinkCategories.length === 0 && (
-                  <p className="text-xs text-muted-foreground py-3 text-center">لا توجد أقسام فرعية بعد</p>
+                  <p className="text-xs text-muted-foreground py-3 text-center">{tc("لا توجد أقسام بعد","No categories yet")}</p>
                 )}
                 {drinkCategories.map(cat => {
                   const IconComp = getIconComponent(cat.icon || 'Coffee');
@@ -1466,8 +1851,8 @@ export default function AdminSettings() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="drinks">الأطباق</SelectItem>
-                              <SelectItem value="food">المأكولات</SelectItem>
+                              <SelectItem value="drinks">{tc("المشروبات","Drinks")}</SelectItem>
+                              <SelectItem value="food">{tc("المأكولات","Food")}</SelectItem>
                             </SelectContent>
                           </Select>
                         ) : (
@@ -1500,11 +1885,11 @@ export default function AdminSettings() {
               <div className="space-y-3">
                 <div className="flex items-center gap-2 pb-1">
                   <Utensils className="w-4 h-4 text-primary" />
-                  <Label className="text-sm font-bold">أقسام إدارة المأكولات</Label>
+                  <Label className="text-sm font-bold">{tc("أقسام المأكولات","Food Categories")}</Label>
                   <Badge variant="secondary" className="text-[10px]">{foodCategories.length}</Badge>
                 </div>
                 {foodCategories.length === 0 && (
-                  <p className="text-xs text-muted-foreground py-3 text-center">لا توجد أقسام فرعية بعد</p>
+                  <p className="text-xs text-muted-foreground py-3 text-center">{tc("لا توجد أقسام بعد","No categories yet")}</p>
                 )}
                 {foodCategories.map(cat => {
                   const IconComp = getIconComponent(cat.icon || 'Utensils');
@@ -1532,8 +1917,8 @@ export default function AdminSettings() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="drinks">الأطباق</SelectItem>
-                              <SelectItem value="food">المأكولات</SelectItem>
+                              <SelectItem value="drinks">{tc("المشروبات","Drinks")}</SelectItem>
+                              <SelectItem value="food">{tc("المأكولات","Food")}</SelectItem>
                             </SelectContent>
                           </Select>
                         ) : (
@@ -1566,6 +1951,13 @@ export default function AdminSettings() {
           </CardContent>
         </Card>
 
+      </div>
+      )}
+
+      {/* ── Tab: Payments ── */}
+      {activeTab === 'payments' && (
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
         {/* Payment Gateway Management */}
         <Card className="border-indigo-100 dark:border-indigo-900/30 md:col-span-2">
           <CardHeader>
@@ -1575,26 +1967,26 @@ export default function AdminSettings() {
                   <CreditCard className="w-5 h-5 text-indigo-600" />
                 </div>
                 <div>
-                  <CardTitle className="text-lg font-bold">إدارة طرق الدفع وبوابة الدفع</CardTitle>
-                  <CardDescription>اختر مزود الدفع الإلكتروني وادخل بيانات الاعتماد</CardDescription>
+                  <CardTitle className="text-lg font-bold">{tc("إدارة طرق الدفع وبوابة الدفع","Payment Methods & Gateway")}</CardTitle>
+                  <CardDescription>{tc("اختر مزود الدفع الإلكتروني وادخل بيانات الاعتماد","Choose your payment provider and enter credentials")}</CardDescription>
                 </div>
               </div>
               {pgConfig && (
                 <Badge variant={pgConfig.provider !== 'none' && (pgConfig.neoleap?.configured || pgConfig.geidea?.configured || pgConfig.paymob?.configured) ? 'default' : 'secondary'}>
-                  {pgConfig.provider === 'neoleap' ? 'NeoLeap' : pgConfig.provider === 'geidea' ? 'Geidea' : pgConfig.provider === 'paymob' ? 'Paymob' : 'غير مفعّل'}
+                  {pgConfig.provider === 'neoleap' ? 'NeoLeap' : pgConfig.provider === 'geidea' ? 'Geidea' : pgConfig.provider === 'paymob' ? 'Paymob' : tc('غير مفعّل','Inactive')}
                 </Badge>
               )}
             </div>
           </CardHeader>
           <CardContent className="space-y-6 pt-2">
             <div className="space-y-3">
-              <Label className="text-sm font-bold">مزود الدفع الإلكتروني</Label>
+              <Label className="text-sm font-bold">{tc("مزود الدفع الإلكتروني","Payment Provider")}</Label>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {[
-                  { id: 'none', label: 'بدون بوابة', desc: 'كاش فقط', icon: Banknote },
-                  { id: 'neoleap', label: 'NeoLeap (نيو ليب)', desc: 'مدى، فيزا، ماستر كارد', icon: CreditCard },
-                  { id: 'geidea', label: 'Geidea (جيديا)', desc: 'مدى، فيزا، ماستر كارد', icon: CreditCard },
-                  { id: 'paymob', label: 'Paymob (بيموب)', desc: 'بطاقات ومحافظ إلكترونية', icon: CreditCard },
+                  { id: 'none', label: tc('بدون بوابة','No Gateway'), desc: tc('كاش فقط','Cash only'), icon: Banknote },
+                  { id: 'neoleap', label: 'NeoLeap', desc: tc('مدى، فيزا، ماستر كارد','Mada, Visa, Mastercard'), icon: CreditCard },
+                  { id: 'geidea', label: 'Geidea', desc: tc('مدى، فيزا، ماستر كارد','Mada, Visa, Mastercard'), icon: CreditCard },
+                  { id: 'paymob', label: 'Paymob', desc: tc('بطاقات ومحافظ إلكترونية','Cards & e-wallets'), icon: CreditCard },
                 ].map((opt) => (
                   <div
                     key={opt.id}
@@ -1619,7 +2011,7 @@ export default function AdminSettings() {
             {pgProvider === 'neoleap' && (
               <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-900/30 rounded-lg border">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <Label className="text-sm font-bold text-indigo-700 dark:text-indigo-400">إعدادات NeoLeap (نيو ليب)</Label>
+                  <Label className="text-sm font-bold text-indigo-700 dark:text-indigo-400">{tc("إعدادات NeoLeap","NeoLeap Settings")}</Label>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -1627,7 +2019,7 @@ export default function AdminSettings() {
                     data-testid="link-neoleap-portal"
                   >
                     <ExternalLink className="w-3 h-3 ml-1" />
-                    بوابة المطورين
+                    {tc("بوابة المطورين","Developer Portal")}
                   </Button>
                 </div>
 
@@ -1690,7 +2082,7 @@ export default function AdminSettings() {
                 {pgConfig?.neoleap?.configured && (
                   <div className="flex items-center gap-1 text-xs text-green-600">
                     <CheckCircle className="w-3 h-3" />
-                    <span>بيانات الاعتماد محفوظة</span>
+                    <span>{tc("بيانات الاعتماد محفوظة","Credentials saved")}</span>
                   </div>
                 )}
               </div>
@@ -1699,7 +2091,7 @@ export default function AdminSettings() {
             {pgProvider === 'geidea' && (
               <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-900/30 rounded-lg border">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <Label className="text-sm font-bold text-indigo-700 dark:text-indigo-400">إعدادات Geidea (جيديا)</Label>
+                  <Label className="text-sm font-bold text-indigo-700 dark:text-indigo-400">{tc("إعدادات Geidea","Geidea Settings")}</Label>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -1707,7 +2099,7 @@ export default function AdminSettings() {
                     data-testid="link-geidea-docs"
                   >
                     <ExternalLink className="w-3 h-3 ml-1" />
-                    وثائق جيديا
+                    {tc("وثائق جيديا","Geidea Docs")}
                   </Button>
                 </div>
 
@@ -1791,7 +2183,7 @@ export default function AdminSettings() {
                         onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/api/payments/geidea/webhook`); }}
                         data-testid="button-copy-geidea-webhook"
                       >
-                        نسخ
+                        {tc("نسخ","Copy")}
                       </Button>
                     </div>
                   </div>
@@ -1810,7 +2202,7 @@ export default function AdminSettings() {
                         onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/checkout?payment=callback`); }}
                         data-testid="button-copy-geidea-return-url"
                       >
-                        نسخ
+                        {tc("نسخ","Copy")}
                       </Button>
                     </div>
                   </div>
@@ -1821,7 +2213,7 @@ export default function AdminSettings() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <div className="flex items-center gap-1 text-xs text-green-600">
                         <CheckCircle className="w-3 h-3" />
-                        <span>بيانات الاعتماد محفوظة</span>
+                        <span>{tc("بيانات الاعتماد محفوظة","Credentials saved")}</span>
                       </div>
                       <Button
                         variant="outline"
@@ -1843,7 +2235,7 @@ export default function AdminSettings() {
                         data-testid="button-geidea-diagnostics"
                       >
                         {geideaDiagLoading ? <Loader2 className="w-3 h-3 animate-spin ml-1" /> : null}
-                        اختبار الاتصال
+                        {tc("اختبار الاتصال","Test Connection")}
                       </Button>
                     </div>
                     {geideaDiagResult && (
@@ -1859,7 +2251,7 @@ export default function AdminSettings() {
             {pgProvider === 'paymob' && (
               <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-900/30 rounded-lg border">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <Label className="text-sm font-bold text-indigo-700 dark:text-indigo-400">إعدادات Paymob (بيموب)</Label>
+                  <Label className="text-sm font-bold text-indigo-700 dark:text-indigo-400">{tc("إعدادات Paymob","Paymob Settings")}</Label>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -1867,7 +2259,7 @@ export default function AdminSettings() {
                     data-testid="link-paymob-docs"
                   >
                     <ExternalLink className="w-3 h-3 ml-1" />
-                    وثائق Paymob
+                    {tc("وثائق Paymob","Paymob Docs")}
                   </Button>
                 </div>
 
@@ -2020,7 +2412,7 @@ export default function AdminSettings() {
                 {pgConfig?.paymob?.configured && (
                   <div className="flex items-center gap-1 text-xs text-green-600">
                     <CheckCircle className="w-3 h-3" />
-                    <span>بيانات الاعتماد محفوظة</span>
+                    <span>{tc("بيانات الاعتماد محفوظة","Credentials saved")}</span>
                   </div>
                 )}
               </div>
@@ -2034,20 +2426,20 @@ export default function AdminSettings() {
                   onClick={() => setShowSecrets(!showSecrets)}
                 >
                   {showSecrets ? <EyeOff className="w-3 h-3 ml-1" /> : <Eye className="w-3 h-3 ml-1" />}
-                  {showSecrets ? 'إخفاء البيانات' : 'إظهار البيانات'}
+                  {showSecrets ? tc('إخفاء البيانات','Hide Credentials') : tc('إظهار البيانات','Show Credentials')}
                 </Button>
               </div>
             )}
 
             <div className="space-y-3 p-4 bg-muted/30 rounded-lg border">
-              <Label className="text-sm font-bold">طرق الدفع المتاحة للعملاء</Label>
+              <Label className="text-sm font-bold">{tc("طرق الدفع المتاحة للعملاء","Available Payment Methods")}</Label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {[
-                  { key: 'cashEnabled', label: 'الدفع نقداً (كاش)', icon: Banknote, value: pgCashEnabled, setter: setPgCashEnabled },
-                  { key: 'posEnabled', label: 'جهاز نقاط البيع (POS)', icon: Smartphone, value: pgPosEnabled, setter: setPgPosEnabled },
-                  { key: 'qahwaCardEnabled', label: 'بطاقة تسالي كرومش', icon: CreditCard, value: pgQahwaCardEnabled, setter: setPgQahwaCardEnabled },
+                  { key: 'cashEnabled', label: tc('الدفع نقداً','Cash'), icon: Banknote, value: pgCashEnabled, setter: setPgCashEnabled },
+                  { key: 'posEnabled', label: tc('جهاز نقاط البيع','POS Device'), icon: Smartphone, value: pgPosEnabled, setter: setPgPosEnabled },
+                  { key: 'qahwaCardEnabled', label: tc('بطاقة الولاء','Loyalty Card'), icon: CreditCard, value: pgQahwaCardEnabled, setter: setPgQahwaCardEnabled },
                   { key: 'stcPayEnabled', label: 'STC Pay', icon: Smartphone, value: pgStcPayEnabled, setter: setPgStcPayEnabled },
-                  { key: 'bankTransferEnabled', label: 'تحويل بنكي', icon: CreditCard, value: pgBankTransferEnabled, setter: setPgBankTransferEnabled },
+                  { key: 'bankTransferEnabled', label: tc('تحويل بنكي','Bank Transfer'), icon: CreditCard, value: pgBankTransferEnabled, setter: setPgBankTransferEnabled },
                 ].map((method) => (
                   <div key={method.key} className="flex items-center justify-between p-2 bg-white dark:bg-gray-800 rounded border">
                     <div className="flex items-center gap-2">
@@ -2067,14 +2459,14 @@ export default function AdminSettings() {
                 <div className="mt-3 p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800 space-y-3">
                   <div className="flex items-center gap-2 mb-1">
                     <Banknote className="w-4 h-4 text-blue-600" />
-                    <Label className="text-sm font-bold text-blue-800 dark:text-blue-300">بيانات التحويل البنكي</Label>
+                    <Label className="text-sm font-bold text-blue-800 dark:text-blue-300">{tc("بيانات التحويل البنكي","Bank Transfer Details")}</Label>
                   </div>
                   <p className="text-[11px] text-blue-600 dark:text-blue-400">
                     هذه البيانات ستظهر للعميل عند اختيار الدفع بالتحويل البنكي
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1">
-                      <Label className="text-xs font-semibold">رقم الآيبان (IBAN)</Label>
+                      <Label className="text-xs font-semibold">{tc("رقم الآيبان","IBAN Number")}</Label>
                       <Input
                         value={pgBankIban}
                         onChange={e => setPgBankIban(e.target.value)}
@@ -2085,7 +2477,7 @@ export default function AdminSettings() {
                       />
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-xs font-semibold">اسم البنك</Label>
+                      <Label className="text-xs font-semibold">{tc("اسم البنك","Bank Name")}</Label>
                       <Input
                         value={pgBankName}
                         onChange={e => setPgBankName(e.target.value)}
@@ -2094,7 +2486,7 @@ export default function AdminSettings() {
                       />
                     </div>
                     <div className="space-y-1 sm:col-span-2">
-                      <Label className="text-xs font-semibold">اسم صاحب الحساب</Label>
+                      <Label className="text-xs font-semibold">{tc("اسم صاحب الحساب","Account Holder Name")}</Label>
                       <Input
                         value={pgBankAccountHolder}
                         onChange={e => setPgBankAccountHolder(e.target.value)}
@@ -2118,9 +2510,9 @@ export default function AdminSettings() {
                 <div className="flex items-center gap-2">
                   <FlaskConical className="w-4 h-4 text-amber-600" />
                   <div>
-                    <Label className="text-sm font-bold text-amber-800 dark:text-amber-300">وضع الاختبار</Label>
+                    <Label className="text-sm font-bold text-amber-800 dark:text-amber-300">{tc("وضع الاختبار","Test Mode")}</Label>
                     <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-0.5">
-                      عند التفعيل، تُحاكى المدفوعات بنجاح دون خصم حقيقي — للاختبار فقط
+                      {tc("عند التفعيل، تُحاكى المدفوعات بنجاح دون خصم حقيقي","When enabled, payments are simulated without real charges")}
                     </p>
                   </div>
                 </div>
@@ -2133,7 +2525,7 @@ export default function AdminSettings() {
               </div>
               {pgPaymentTestMode && (
                 <div className="mt-3 p-2 bg-amber-100 dark:bg-amber-900/20 rounded text-[11px] text-amber-800 dark:text-amber-300 font-medium">
-                  ⚠️ وضع الاختبار مفعّل — تذكر تعطيله قبل الاستخدام الفعلي
+                  ⚠️ {tc("وضع الاختبار مفعّل — تذكر تعطيله قبل الاستخدام الفعلي","Test mode is active — remember to disable it before going live")}
                 </div>
               )}
             </div>
@@ -2142,7 +2534,7 @@ export default function AdminSettings() {
               <div className="space-y-3 p-4 bg-amber-50 dark:bg-amber-900/10 rounded-lg border border-amber-200 dark:border-amber-800">
                 <div className="flex items-center gap-2">
                   <MapPin className="w-4 h-4 text-amber-600" />
-                  <Label className="text-sm font-bold text-amber-800 dark:text-amber-300">قيود المسافة للدفع نقداً</Label>
+                  <Label className="text-sm font-bold text-amber-800 dark:text-amber-300">{tc("قيود المسافة للدفع نقداً","Cash Payment Distance Limit")}</Label>
                 </div>
                 <p className="text-[11px] text-muted-foreground">
                   حدد الحد الأقصى للمسافة (بالمتر) التي يُقبل فيها الدفع نقداً. اضبط على 0 لتعطيل القيد وقبول الكاش من أي مكان.
@@ -2150,7 +2542,7 @@ export default function AdminSettings() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <Label className="text-xs">الحد الأقصى للمسافة (متر)</Label>
+                    <Label className="text-xs">{tc("الحد الأقصى للمسافة (متر)","Max Distance (meters)")}</Label>
                     <div className="flex items-center gap-2">
                       <Input
                         type="number"
@@ -2162,7 +2554,7 @@ export default function AdminSettings() {
                         className="text-sm"
                         data-testid="input-cash-max-distance"
                       />
-                      <span className="text-xs text-muted-foreground whitespace-nowrap">متر</span>
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">{tc("متر","m")}</span>
                     </div>
                     {pgCashMaxDistance > 0 && (
                       <p className="text-[10px] text-amber-600">
@@ -2174,10 +2566,10 @@ export default function AdminSettings() {
 
                 {pgCashMaxDistance > 0 && (
                   <div className="space-y-2">
-                    <Label className="text-xs font-semibold">إحداثيات موقع المتجر (مرجع المسافة)</Label>
+                    <Label className="text-xs font-semibold">{tc("إحداثيات موقع المتجر","Store Location Coordinates")}</Label>
                     <div className="grid grid-cols-2 gap-2">
                       <div className="space-y-1">
-                        <Label className="text-[10px] text-muted-foreground">خط العرض (Lat)</Label>
+                        <Label className="text-[10px] text-muted-foreground">{tc("خط العرض","Latitude")}</Label>
                         <Input
                           type="number"
                           step="0.000001"
@@ -2189,7 +2581,7 @@ export default function AdminSettings() {
                         />
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-[10px] text-muted-foreground">خط الطول (Lng)</Label>
+                        <Label className="text-[10px] text-muted-foreground">{tc("خط الطول","Longitude")}</Label>
                         <Input
                           type="number"
                           step="0.000001"
@@ -2222,7 +2614,7 @@ export default function AdminSettings() {
                       data-testid="button-get-current-location"
                     >
                       {isGettingLocation ? <Loader2 className="w-3 h-3 animate-spin" /> : <Navigation className="w-3 h-3" />}
-                      استخدام موقعي الحالي
+                      {tc("استخدام موقعي الحالي","Use My Location")}
                     </Button>
                     {pgStoreLocationLat && pgStoreLocationLng && (
                       <p className="text-[10px] text-green-600">
@@ -2241,7 +2633,7 @@ export default function AdminSettings() {
                 data-testid="button-save-payment-config"
               >
                 {pgMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin ml-1" /> : <Save className="w-4 h-4 ml-1" />}
-                حفظ إعدادات الدفع
+                {tc("حفظ إعدادات الدفع","Save Payment Settings")}
               </Button>
               {pgProvider !== 'none' && (
                 <Button
@@ -2251,7 +2643,7 @@ export default function AdminSettings() {
                   data-testid="button-test-payment-connection"
                 >
                   {isTesting ? <Loader2 className="w-4 h-4 animate-spin ml-1" /> : <Wifi className="w-4 h-4 ml-1" />}
-                  اختبار الاتصال
+                  {tc("اختبار الاتصال","Test Connection")}
                 </Button>
               )}
               {testResult && (
@@ -2272,31 +2664,31 @@ export default function AdminSettings() {
                 <Palette className="w-5 h-5 text-purple-600" />
               </div>
               <div>
-                <CardTitle className="text-lg font-bold">الهوية البصرية</CardTitle>
-                <CardDescription>التحكم في الألوان والاسم والشعار</CardDescription>
+                <CardTitle className="text-lg font-bold">{tc("الهوية البصرية","Visual Identity")}</CardTitle>
+                <CardDescription>{tc("التحكم في الألوان والاسم والشعار","Control colors, name, and logo")}</CardDescription>
               </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-4 pt-2">
             <div className="space-y-2">
-              <Label className="text-sm font-medium">اسم المنشأة التجاري (عربي)</Label>
+              <Label className="text-sm font-medium">{tc("اسم المنشأة التجاري (عربي)","Business Name (Arabic)")}</Label>
               <Input
                 value={config?.tradeNameAr || ""}
                 onChange={(e) => mutation.mutate({ tradeNameAr: e.target.value })}
-                placeholder="مثال: مطعم تسالي"
+                placeholder="مثال: كلاوني كافيه"
                 className="font-ibm-arabic"
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label className="text-xs">اللون الأساسي (أزرار/تفاعل)</Label>
+                <Label className="text-xs">{tc("اللون الأساسي","Primary Color")}</Label>
                 <div className="flex gap-2">
                   <Input type="color" className="w-10 h-10 p-1 rounded cursor-pointer" value="#8B5A2B" disabled />
                   <Input value="#8B5A2B" className="text-xs font-mono" disabled />
                 </div>
               </div>
               <div className="space-y-2">
-                <Label className="text-xs">لون الخلفية (الرئيسي)</Label>
+                <Label className="text-xs">{tc("لون الخلفية","Background Color")}</Label>
                 <div className="flex gap-2">
                   <Input type="color" className="w-10 h-10 p-1 rounded cursor-pointer" value="#F7F8F8" disabled />
                   <Input value="#F7F8F8" className="text-xs font-mono" disabled />
@@ -2306,7 +2698,7 @@ export default function AdminSettings() {
             <div className="pt-2">
               <Button variant="outline" className="w-full text-xs gap-2">
                 <Palette className="w-3 h-3" />
-                تخصيص شكل الباركود (QR)
+                {tc("تخصيص شكل QR","Customize QR Style")}
               </Button>
             </div>
           </CardContent>
@@ -2320,8 +2712,8 @@ export default function AdminSettings() {
                 <Users className="w-5 h-5 text-green-600" />
               </div>
               <div>
-                <CardTitle className="text-lg font-bold">إدارة المستخدمين</CardTitle>
-                <CardDescription>التحكم في الموظفين والعملاء</CardDescription>
+                <CardTitle className="text-lg font-bold">{tc("إدارة المستخدمين","User Management")}</CardTitle>
+                <CardDescription>{tc("التحكم في الموظفين والعملاء","Manage employees and customers")}</CardDescription>
               </div>
             </div>
           </CardHeader>
@@ -2334,20 +2726,20 @@ export default function AdminSettings() {
               >
                 <div className="flex items-center gap-2">
                   <Users className="w-4 h-4 text-muted-foreground group-hover:text-accent" />
-                  <span>إدارة طاقم العمل والموظفين</span>
+                  <span>{tc("إدارة طاقم العمل والموظفين","Manage Staff & Employees")}</span>
                 </div>
-                <div className="px-2 py-1 bg-green-50 text-green-700 text-[10px] rounded-full">نشط</div>
+                <div className="px-2 py-1 bg-green-50 text-green-700 text-[10px] rounded-full">{tc("نشط","Active")}</div>
               </Button>
               <Button variant="outline" className="justify-start gap-2 group hover:border-accent font-ibm-arabic">
                 <Users className="w-4 h-4 text-muted-foreground group-hover:text-accent" />
-                <span>إدارة قاعدة بيانات العملاء والولاء</span>
+                <span>{tc("إدارة قاعدة العملاء والولاء","Manage Customer Database & Loyalty")}</span>
               </Button>
               <Button 
                 variant="ghost" 
                 className="text-xs text-muted-foreground hover:text-accent font-ibm-arabic"
                 onClick={() => navigate('/admin/branches')}
               >
-                انتقال إلى إدارة الفروع والتراخيص →
+                {tc("إدارة الفروع والتراخيص →","Branches & Licenses →")}
               </Button>
             </div>
           </CardContent>
@@ -2362,8 +2754,8 @@ export default function AdminSettings() {
                   <span className="text-xl">⚙️</span>
                 </div>
                 <div>
-                  <CardTitle className="text-xl font-bold">رسوم الخدمة <span className="text-sm font-normal text-orange-600 dark:text-orange-400">(الطلبات الأونلاين فقط)</span></CardTitle>
-                  <CardDescription>رسوم تُضاف تلقائياً على طلبات الأونلاين فقط — لا تُطبَّق على نقاط البيع</CardDescription>
+                  <CardTitle className="text-xl font-bold">{tc("رسوم الخدمة","Service Fees")} <span className="text-sm font-normal text-orange-600 dark:text-orange-400">{tc("(الطلبات الأونلاين فقط)","(Online orders only)")}</span></CardTitle>
+                  <CardDescription>{tc("رسوم تُضاف تلقائياً على طلبات الأونلاين فقط — لا تُطبَّق على نقاط البيع","Fees added automatically to online orders only — not applied to POS")}</CardDescription>
                 </div>
               </div>
               <Button
@@ -2377,15 +2769,15 @@ export default function AdminSettings() {
                 data-testid="button-save-service-fee"
               >
                 {mutation.isPending ? <Loader2 className="w-4 h-4 animate-spin ml-2" /> : <Save className="w-4 h-4 ml-2" />}
-                حفظ رسوم الخدمة
+                {tc("حفظ رسوم الخدمة","Save Service Fees")}
               </Button>
             </div>
           </CardHeader>
           <CardContent className="p-6 space-y-6">
             <div className="flex items-center justify-between p-3 bg-orange-50 dark:bg-orange-900/10 rounded-lg border border-orange-100 dark:border-orange-900/30">
               <div>
-                <Label htmlFor="service-fee-enabled" className="text-sm font-bold cursor-pointer">تفعيل رسوم الخدمة للأونلاين</Label>
-                <p className="text-xs text-muted-foreground mt-0.5">تُضاف تلقائياً على طلبات الأونلاين فقط — نقاط البيع معفاة دائماً</p>
+                <Label htmlFor="service-fee-enabled" className="text-sm font-bold cursor-pointer">{tc("تفعيل رسوم الخدمة للأونلاين","Enable Online Service Fee")}</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">{tc("تُضاف تلقائياً على طلبات الأونلاين فقط — نقاط البيع معفاة دائماً","Added automatically to online orders only — POS is always exempt")}</p>
               </div>
               <Switch
                 id="service-fee-enabled"
@@ -2397,7 +2789,7 @@ export default function AdminSettings() {
             {serviceFeeEnabled && (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-bold text-orange-700 dark:text-orange-400">رسوم الخدمة العادية (ريال)</Label>
+                  <Label className="text-xs font-bold text-orange-700 dark:text-orange-400">{tc("رسوم الخدمة العادية (ريال)","Standard Service Fee (SAR)")}</Label>
                   <Input
                     type="number"
                     step="0.01"
@@ -2409,7 +2801,7 @@ export default function AdminSettings() {
                   <p className="text-[10px] text-muted-foreground">الرسوم الافتراضية على الطلبات العادية</p>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-bold text-orange-700 dark:text-orange-400">حد الطلب المنخفض (ريال)</Label>
+                  <Label className="text-xs font-bold text-orange-700 dark:text-orange-400">{tc("حد الطلب المنخفض (ريال)","Low Order Threshold (SAR)")}</Label>
                   <Input
                     type="number"
                     step="0.50"
@@ -2421,7 +2813,7 @@ export default function AdminSettings() {
                   <p className="text-[10px] text-muted-foreground">الطلبات أقل من هذا المبلغ تحصل على رسوم مخفضة</p>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-bold text-orange-700 dark:text-orange-400">رسوم الطلب المنخفض (ريال)</Label>
+                  <Label className="text-xs font-bold text-orange-700 dark:text-orange-400">{tc("رسوم الطلب المنخفض (ريال)","Low Order Fee (SAR)")}</Label>
                   <Input
                     type="number"
                     step="0.01"
@@ -2437,16 +2829,23 @@ export default function AdminSettings() {
             {serviceFeeEnabled && (
               <div className="space-y-2">
                 <div className="text-xs text-muted-foreground bg-muted/40 rounded-lg p-3 border">
-                  مثال: طلب بقيمة 8 ريال → رسوم {serviceFeeAmount.toFixed(2)} ريال | طلب بقيمة {(serviceFeeLowOrderThreshold - 0.01).toFixed(2)} ريال → رسوم {serviceFeeLowOrderAmount.toFixed(2)} ريال
+                  {tc("مثال","Example")}: {tc("طلب بقيمة","Order of")} 8 {tc("ريال","SAR")} → {tc("رسوم","fee")} {serviceFeeAmount.toFixed(2)} {tc("ريال","SAR")} | {tc("طلب بقيمة","Order of")} {(serviceFeeLowOrderThreshold - 0.01).toFixed(2)} {tc("ريال","SAR")} → {tc("رسوم","fee")} {serviceFeeLowOrderAmount.toFixed(2)} {tc("ريال","SAR")}
                 </div>
                 <div className="flex items-center gap-2 text-xs text-orange-700 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/10 rounded-lg p-2.5 border border-orange-200 dark:border-orange-900/30">
                   <span>🌐</span>
-                  <span>تُطبَّق على الأونلاين فقط — طلبات نقاط البيع <strong>لا تشمل</strong> رسوم الخدمة</span>
+                  <span>{tc("تُطبَّق على الأونلاين فقط — طلبات نقاط البيع","Applied to online orders only — POS transactions")} <strong>{tc("لا تشمل","do not include")}</strong> {tc("رسوم الخدمة","service fees")}</span>
                 </div>
               </div>
             )}
           </CardContent>
         </Card>
+
+      </div>
+      )}
+
+      {/* ── Tab: Loyalty ── */}
+      {activeTab === 'loyalty' && (
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
         {/* Loyalty & Offers Settings */}
         <Card className="hover-elevate border-amber-100 dark:border-amber-900/30 md:col-span-2 shadow-lg">
@@ -2457,13 +2856,13 @@ export default function AdminSettings() {
                   <Gift className="w-6 h-6 text-amber-600" />
                 </div>
                 <div>
-                  <CardTitle className="text-xl font-bold">بطاقة تسالي كرومش والعروض</CardTitle>
-                  <CardDescription>إدارة نظام النقاط والخصومات والعروض الترويجية</CardDescription>
+                  <CardTitle className="text-xl font-bold">{tc("بطاقة تسالي والعروض","Loyalty Card & Offers")}</CardTitle>
+                  <CardDescription>{tc("إدارة نظام النقاط والخصومات والعروض الترويجية","Manage points system, discounts, and promotions")}</CardDescription>
                 </div>
               </div>
               <Button onClick={handleSaveLoyaltyOffers} disabled={mutation.isPending} data-testid="button-save-loyalty-offers">
                 {mutation.isPending ? <Loader2 className="w-4 h-4 animate-spin ml-2" /> : <Save className="w-4 h-4 ml-2" />}
-                حفظ إعدادات الولاء والعروض
+                {tc("حفظ إعدادات الولاء والعروض","Save Loyalty & Offers Settings")}
               </Button>
             </div>
           </CardHeader>
@@ -2472,10 +2871,10 @@ export default function AdminSettings() {
             <div className="space-y-4">
               <h3 className="font-bold text-lg flex items-center gap-2 text-amber-700 dark:text-amber-400 border-b pb-2">
                 <Star className="w-5 h-5" />
-                نظام النقاط
+                {tc("نظام النقاط","Points System")}
               </h3>
               <div className="flex items-center justify-between p-3 bg-amber-50 dark:bg-amber-900/10 rounded-lg border border-amber-100 dark:border-amber-900/30">
-                <Label htmlFor="loyalty-enabled" className="text-sm font-bold cursor-pointer">تفعيل نظام الولاء</Label>
+                <Label htmlFor="loyalty-enabled" className="text-sm font-bold cursor-pointer">{tc("تفعيل نظام الولاء","Enable Loyalty System")}</Label>
                 <Switch
                   id="loyalty-enabled"
                   checked={loyaltyEnabled}
@@ -2485,7 +2884,7 @@ export default function AdminSettings() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-bold text-amber-700 dark:text-amber-400">نقاط لكل مشروب ☕</Label>
+                  <Label className="text-xs font-bold text-amber-700 dark:text-amber-400">{tc("نقاط لكل مشروب","Points per Drink")} ☕</Label>
                   <Input
                     type="number"
                     value={pointsPerDrink}
@@ -2493,10 +2892,10 @@ export default function AdminSettings() {
                     min={0}
                     data-testid="input-points-per-drink"
                   />
-                  <p className="text-[10px] text-muted-foreground">كم نقطة يكسب العميل لكل مشروب يطلبه</p>
+                  <p className="text-[10px] text-muted-foreground">{tc("كم نقطة يكسب العميل لكل مشروب يطلبه","How many points the customer earns per drink ordered")}</p>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">كل كم نقطة = ريال</Label>
+                  <Label className="text-xs">{tc("كل كم نقطة = ريال","Points per SAR (redemption)")}</Label>
                   <Input
                     type="number"
                     value={pointsPerSar}
@@ -2506,7 +2905,7 @@ export default function AdminSettings() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">نقاط مكتسبة لكل ريال</Label>
+                  <Label className="text-xs">{tc("نقاط مكتسبة لكل ريال","Points Earned per SAR")}</Label>
                   <Input
                     type="number"
                     value={pointsEarnedPerSar}
@@ -2516,7 +2915,7 @@ export default function AdminSettings() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">الحد الأدنى لاستبدال النقاط</Label>
+                  <Label className="text-xs">{tc("الحد الأدنى لاستبدال النقاط","Minimum Points to Redeem")}</Label>
                   <Input
                     type="number"
                     value={minPointsForRedemption}
@@ -2526,7 +2925,7 @@ export default function AdminSettings() {
                   />
                 </div>
                 <div className="space-y-1.5 sm:col-span-2 lg:col-span-4">
-                  <Label className="text-xs font-bold text-green-700 dark:text-green-400">نقاط للحصول على مشروب مجاني ☕🎁</Label>
+                  <Label className="text-xs font-bold text-green-700 dark:text-green-400">{tc("نقاط للحصول على مشروب مجاني","Points for Free Drink")} ☕🎁</Label>
                   <Input
                     type="number"
                     value={pointsForFreeDrink}
@@ -2543,10 +2942,10 @@ export default function AdminSettings() {
             <div className="space-y-4">
               <h3 className="font-bold text-lg flex items-center gap-2 text-green-700 dark:text-green-400 border-b pb-2">
                 <Tag className="w-5 h-5" />
-                خصم الطلب الأول
+                {tc("خصم الطلب الأول","First Order Discount")}
               </h3>
               <div className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-900/10 rounded-lg border border-green-100 dark:border-green-900/30">
-                <Label htmlFor="first-order-enabled" className="text-sm font-bold cursor-pointer">تفعيل خصم الطلب الأول</Label>
+                <Label htmlFor="first-order-enabled" className="text-sm font-bold cursor-pointer">{tc("تفعيل خصم الطلب الأول","Enable First Order Discount")}</Label>
                 <Switch
                   id="first-order-enabled"
                   checked={firstOrderEnabled}
@@ -2556,19 +2955,19 @@ export default function AdminSettings() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-1.5">
-                  <Label className="text-xs">نوع الخصم</Label>
+                  <Label className="text-xs">{tc("نوع الخصم","Discount Type")}</Label>
                   <Select value={firstOrderDiscountType} onValueChange={(v: 'percent' | 'amount') => setFirstOrderDiscountType(v)}>
                     <SelectTrigger data-testid="select-first-order-type">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="percent">نسبة مئوية (%)</SelectItem>
-                      <SelectItem value="amount">مبلغ ثابت (ريال)</SelectItem>
+                      <SelectItem value="percent">{tc("نسبة مئوية","Percentage")} (%)</SelectItem>
+                      <SelectItem value="amount">{tc("مبلغ ثابت","Fixed Amount")} (<SarIcon size={11} />)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">قيمة الخصم {firstOrderDiscountType === 'percent' ? '(%)' : '(ريال)'}</Label>
+                  <Label className="text-xs">{tc("قيمة الخصم","Discount Value")} {firstOrderDiscountType === 'percent' ? '(%)' : `(${tc("ريال","SAR")})`}</Label>
                   <Input
                     type="number"
                     value={firstOrderValue}
@@ -2578,7 +2977,7 @@ export default function AdminSettings() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">صلاحية العرض بالأيام</Label>
+                  <Label className="text-xs">{tc("صلاحية العرض بالأيام","Offer Validity (days)")}</Label>
                   <Input
                     type="number"
                     value={firstOrderExpiresDays}
@@ -2594,10 +2993,10 @@ export default function AdminSettings() {
             <div className="space-y-4">
               <h3 className="font-bold text-lg flex items-center gap-2 text-blue-700 dark:text-blue-400 border-b pb-2">
                 <Ticket className="w-5 h-5" />
-                خصم عد لنا
+                {tc("خصم عد لنا","Comeback Discount")}
               </h3>
               <div className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-900/10 rounded-lg border border-blue-100 dark:border-blue-900/30">
-                <Label htmlFor="comeback-enabled" className="text-sm font-bold cursor-pointer">تفعيل خصم العودة</Label>
+                <Label htmlFor="comeback-enabled" className="text-sm font-bold cursor-pointer">{tc("تفعيل خصم العودة","Enable Comeback Discount")}</Label>
                 <Switch
                   id="comeback-enabled"
                   checked={comebackEnabled}
@@ -2607,19 +3006,19 @@ export default function AdminSettings() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-1.5">
-                  <Label className="text-xs">نوع الخصم</Label>
+                  <Label className="text-xs">{tc("نوع الخصم","Discount Type")}</Label>
                   <Select value={comebackDiscountType} onValueChange={(v: 'percent' | 'amount') => setComebackDiscountType(v)}>
                     <SelectTrigger data-testid="select-comeback-type">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="percent">نسبة مئوية (%)</SelectItem>
-                      <SelectItem value="amount">مبلغ ثابت (ريال)</SelectItem>
+                      <SelectItem value="percent">{tc("نسبة مئوية","Percentage")} (%)</SelectItem>
+                      <SelectItem value="amount">{tc("مبلغ ثابت","Fixed Amount")} (<SarIcon size={11} />)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">قيمة الخصم {comebackDiscountType === 'percent' ? '(%)' : '(ريال)'}</Label>
+                  <Label className="text-xs">{tc("قيمة الخصم","Discount Value")} {comebackDiscountType === 'percent' ? '(%)' : `(${tc("ريال","SAR")})`}</Label>
                   <Input
                     type="number"
                     value={comebackValue}
@@ -2629,7 +3028,7 @@ export default function AdminSettings() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">صلاحية العرض بالأيام</Label>
+                  <Label className="text-xs">{tc("صلاحية العرض بالأيام","Offer Validity (days)")}</Label>
                   <Input
                     type="number"
                     value={comebackExpiresDays}
@@ -2641,7 +3040,7 @@ export default function AdminSettings() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <Label className="text-xs">عدد الطلبات الأدنى</Label>
+                  <Label className="text-xs">{tc("عدد الطلبات الأدنى","Min Orders")}</Label>
                   <Input
                     type="number"
                     value={comebackMinOrders}
@@ -2651,7 +3050,7 @@ export default function AdminSettings() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">عدد الطلبات الأعلى</Label>
+                  <Label className="text-xs">{tc("عدد الطلبات الأعلى","Max Orders")}</Label>
                   <Input
                     type="number"
                     value={comebackMaxOrders}
@@ -2667,10 +3066,10 @@ export default function AdminSettings() {
             <div className="space-y-4">
               <h3 className="font-bold text-lg flex items-center gap-2 text-purple-700 dark:text-purple-400 border-b pb-2">
                 <Sparkles className="w-5 h-5" />
-                خصم العميل المميز
+                {tc("خصم العميل المميز","VIP Customer Discount")}
               </h3>
               <div className="flex items-center justify-between p-3 bg-purple-50 dark:bg-purple-900/10 rounded-lg border border-purple-100 dark:border-purple-900/30">
-                <Label htmlFor="frequent-enabled" className="text-sm font-bold cursor-pointer">تفعيل خصم العميل المميز</Label>
+                <Label htmlFor="frequent-enabled" className="text-sm font-bold cursor-pointer">{tc("تفعيل خصم العميل المميز","Enable VIP Customer Discount")}</Label>
                 <Switch
                   id="frequent-enabled"
                   checked={frequentEnabled}
@@ -2680,19 +3079,19 @@ export default function AdminSettings() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-1.5">
-                  <Label className="text-xs">نوع الخصم</Label>
+                  <Label className="text-xs">{tc("نوع الخصم","Discount Type")}</Label>
                   <Select value={frequentDiscountType} onValueChange={(v: 'percent' | 'amount') => setFrequentDiscountType(v)}>
                     <SelectTrigger data-testid="select-frequent-type">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="percent">نسبة مئوية (%)</SelectItem>
-                      <SelectItem value="amount">مبلغ ثابت (ريال)</SelectItem>
+                      <SelectItem value="percent">{tc("نسبة مئوية","Percentage")} (%)</SelectItem>
+                      <SelectItem value="amount">{tc("مبلغ ثابت","Fixed Amount")} (<SarIcon size={11} />)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">قيمة الخصم {frequentDiscountType === 'percent' ? '(%)' : '(ريال)'}</Label>
+                  <Label className="text-xs">{tc("قيمة الخصم","Discount Value")} {frequentDiscountType === 'percent' ? '(%)' : `(${tc("ريال","SAR")})`}</Label>
                   <Input
                     type="number"
                     value={frequentValue}
@@ -2702,7 +3101,7 @@ export default function AdminSettings() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">عدد الطلبات الأدنى</Label>
+                  <Label className="text-xs">{tc("عدد الطلبات الأدنى","Min Orders")}</Label>
                   <Input
                     type="number"
                     value={frequentMinOrders}
@@ -2718,10 +3117,10 @@ export default function AdminSettings() {
             <div className="space-y-4">
               <h3 className="font-bold text-lg flex items-center gap-2 text-rose-700 dark:text-rose-400 border-b pb-2">
                 <Coffee className="w-5 h-5" />
-                خصم مشروب خاص
+                {tc("خصم مشروب خاص","Special Drink Discount")}
               </h3>
               <div className="flex items-center justify-between p-3 bg-rose-50 dark:bg-rose-900/10 rounded-lg border border-rose-100 dark:border-rose-900/30">
-                <Label htmlFor="special-drink-enabled" className="text-sm font-bold cursor-pointer">تفعيل خصم مشروب خاص</Label>
+                <Label htmlFor="special-drink-enabled" className="text-sm font-bold cursor-pointer">{tc("تفعيل خصم مشروب خاص","Enable Special Drink Discount")}</Label>
                 <Switch
                   id="special-drink-enabled"
                   checked={specialDrinkEnabled}
@@ -2731,19 +3130,19 @@ export default function AdminSettings() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <Label className="text-xs">نوع الخصم</Label>
+                  <Label className="text-xs">{tc("نوع الخصم","Discount Type")}</Label>
                   <Select value={specialDrinkDiscountType} onValueChange={(v: 'percent' | 'amount') => setSpecialDrinkDiscountType(v)}>
                     <SelectTrigger data-testid="select-special-drink-type">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="percent">نسبة مئوية (%)</SelectItem>
-                      <SelectItem value="amount">مبلغ ثابت (ريال)</SelectItem>
+                      <SelectItem value="percent">{tc("نسبة مئوية","Percentage")} (%)</SelectItem>
+                      <SelectItem value="amount">{tc("مبلغ ثابت","Fixed Amount")} (<SarIcon size={11} />)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">قيمة الخصم {specialDrinkDiscountType === 'percent' ? '(%)' : '(ريال)'}</Label>
+                  <Label className="text-xs">{tc("قيمة الخصم","Discount Value")} {specialDrinkDiscountType === 'percent' ? '(%)' : `(${tc("ريال","SAR")})`}</Label>
                   <Input
                     type="number"
                     value={specialDrinkValue}
@@ -2759,10 +3158,10 @@ export default function AdminSettings() {
             <div className="space-y-4">
               <h3 className="font-bold text-lg flex items-center gap-2 text-teal-700 dark:text-teal-400 border-b pb-2">
                 <Gift className="w-5 h-5" />
-                استبدال النقاط
+                {tc("استبدال النقاط","Points Redemption")}
               </h3>
               <div className="flex items-center justify-between p-3 bg-teal-50 dark:bg-teal-900/10 rounded-lg border border-teal-100 dark:border-teal-900/30">
-                <Label htmlFor="points-redemption-enabled" className="text-sm font-bold cursor-pointer">تفعيل استبدال النقاط</Label>
+                <Label htmlFor="points-redemption-enabled" className="text-sm font-bold cursor-pointer">{tc("تفعيل استبدال النقاط","Enable Points Redemption")}</Label>
                 <Switch
                   id="points-redemption-enabled"
                   checked={pointsRedemptionEnabled}
@@ -2771,7 +3170,7 @@ export default function AdminSettings() {
                 />
               </div>
               <div className="space-y-1.5 max-w-xs">
-                <Label className="text-xs">الحد الأدنى للنقاط</Label>
+                <Label className="text-xs">{tc("الحد الأدنى للنقاط","Minimum Points")}</Label>
                 <Input
                   type="number"
                   value={pointsRedemptionMinPoints}
@@ -2793,25 +3192,25 @@ export default function AdminSettings() {
                   <Percent className="w-6 h-6 text-indigo-600" />
                 </div>
                 <div>
-                  <CardTitle className="text-xl font-bold">إدارة أكواد الخصم</CardTitle>
-                  <CardDescription>إنشاء وإدارة أكواد الخصم الترويجية</CardDescription>
+                  <CardTitle className="text-xl font-bold">{tc("إدارة أكواد الخصم","Discount Codes")}</CardTitle>
+                  <CardDescription>{tc("إنشاء وإدارة أكواد الخصم الترويجية","Create and manage promotional discount codes")}</CardDescription>
                 </div>
               </div>
               <Dialog open={newCodeDialogOpen} onOpenChange={setNewCodeDialogOpen}>
                 <DialogTrigger asChild>
                   <Button data-testid="button-add-discount-code">
                     <Plus className="w-4 h-4 ml-2" />
-                    إضافة كود خصم جديد
+                    {tc("إضافة كود خصم جديد","Add Discount Code")}
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="font-ibm-arabic" dir="rtl">
+                <DialogContent className="font-ibm-arabic">
                   <DialogHeader>
-                    <DialogTitle>إنشاء كود خصم جديد</DialogTitle>
-                    <DialogDescription>أدخل بيانات كود الخصم الجديد</DialogDescription>
+                    <DialogTitle>{tc("إنشاء كود خصم جديد","Create New Discount Code")}</DialogTitle>
+                    <DialogDescription>{tc("أدخل بيانات كود الخصم الجديد","Enter the details for the new discount code")}</DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4 py-4">
                     <div className="space-y-1.5">
-                      <Label className="text-sm">الكود</Label>
+                      <Label className="text-sm">{tc("الكود","Code")}</Label>
                       <Input
                         value={newCode}
                         onChange={(e) => setNewCode(e.target.value)}
@@ -2822,19 +3221,19 @@ export default function AdminSettings() {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-sm">نوع الخصم</Label>
+                      <Label className="text-sm">{tc("نوع الخصم","Discount Type")}</Label>
                       <Select value={newCodeType} onValueChange={(v: 'percent' | 'amount') => setNewCodeType(v)}>
                         <SelectTrigger data-testid="select-new-code-type">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="percent">نسبة مئوية (%)</SelectItem>
-                          <SelectItem value="amount">مبلغ ثابت (ريال)</SelectItem>
+                          <SelectItem value="percent">{tc("نسبة مئوية (%)","Percentage (%)")}</SelectItem>
+                          <SelectItem value="amount">{tc("مبلغ ثابت (ريال)","Fixed Amount (SAR)")}</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-sm">قيمة الخصم {newCodeType === 'percent' ? '(%)' : '(ريال)'}</Label>
+                      <Label className="text-sm">{tc("قيمة الخصم","Discount Value")} {newCodeType === 'percent' ? '(%)' : `(${tc("ريال","SAR")})`}</Label>
                       <Input
                         type="number"
                         value={newCodeValue}
@@ -2844,7 +3243,7 @@ export default function AdminSettings() {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-sm">الحد الأقصى للاستخدام</Label>
+                      <Label className="text-sm">{tc("الحد الأقصى للاستخدام","Max Uses")}</Label>
                       <Input
                         type="number"
                         value={newCodeMaxUses}
@@ -2855,8 +3254,8 @@ export default function AdminSettings() {
                     </div>
                     <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
                       <div>
-                        <p className="text-sm font-medium">ظاهر للعملاء</p>
-                        <p className="text-xs text-muted-foreground">يظهر الكود في صفحة الدفع للعملاء</p>
+                        <p className="text-sm font-medium">{tc("ظاهر للعملاء","Visible to Customers")}</p>
+                        <p className="text-xs text-muted-foreground">{tc("يظهر الكود في صفحة الدفع للعملاء","Code appears on customer checkout page")}</p>
                       </div>
                       <Switch
                         checked={newCodeVisible}
@@ -2872,7 +3271,7 @@ export default function AdminSettings() {
                       data-testid="button-create-code"
                     >
                       {createCodeMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin ml-2" /> : <Plus className="w-4 h-4 ml-2" />}
-                      إنشاء الكود
+                      {tc("إنشاء الكود","Create Code")}
                     </Button>
                   </DialogFooter>
                 </DialogContent>
@@ -2887,8 +3286,8 @@ export default function AdminSettings() {
             ) : discountCodes.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 <Percent className="w-10 h-10 mx-auto mb-3 opacity-30" />
-                <p className="text-sm">لا توجد أكواد خصم حالياً</p>
-                <p className="text-xs mt-1">اضغط على "إضافة كود خصم جديد" لإنشاء أول كود</p>
+                <p className="text-sm">{tc("لا توجد أكواد خصم حالياً","No discount codes yet")}</p>
+                <p className="text-xs mt-1">{tc('اضغط على "إضافة كود خصم جديد" لإنشاء أول كود','Click "Add Discount Code" to create the first code')}</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -2906,11 +3305,11 @@ export default function AdminSettings() {
                         <span className="font-mono font-bold text-sm" dir="ltr">{dc.code}</span>
                         <div className="flex items-center gap-2 mt-1 flex-wrap">
                           <Badge variant="secondary" className="text-[10px]">
-                            {dc.discountType === 'percent' ? `${dc.value}%` : `${dc.value} ريال`}
+                            {dc.discountType === 'percent' ? `${dc.value}%` : `${dc.value} ${tc("ريال","SAR")}`}
                           </Badge>
                           {dc.usageCount !== undefined && (
                             <span className="text-[10px] text-muted-foreground">
-                              استخدام: {dc.usageCount}{dc.maxUses ? `/${dc.maxUses}` : ''}
+                              {tc("استخدام","Uses")}: {dc.usageCount}{dc.maxUses ? `/${dc.maxUses}` : ''}
                             </span>
                           )}
                         </div>
@@ -2918,7 +3317,7 @@ export default function AdminSettings() {
                     </div>
                     <div className="flex items-center gap-4">
                       <div className="flex flex-col items-center gap-1">
-                        <span className="text-[9px] text-muted-foreground">نشط</span>
+                        <span className="text-[9px] text-muted-foreground">{tc("نشط","Active")}</span>
                         <Switch
                           checked={!!dc.isActive}
                           onCheckedChange={(checked) => toggleCodeMutation.mutate({ id: dc._id || dc.id, isActive: checked })}
@@ -2927,7 +3326,7 @@ export default function AdminSettings() {
                         />
                       </div>
                       <div className="flex flex-col items-center gap-1">
-                        <span className="text-[9px] text-muted-foreground">ظاهر للعملاء</span>
+                        <span className="text-[9px] text-muted-foreground">{tc("ظاهر للعملاء","Visible")}</span>
                         <Switch
                           checked={!!dc.visibleToCustomers}
                           onCheckedChange={(checked) => toggleVisibilityMutation.mutate({ id: dc._id || dc.id, visibleToCustomers: checked })}
@@ -2943,6 +3342,7 @@ export default function AdminSettings() {
           </CardContent>
         </Card>
       </div>
+      )}
 
       {/* App Publishing Guide Section */}
       <div className="mt-8">
@@ -3112,13 +3512,13 @@ export default function AdminSettings() {
               <CardContent className="p-5">
                 <p className="font-semibold text-amber-800 dark:text-amber-300 mb-2 flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4" />
-                  نصائح مهمة
+                  {tc("نصائح مهمة","Important Tips")}
                 </p>
                 <ul className="space-y-1.5 text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
-                  <li>• <strong>Android</strong> أسرع في الموافقة (1-2 يوم) بينما <strong>iOS</strong> تأخذ 1-3 أيام</li>
-                  <li>• استخدم نفس رابط الموقع في PWABuilder بالضبط: <span className="font-mono" dir="ltr">{window.location.origin}</span></li>
-                  <li>• تأكد أن الموقع يعمل بـ HTTPS وليس HTTP (مطلوب لكلا المتجرين)</li>
-                  <li>• جهّز وصف التطبيق، لقطات شاشة (screenshots)، وأيقونة بدقة 1024×1024 قبل الرفع</li>
+                  <li>• <strong>Android</strong> {tc("أسرع في الموافقة (1-2 يوم) بينما","is faster to approve (1–2 days) while")} <strong>iOS</strong> {tc("تأخذ 1-3 أيام","takes 1–3 days")}</li>
+                  <li>• {tc("استخدم نفس رابط الموقع في PWABuilder بالضبط","Use the exact same site URL in PWABuilder")}: <span className="font-mono" dir="ltr">{window.location.origin}</span></li>
+                  <li>• {tc("تأكد أن الموقع يعمل بـ HTTPS وليس HTTP (مطلوب لكلا المتجرين)","Make sure the site runs on HTTPS, not HTTP (required for both stores)")}</li>
+                  <li>• {tc("جهّز وصف التطبيق، لقطات شاشة (screenshots)، وأيقونة بدقة 1024×1024 قبل الرفع","Prepare the app description, screenshots, and a 1024×1024 icon before uploading")}</li>
                 </ul>
               </CardContent>
             </Card>
@@ -3129,8 +3529,8 @@ export default function AdminSettings() {
 
       {/* Footer Info */}
       <div className="text-center pt-10 text-muted-foreground text-xs font-ibm-arabic">
-        <p>نظام كلاوني - جميع التغييرات يتم تطبيقها فوراً على واجهة العميل</p>
-        {mutation.isPending && <p className="text-accent animate-pulse mt-2">جاري حفظ التعديلات...</p>}
+        <p>{tc("جميع التغييرات يتم تطبيقها فوراً على واجهة العميل","All changes are applied immediately to the customer interface")}</p>
+        {mutation.isPending && <p className="text-accent animate-pulse mt-2">{tc("جاري حفظ التعديلات...","Saving changes...")}</p>}
       </div>
     </div>
   );

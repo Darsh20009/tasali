@@ -338,7 +338,7 @@ export default function SupplierManagementPage() {
 
   return (
     <PlanGate feature="supplierManagement">
-    <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-background" dir="rtl">
+    <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-background">
       <div className="container mx-auto p-4 md:p-6 max-w-7xl">
         <div className="flex items-center justify-between gap-4 mb-6">
           <Button 
@@ -378,7 +378,7 @@ export default function SupplierManagementPage() {
                 <div>
                   <p className="text-green-100 text-sm">{tc("إجمالي المشتريات", "Total Purchases")}</p>
                   <p className="text-3xl font-bold mt-1">{(totalSpent / 1000).toFixed(0)}K</p>
-                  <p className="text-green-200 text-xs mt-1">{tc("ريال سعودي", "SAR")}</p>
+                  <p className="text-green-200 text-xs mt-1"><SarIcon size={11} /></p>
                 </div>
                 <DollarSign className="w-12 h-12 text-green-200" />
               </div>
@@ -391,7 +391,7 @@ export default function SupplierManagementPage() {
                 <div>
                   <p className="text-accent text-sm">{tc("فواتير معلقة", "Pending Invoices")}</p>
                   <p className="text-3xl font-bold mt-1">{pendingInvoices.toLocaleString()}</p>
-                  <p className="text-accent text-xs mt-1">{tc("ريال سعودي", "SAR")}</p>
+                  <p className="text-accent text-xs mt-1"><SarIcon size={11} /></p>
                 </div>
                 <Receipt className="w-12 h-12 text-accent" />
               </div>

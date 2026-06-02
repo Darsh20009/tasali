@@ -3,8 +3,8 @@ import { TaxInvoiceModel, type ITaxInvoice } from '@shared/schema';
 
 // ZATCA Configuration from environment variables for security
 const VAT_RATE = parseFloat(process.env.VAT_RATE || '0.15');
-const SELLER_NAME = process.env.ZATCA_SELLER_NAME || 'تسالي كرومش';
-const SELLER_NAME_EN = process.env.ZATCA_SELLER_NAME_EN || 'تسالي كرومش';
+const SELLER_NAME = process.env.ZATCA_SELLER_NAME || 'BLACK ROSE CAFE';
+const SELLER_NAME_EN = process.env.ZATCA_SELLER_NAME_EN || 'BLACK ROSE CAFE';
 const SELLER_VAT_NUMBER = process.env.ZATCA_VAT_NUMBER || '311234567890003';
 const SELLER_ADDRESS = process.env.ZATCA_SELLER_ADDRESS || 'الرياض، المملكة العربية السعودية';
 const SELLER_CR_NUMBER = process.env.ZATCA_CR_NUMBER || '';
@@ -129,7 +129,7 @@ export function getPaymentMeansCode(paymentMethod: string): string {
     'barq': '30',
     'rajhi': '30',
     'delivery': '10',
-    'tasali-card': '48',
+    'qahwa-card': '48',
   };
   return codes[paymentMethod] || '30';
 }

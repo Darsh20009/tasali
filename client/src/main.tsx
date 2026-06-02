@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
 import { applyBrandColors } from "./lib/brand";
+import { installRiyalSymbol } from "./lib/riyal-symbol";
 
 // ── One-time global storage wipe ──────────────────────────────────────────
 // Bump CLIENT_RESET_VERSION to force every device that opens the app to clear
@@ -75,6 +76,13 @@ const CLIENT_RESET_VERSION = "2026-04-21-v2-logo";
 // Apply brand colors from the central brand config to CSS variables
 applyBrandColors();
 
+// Install global Saudi Riyal symbol replacement (renders new SAR glyph everywhere)
+installRiyalSymbol();
+
+// Start offline sync engine (auto-sync every 15s, detects online/offline)
+import("./lib/sync-engine").then(({ SyncEngine }) => {
+  SyncEngine.startAutoSync(15_000);
+}).catch(() => {});
 
 createRoot(document.getElementById("root")!).render(<App />);
 

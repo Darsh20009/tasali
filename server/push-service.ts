@@ -83,6 +83,7 @@ export interface PushPayload {
   actions?: Array<{ action: string; title: string }>;
   stageIndex?: number;
   totalStages?: number;
+  data?: Record<string, any>;
 }
 
 async function sendPushToSubscriptions(

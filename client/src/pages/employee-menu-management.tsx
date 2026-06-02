@@ -1,5 +1,6 @@
 import { useTranslate } from "@/lib/useTranslate";
 import { useState, useEffect } from "react";
+import SarIcon from "@/components/sar-icon";
 import { useLocation, useSearch } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,8 +37,8 @@ interface BranchAvailability {
 }
 
 const UNIFIED_CATEGORIES = [
-  { id: 'hot',        nameAr: 'أطباق ساخنة' },
-  { id: 'cold',       nameAr: 'أطباق باردة' },
+  { id: 'hot',        nameAr: 'مشروبات ساخنة' },
+  { id: 'cold',       nameAr: 'مشروبات باردة' },
   { id: 'desserts',   nameAr: 'حلا والكيك'    },
   { id: 'bakery',     nameAr: 'المخبوزات'      },
   { id: 'sandwiches', nameAr: 'الساندوتشات'   },
@@ -64,10 +65,10 @@ export default function EmployeeMenuManagement() {
  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
  const [editingItem, setEditingItem] = useState<CoffeeItem | null>(null);
- const [editableSizes, setEditableSizes] = useState<Array<{nameAr: string; nameEn?: string; price: number}>>([]);
+ const [editableSizes, setEditableSizes] = useState<Array<{nameAr: string; price: number}>>([]);
  const [editableAddons, setEditableAddons] = useState<Array<{nameAr: string; nameEn?: string; price: number; imageUrl?: string; category?: string; section?: string; selectionType?: 'single' | 'multiple'}>>([]);
  const [addEditableAddons, setAddEditableAddons] = useState<Array<{nameAr: string; nameEn?: string; price: number; imageUrl?: string; category?: string; section?: string; selectionType?: 'single' | 'multiple'}>>([]);
-const [addEditableSizes, setAddEditableSizes] = useState<Array<{nameAr: string; nameEn?: string; price: number}>>([]);
+const [addEditableSizes, setAddEditableSizes] = useState<Array<{nameAr: string; price: number}>>([]);
 
 type BundledSection = {
   sectionTitle: string;
@@ -786,11 +787,11 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
  };
 
  const legacyCategoryNames: Record<string, string> = {
- basic: tc("سناكس أساسية", "Main Snacks"),
- hot: tc("وجبات ساخنة", "Hot Snacks"),
- cold: tc("مشروبات باردة", "Cold Drinks"),
- specialty: tc("أطباق إضافية", "Specialty Items"),
- drinks: tc("الأطباق", "Drinks"),
+ basic: tc("قهوة أساسية", "Basic Coffee"),
+ hot: tc("قهوة ساخنة", "Hot Coffee"),
+ cold: tc("قهوة باردة", "Cold Coffee"),
+ specialty: tc("مشروبات إضافية", "Specialty Drinks"),
+ drinks: tc("المشروبات", "Drinks"),
  desserts: tc("الحلويات", "Desserts"),
  food: tc("المأكولات", "Food"),
  bakery: tc("المخبوزات", "Bakery"),
@@ -798,7 +799,7 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
 
  const dynamicCategoryIds = menuCategories.map(c => c.id);
  const dynamicCategoryNames: Record<string, string> = Object.fromEntries(
-   menuCategories.map(c => [c.id, tc(c.nameAr, c.nameEn || c.nameAr)])
+   menuCategories.map(c => [c.id, c.nameAr])
  );
  const unifiedCategoryNames: Record<string, string> = Object.fromEntries(
    UNIFIED_CATEGORIES.map(c => [c.id, c.nameAr])
@@ -855,12 +856,12 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
                  <Coffee className="w-7 h-7 text-primary" />
                </div>
                <div className="text-center">
-                 <p className="text-lg font-bold text-gray-800">{tc("إضافة مشروب", "Add Drink")}</p>
-                 <p className="text-xs text-gray-400">{tc("سناكس، عصائر، أطباق", "Snacks, juices, dishes")}</p>
+                 <p className="text-lg font-bold text-gray-800">إضافة مشروب</p>
+                 <p className="text-xs text-gray-400">قهوة، عصائر، مشروبات</p>
                </div>
                <div className="flex items-center gap-1 text-primary text-sm font-medium">
                  <Plus className="w-4 h-4" />
-                 <span>{tc("إضافة جديد", "Add New")}</span>
+                 <span>إضافة جديد</span>
                </div>
              </button>
 
@@ -876,12 +877,12 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
                  <span className="text-2xl">🍽️</span>
                </div>
                <div className="text-center">
-                 <p className="text-lg font-bold text-gray-800">{tc("إضافة أكلة", "Add Food Item")}</p>
-                 <p className="text-xs text-gray-400">{tc("حلويات، مخبوزات، وجبات", "Desserts, bakery, meals")}</p>
+                 <p className="text-lg font-bold text-gray-800">إضافة أكلة</p>
+                 <p className="text-xs text-gray-400">حلويات، مخبوزات، وجبات</p>
                </div>
                <div className="flex items-center gap-1 text-orange-500 text-sm font-medium">
                  <Plus className="w-4 h-4" />
-                 <span>{tc("إضافة جديد", "Add New")}</span>
+                 <span>إضافة جديد</span>
                </div>
              </button>
            </div>
@@ -961,11 +962,11 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
      <span>{tc("إضافة مشروب جديد", "Add New Item")}</span>
      <div className="flex items-center gap-2 text-sm font-normal">
        <span className={`px-3 py-1 rounded-full ${addStep === 1 ? 'bg-primary text-white' : 'bg-gray-600 text-gray-300'}`}>
-         {tc("1. المعلومات الأساسية", "1. Basic Info")}
+         1. المعلومات الأساسية
        </span>
        <ArrowLeft className="w-4 h-4 text-gray-400" />
        <span className={`px-3 py-1 rounded-full ${addStep === 2 ? 'bg-primary text-white' : 'bg-gray-600 text-gray-300'}`}>
-         {tc("2. المكونات والوصفة", "2. Recipe")}
+         2. المكونات والوصفة
        </span>
      </div>
    </div>
@@ -1051,7 +1052,7 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
                          </SelectTrigger>
                          <SelectContent className="bg-white border-gray-200 text-gray-900">
                            {availableForDropdown.map(cat => (
-                             <SelectItem key={cat.id} value={cat.id}>{tc(cat.nameAr, cat.nameEn || cat.nameAr)}</SelectItem>
+                             <SelectItem key={cat.id} value={cat.id}>{cat.nameAr}</SelectItem>
                            ))}
                          </SelectContent>
                        </Select>
@@ -1116,22 +1117,22 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
        </button>
      )}
    </div>
-   {addImageUrls.length === 0 && <p className="text-gray-500 text-xs">{tc("اختر صوراً من المكتبة. الصورة الأولى ستكون الرئيسية", "Select photos from the library. The first photo will be the main one.")}</p>}
+   {addImageUrls.length === 0 && <p className="text-gray-500 text-xs">اختر صوراً من المكتبة. الصورة الأولى ستكون الرئيسية</p>}
  </div>
 </div>
  </div>
 
  <div>
- <Label htmlFor="coffeeStrength" className="text-gray-300">{tc("مستوى الحرارة", "Heat Level")}</Label>
+ <Label htmlFor="coffeeStrength" className="text-gray-300">قوة القهوة</Label>
  <Select value={selectedCoffeeStrength} onValueChange={setSelectedCoffeeStrength}>
  <SelectTrigger className="bg-gray-50 border-gray-300 text-gray-900" data-testid="select-coffee-strength">
- <SelectValue placeholder={tc("اختر مستوى الحرارة", "Select heat level")} />
+ <SelectValue placeholder="اختر قوة القهوة" />
  </SelectTrigger>
  <SelectContent className="bg-white border-gray-200 text-gray-900">
- <SelectItem value="mild">{tc("خفيفة (1-4)", "Mild (1-4)")}</SelectItem>
- <SelectItem value="classic">{tc("كلاسيكية/العادي", "Classic")}</SelectItem>
- <SelectItem value="medium">{tc("متوسطة (4-8)", "Medium (4-8)")}</SelectItem>
- <SelectItem value="strong">{tc("قوية (8-12)", "Strong (8-12)")}</SelectItem>
+ <SelectItem value="mild">خفيفة (1-4)</SelectItem>
+ <SelectItem value="classic">كلاسيكية/العادي</SelectItem>
+ <SelectItem value="medium">متوسطة (4-8)</SelectItem>
+ <SelectItem value="strong">قوية (8-12)</SelectItem>
  </SelectContent>
  </Select>
  </div>
@@ -1139,61 +1140,44 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
  {/* Inline Addons Section - Grouped by Section */}
 {/* Sizes for add form */}
 <div className="space-y-2">
-  <Label className="text-gray-300">{tc("الأحجام المتاحة", "Available Sizes")}</Label>
+  <Label className="text-gray-300">الأحجام المتاحة</Label>
   <div className="space-y-2">
     {addEditableSizes.map((size, idx) => (
-      <div key={idx} className="flex flex-col gap-1">
-        <div className="flex gap-2 items-center">
-          <div className="flex flex-col gap-1 flex-1">
-            <Input
-              type="text"
-              placeholder={tc("اسم الحجم (مثال: صغير)", "Arabic name (e.g. صغير)")}
-              value={size.nameAr}
-              onChange={(e) => {
-                const next = [...addEditableSizes];
-                next[idx] = { ...next[idx], nameAr: e.target.value };
-                setAddEditableSizes(next);
-              }}
-              className="bg-gray-50 border-gray-300 text-gray-900"
-              data-testid={`input-add-size-name-${idx}`}
-            />
-            <Input
-              type="text"
-              placeholder="English name (e.g. Small)"
-              value={size.nameEn || ''}
-              onChange={(e) => {
-                const next = [...addEditableSizes];
-                next[idx] = { ...next[idx], nameEn: e.target.value };
-                setAddEditableSizes(next);
-              }}
-              className="bg-gray-50 border-gray-200 text-gray-900"
-              dir="ltr"
-              data-testid={`input-add-size-name-en-${idx}`}
-            />
-          </div>
-          <Input
-            type="number"
-            placeholder={tc("السعر", "Price")}
-            value={size.price}
-            onChange={(e) => {
-              const next = [...addEditableSizes];
-              next[idx] = { ...next[idx], price: parseFloat(e.target.value) || 0 };
-              setAddEditableSizes(next);
-            }}
-            className="bg-gray-50 border-gray-300 text-gray-900 w-24"
-            data-testid={`input-add-size-price-${idx}`}
-          />
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => setAddEditableSizes(addEditableSizes.filter((_, i) => i !== idx))}
-            className="border-red-500/30 text-red-500 shrink-0"
-            data-testid={`button-remove-size-${idx}`}
-          >
-            <X className="w-4 h-4" />
-          </Button>
-        </div>
+      <div key={idx} className="flex gap-2 items-end">
+        <Input
+          type="text"
+          placeholder="اسم الحجم (مثال: صغير)"
+          value={size.nameAr}
+          onChange={(e) => {
+            const next = [...addEditableSizes];
+            next[idx].nameAr = e.target.value;
+            setAddEditableSizes(next);
+          }}
+          className="bg-gray-50 border-gray-300 text-gray-900 flex-1"
+          data-testid={`input-add-size-name-${idx}`}
+        />
+        <Input
+          type="number"
+          placeholder="السعر"
+          value={size.price}
+          onChange={(e) => {
+            const next = [...addEditableSizes];
+            next[idx].price = parseFloat(e.target.value) || 0;
+            setAddEditableSizes(next);
+          }}
+          className="bg-gray-50 border-gray-300 text-gray-900 w-24"
+          data-testid={`input-add-size-price-${idx}`}
+        />
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => setAddEditableSizes(addEditableSizes.filter((_, i) => i !== idx))}
+          className="border-red-500/30 text-red-500"
+          data-testid={`button-remove-size-${idx}`}
+        >
+          <X className="w-4 h-4" />
+        </Button>
       </div>
     ))}
   </div>
@@ -1201,17 +1185,17 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
     type="button"
     size="sm"
     variant="outline"
-    onClick={() => setAddEditableSizes([...addEditableSizes, { nameAr: '', nameEn: '', price: 0 }])}
+    onClick={() => setAddEditableSizes([...addEditableSizes, { nameAr: '', price: 0 }])}
     className="border-green-500/30 text-green-400 w-full"
     data-testid="button-add-size"
   >
     <Plus className="w-4 h-4 ml-1" />
-    {tc("إضافة حجم", "Add Size")}
+    إضافة حجم
   </Button>
 </div>
 
 <div className="space-y-2">
-  <Label className="text-gray-300">{tc("الإضافات المتاحة (مع السعر)", "Available Add-ons (with price)")}</Label>
+  <Label className="text-gray-300">الإضافات المتاحة (مع السعر)</Label>
   {(() => {
     const sectionOrder: string[] = [];
     const sectionMap: Record<string, number[]> = {};
@@ -1236,12 +1220,12 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
                   type="text"
                   value={sectionName}
                   onChange={(e) => { const newName = e.target.value; setAddEditableAddons(prev => prev.map(a => a.section === sectionName ? {...a, section: newName} : a)); }}
-                  placeholder={tc("اسم القسم", "Section name")}
+                  placeholder="اسم القسم"
                   className="flex-1 text-sm font-semibold text-gray-700 bg-transparent border-b border-gray-200 focus:border-primary focus:outline-none"
                   data-testid={"input-add-section-name-" + sectionName}
                 />
-                <button type="button" onClick={() => changeSectionType(sectionName, 'multiple')} className={`text-xs px-2 py-0.5 rounded-r-none rounded-l border transition-colors ${selType === 'multiple' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-500 border-gray-300 hover:border-primary/50'}`} data-testid={"btn-add-sec-multi-" + sectionName}>☑ {tc("متعدد", "Multiple")}</button>
-                <button type="button" onClick={() => changeSectionType(sectionName, 'single')} className={`text-xs px-2 py-0.5 rounded-l-none rounded-r border-t border-b border-r transition-colors ${selType === 'single' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-500 border-gray-300 hover:border-primary/50'}`} data-testid={"btn-add-sec-single-" + sectionName}>◉ {tc("واحد", "Single")}</button>
+                <button type="button" onClick={() => changeSectionType(sectionName, 'multiple')} className={`text-xs px-2 py-0.5 rounded-r-none rounded-l border transition-colors ${selType === 'multiple' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-500 border-gray-300 hover:border-primary/50'}`} data-testid={"btn-add-sec-multi-" + sectionName}>☑ متعدد</button>
+                <button type="button" onClick={() => changeSectionType(sectionName, 'single')} className={`text-xs px-2 py-0.5 rounded-l-none rounded-r border-t border-b border-r transition-colors ${selType === 'single' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-500 border-gray-300 hover:border-primary/50'}`} data-testid={"btn-add-sec-single-" + sectionName}>◉ واحد</button>
                 <button type="button" onClick={() => setAddEditableAddons(prev => prev.filter((_, i) => !indices.includes(i)))} className="text-red-400 hover:text-red-600 mr-0.5" data-testid={"btn-del-section-" + sectionName}><X className="w-4 h-4" /></button>
               </div>
               <div className="space-y-1.5 pr-2">
@@ -1250,16 +1234,14 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
                     <button type="button" onClick={() => { setEditingAddonImageIdx(idx); setImageLibraryContext("add-addon"); setIsImageLibraryOpen(true); }} className="w-8 h-8 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center shrink-0 overflow-hidden hover:border-accent/50 transition-colors" data-testid={"button-add-addon-img-" + idx}>
                       {addon.imageUrl ? <img src={addon.imageUrl.startsWith('/') ? addon.imageUrl : '/' + addon.imageUrl} className="w-full h-full object-cover rounded-lg" alt="" /> : <Plus className="w-3 h-3 text-gray-400" />}
                     </button>
-                    <div className="flex flex-col gap-1 flex-1">
-                      <Input type="text" placeholder="اسم الخيار (عربي)" value={addon.nameAr} onChange={(e) => { const next = [...addEditableAddons]; next[idx] = { ...next[idx], nameAr: e.target.value }; setAddEditableAddons(next); }} className="bg-white border-gray-300 text-gray-900 h-8 text-sm" data-testid={"input-add-addon-name-" + idx} />
-                      <Input type="text" placeholder="Option name (English)" value={addon.nameEn || ''} onChange={(e) => { const next = [...addEditableAddons]; next[idx] = { ...next[idx], nameEn: e.target.value }; setAddEditableAddons(next); }} className="bg-white border-gray-200 text-gray-900 h-8 text-sm" dir="ltr" data-testid={"input-add-addon-name-en-" + idx} />
-                    </div>
+                    <Input type="text" placeholder={tc("اسم الخيار (عربي)", "Option name (AR)")} value={addon.nameAr} onChange={(e) => { const next = [...addEditableAddons]; next[idx] = { ...next[idx], nameAr: e.target.value }; setAddEditableAddons(next); }} className="bg-white border-gray-300 text-gray-900 flex-1 h-8 text-sm" data-testid={"input-add-addon-name-" + idx} />
+                    <Input type="text" placeholder={tc("الاسم (إنجليزي)", "Option name (EN)")} value={addon.nameEn || ''} onChange={(e) => { const next = [...addEditableAddons]; next[idx] = { ...next[idx], nameEn: e.target.value }; setAddEditableAddons(next); }} className="bg-white border-gray-300 text-gray-900 flex-1 h-8 text-sm" dir="ltr" data-testid={"input-add-addon-name-en-" + idx} />
                     <Input type="number" placeholder={tc("السعر", "Price")} value={addon.price} onChange={(e) => { const next = [...addEditableAddons]; next[idx] = { ...next[idx], price: parseFloat(e.target.value) || 0 }; setAddEditableAddons(next); }} className="bg-white border-gray-300 text-gray-900 w-20 h-8 text-sm" data-testid={"input-add-addon-price-" + idx} />
                     <button type="button" onClick={() => setAddEditableAddons(addEditableAddons.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 shrink-0" data-testid={"button-remove-addon-" + idx}><X className="w-4 h-4" /></button>
                   </div>
                 ); })}
               </div>
-              <button type="button" onClick={() => setAddEditableAddons(prev => [...prev, { nameAr: '', price: 0, imageUrl: '', category: 'other', section: sectionName, selectionType: selType }])} className="text-xs text-primary hover:underline pr-2" data-testid={"btn-add-option-" + sectionName}>+ {tc("إضافة خيار لهذا القسم", "Add option to this section")}</button>
+              <button type="button" onClick={() => setAddEditableAddons(prev => [...prev, { nameAr: '', price: 0, imageUrl: '', category: 'other', section: sectionName, selectionType: selType }])} className="text-xs text-primary hover:underline pr-2" data-testid={"btn-add-option-" + sectionName}>+ إضافة خيار لهذا القسم</button>
             </div>
           );
         })}
@@ -1269,22 +1251,20 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
               <button type="button" onClick={() => { setEditingAddonImageIdx(idx); setImageLibraryContext("add-addon"); setIsImageLibraryOpen(true); }} className="w-10 h-10 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center shrink-0 overflow-hidden hover:border-accent/50 transition-colors" data-testid={"button-add-addon-img-" + idx}>
                 {addon.imageUrl ? <img src={addon.imageUrl.startsWith('/') ? addon.imageUrl : '/' + addon.imageUrl} className="w-full h-full object-cover rounded-lg" alt="" /> : <Plus className="w-3 h-3 text-gray-500" />}
               </button>
-              <div className="flex flex-col gap-1 flex-1">
-                <Input type="text" placeholder="اسم الإضافة (عربي)" value={addon.nameAr} onChange={(e) => { const next = [...addEditableAddons]; next[idx] = { ...next[idx], nameAr: e.target.value }; setAddEditableAddons(next); }} className="bg-gray-50 border-gray-300 text-gray-900" data-testid={"input-add-addon-name-" + idx} />
-                <Input type="text" placeholder="Addon name (English)" value={addon.nameEn || ''} onChange={(e) => { const next = [...addEditableAddons]; next[idx] = { ...next[idx], nameEn: e.target.value }; setAddEditableAddons(next); }} className="bg-gray-50 border-gray-200 text-gray-900" dir="ltr" data-testid={"input-add-addon-name-en-" + idx} />
-              </div>
+              <Input type="text" placeholder={tc("اسم الإضافة (عربي)", "Addon name (AR)")} value={addon.nameAr} onChange={(e) => { const next = [...addEditableAddons]; next[idx] = { ...next[idx], nameAr: e.target.value }; setAddEditableAddons(next); }} className="bg-gray-50 border-gray-300 text-gray-900 flex-1" data-testid={"input-add-addon-name-" + idx} />
+              <Input type="text" placeholder={tc("الاسم (إنجليزي)", "Addon name (EN)")} value={addon.nameEn || ''} onChange={(e) => { const next = [...addEditableAddons]; next[idx] = { ...next[idx], nameEn: e.target.value }; setAddEditableAddons(next); }} className="bg-gray-50 border-gray-300 text-gray-900 flex-1" dir="ltr" data-testid={"input-add-addon-name-en-" + idx} />
               <Input type="number" placeholder={tc("السعر", "Price")} value={addon.price} onChange={(e) => { const next = [...addEditableAddons]; next[idx] = { ...next[idx], price: parseFloat(e.target.value) || 0 }; setAddEditableAddons(next); }} className="bg-gray-50 border-gray-300 text-gray-900 w-20" data-testid={"input-add-addon-price-" + idx} />
               <Button type="button" size="sm" variant="outline" onClick={() => setAddEditableAddons(addEditableAddons.filter((_, i) => i !== idx))} className="border-red-500/30 text-red-500 shrink-0" data-testid={"button-remove-addon-" + idx}><X className="w-4 h-4" /></Button>
             </div>
             <div className="flex gap-1">
-              <button type="button" onClick={() => { const next = [...addEditableAddons]; next[idx] = { ...next[idx], selectionType: 'multiple' }; setAddEditableAddons(next); }} className={`flex-1 text-xs py-1 rounded border transition-colors ${(addon.selectionType || 'multiple') === 'multiple' ? 'bg-primary text-primary-foreground border-primary' : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-400'}`} data-testid={"button-add-addon-multi-" + idx}>☑ {tc("اختيار متعدد", "Multiple choice")}</button>
-              <button type="button" onClick={() => { const next = [...addEditableAddons]; next[idx] = { ...next[idx], selectionType: 'single' }; setAddEditableAddons(next); }} className={`flex-1 text-xs py-1 rounded border transition-colors ${(addon.selectionType || 'multiple') === 'single' ? 'bg-primary text-primary-foreground border-primary' : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-400'}`} data-testid={"button-add-addon-single-" + idx}>◉ {tc("اختيار واحد فقط", "Single choice only")}</button>
+              <button type="button" onClick={() => { const next = [...addEditableAddons]; next[idx] = { ...next[idx], selectionType: 'multiple' }; setAddEditableAddons(next); }} className={`flex-1 text-xs py-1 rounded border transition-colors ${(addon.selectionType || 'multiple') === 'multiple' ? 'bg-primary text-primary-foreground border-primary' : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-400'}`} data-testid={"button-add-addon-multi-" + idx}>☑ اختيار متعدد</button>
+              <button type="button" onClick={() => { const next = [...addEditableAddons]; next[idx] = { ...next[idx], selectionType: 'single' }; setAddEditableAddons(next); }} className={`flex-1 text-xs py-1 rounded border transition-colors ${(addon.selectionType || 'multiple') === 'single' ? 'bg-primary text-primary-foreground border-primary' : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-400'}`} data-testid={"button-add-addon-single-" + idx}>◉ اختيار واحد فقط</button>
             </div>
           </div>
         ); })}
         <div className="flex gap-2">
-          <Button type="button" size="sm" variant="outline" onClick={() => { const newName = `قسم ${sectionOrder.length + 1}`; setAddEditableAddons(prev => [...prev, { nameAr: '', price: 0, imageUrl: '', category: 'other', section: newName, selectionType: 'multiple' }]); }} className="border-blue-400/40 text-blue-400 flex-1" data-testid="button-add-section"><Plus className="w-4 h-4 ml-1" />{tc("إضافة قسم جديد", "Add Section")}</Button>
-          <Button type="button" size="sm" variant="outline" onClick={() => setAddEditableAddons([...addEditableAddons, { nameAr: '', price: 0, imageUrl: '', category: 'other', section: '', selectionType: 'multiple' }])} className="border-green-500/30 text-green-400 flex-1" data-testid="button-add-addon"><Plus className="w-4 h-4 ml-1" />{tc("إضافة خيار بدون قسم", "Add Option (no section)")}</Button>
+          <Button type="button" size="sm" variant="outline" onClick={() => { const newName = `قسم ${sectionOrder.length + 1}`; setAddEditableAddons(prev => [...prev, { nameAr: '', price: 0, imageUrl: '', category: 'other', section: newName, selectionType: 'multiple' }]); }} className="border-blue-400/40 text-blue-400 flex-1" data-testid="button-add-section"><Plus className="w-4 h-4 ml-1" />إضافة قسم جديد</Button>
+          <Button type="button" size="sm" variant="outline" onClick={() => setAddEditableAddons([...addEditableAddons, { nameAr: '', price: 0, imageUrl: '', category: 'other', section: '', selectionType: 'multiple' }])} className="border-green-500/30 text-green-400 flex-1" data-testid="button-add-addon"><Plus className="w-4 h-4 ml-1" />إضافة خيار بدون قسم</Button>
         </div>
       </div>
     );
@@ -1293,13 +1273,13 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
 
 {/* Bundled Items Section */}
 <div className="space-y-2">
-  <Label className="text-gray-300 flex items-center gap-2"><span>🔗</span> {tc("منتجات مصاحبة مع الطلب", "Bundled Products")}</Label>
-  <p className="text-xs text-gray-500">{tc("أضف منتجات من المنيو تُعرض على العميل عند طلب هذا المنتج (مجانية أو بسعر مخفض)", "Add menu products shown to the customer when ordering this item (free or at a discounted price)")}</p>
+  <Label className="text-gray-300 flex items-center gap-2"><span>🔗</span> منتجات مصاحبة مع الطلب</Label>
+  <p className="text-xs text-gray-500">أضف منتجات من المنيو تُعرض على العميل عند طلب هذا المنتج (مجانية أو بسعر مخفض)</p>
   {addBundledItems.map((section, secIdx) => (
     <div key={secIdx} className="border border-purple-200 rounded-lg p-3 space-y-2 bg-purple-50/30">
       <div className="flex items-center gap-2">
         <Input
-          placeholder="اسم القسم (مثال: اختر وجبتك)"
+          placeholder="اسم القسم (مثال: اختر مشروبك)"
           value={section.sectionTitle}
           onChange={(e) => { const n = [...addBundledItems]; n[secIdx] = {...n[secIdx], sectionTitle: e.target.value}; setAddBundledItems(n); }}
           className="bg-white border-gray-300 text-gray-900 flex-1 h-8 text-sm"
@@ -1308,19 +1288,19 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
         <button type="button" onClick={() => setAddBundledItems(addBundledItems.filter((_, i) => i !== secIdx))} className="text-red-400 hover:text-red-600" data-testid={`btn-del-bundle-${secIdx}`}><X className="w-4 h-4" /></button>
       </div>
       <div className="flex gap-2 items-center flex-wrap">
-        <span className="text-xs text-gray-500">{tc("نوع الاختيار:", "Selection:")}</span>
-        <button type="button" onClick={() => { const n = [...addBundledItems]; n[secIdx] = {...n[secIdx], selectionType: 'single', maxSelectable: 1}; setAddBundledItems(n); }} className={`text-xs px-2 py-1 rounded border transition-colors ${section.selectionType === 'single' ? 'bg-purple-500 text-white border-purple-500' : 'bg-white text-gray-600 border-gray-300'}`} data-testid={`btn-bundle-single-${secIdx}`}>◉ {tc("واحد فقط", "One only")}</button>
-        <button type="button" onClick={() => { const n = [...addBundledItems]; n[secIdx] = {...n[secIdx], selectionType: 'multiple'}; setAddBundledItems(n); }} className={`text-xs px-2 py-1 rounded border transition-colors ${section.selectionType === 'multiple' ? 'bg-purple-500 text-white border-purple-500' : 'bg-white text-gray-600 border-gray-300'}`} data-testid={`btn-bundle-multi-${secIdx}`}>☑ {tc("متعدد", "Multiple")}</button>
+        <span className="text-xs text-gray-500">نوع الاختيار:</span>
+        <button type="button" onClick={() => { const n = [...addBundledItems]; n[secIdx] = {...n[secIdx], selectionType: 'single', maxSelectable: 1}; setAddBundledItems(n); }} className={`text-xs px-2 py-1 rounded border transition-colors ${section.selectionType === 'single' ? 'bg-purple-500 text-white border-purple-500' : 'bg-white text-gray-600 border-gray-300'}`} data-testid={`btn-bundle-single-${secIdx}`}>◉ واحد فقط</button>
+        <button type="button" onClick={() => { const n = [...addBundledItems]; n[secIdx] = {...n[secIdx], selectionType: 'multiple'}; setAddBundledItems(n); }} className={`text-xs px-2 py-1 rounded border transition-colors ${section.selectionType === 'multiple' ? 'bg-purple-500 text-white border-purple-500' : 'bg-white text-gray-600 border-gray-300'}`} data-testid={`btn-bundle-multi-${secIdx}`}>☑ متعدد</button>
         {section.selectionType === 'multiple' && (
           <div className="flex items-center gap-1">
-            <span className="text-xs text-gray-500">{tc("حتى:", "Up to:")}</span>
+            <span className="text-xs text-gray-500">حتى:</span>
             <Input type="number" min={1} value={section.maxSelectable || 1} onChange={(e) => { const n = [...addBundledItems]; n[secIdx] = {...n[secIdx], maxSelectable: parseInt(e.target.value) || 1}; setAddBundledItems(n); }} className="bg-white border-gray-300 text-gray-900 w-14 h-7 text-xs" data-testid={`input-bundle-max-${secIdx}`} />
-            <span className="text-xs text-gray-500">{tc("خيار", "option")}</span>
+            <span className="text-xs text-gray-500">خيار</span>
           </div>
         )}
         <div className="flex items-center gap-1">
-          <span className="text-xs text-gray-500">{tc("إلزامي؟", "Required?")}</span>
-          <button type="button" onClick={() => { const n = [...addBundledItems]; n[secIdx] = {...n[secIdx], minSelectable: n[secIdx].minSelectable > 0 ? 0 : 1}; setAddBundledItems(n); }} className={`text-xs px-2 py-1 rounded border transition-colors ${section.minSelectable > 0 ? 'bg-orange-400 text-white border-orange-400' : 'bg-white text-gray-600 border-gray-300'}`} data-testid={`btn-bundle-required-${secIdx}`}>{section.minSelectable > 0 ? tc('نعم', 'Yes') : tc('اختياري', 'Optional')}</button>
+          <span className="text-xs text-gray-500">إلزامي؟</span>
+          <button type="button" onClick={() => { const n = [...addBundledItems]; n[secIdx] = {...n[secIdx], minSelectable: n[secIdx].minSelectable > 0 ? 0 : 1}; setAddBundledItems(n); }} className={`text-xs px-2 py-1 rounded border transition-colors ${section.minSelectable > 0 ? 'bg-orange-400 text-white border-orange-400' : 'bg-white text-gray-600 border-gray-300'}`} data-testid={`btn-bundle-required-${secIdx}`}>{section.minSelectable > 0 ? 'نعم' : 'اختياري'}</button>
         </div>
       </div>
       {section.items.map((bItem, itemIdx) => (
@@ -1331,13 +1311,13 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
             n[secIdx].items[itemIdx] = { productId: e.target.value, nameAr: picked?.nameAr || '', nameEn: picked?.nameEn, imageUrl: picked?.imageUrl, originalPrice: picked?.price || 0, customPrice: n[secIdx].items[itemIdx].customPrice };
             setAddBundledItems(n);
           }} className="flex-1 text-sm border border-gray-300 rounded px-2 py-1 bg-white text-gray-900" data-testid={`select-bundle-product-${secIdx}-${itemIdx}`}>
-            <option value="">{tc("اختر منتجاً من المنيو", "Select a menu product")}</option>
+            <option value="">اختر منتجاً من المنيو</option>
             {coffeeItems.map(c => <option key={c.id} value={c.id}>{c.nameAr} ({c.price} ر.س)</option>)}
           </select>
           <div className="flex items-center gap-1 shrink-0">
-            <Input type="number" min={0} step={0.5} placeholder={tc("سعره", "Price")} value={bItem.customPrice} onChange={(e) => { const n = [...addBundledItems]; n[secIdx].items[itemIdx] = {...n[secIdx].items[itemIdx], customPrice: parseFloat(e.target.value) || 0}; setAddBundledItems(n); }} className="bg-white border-gray-300 text-gray-900 w-20 h-8 text-sm" data-testid={`input-bundle-price-${secIdx}-${itemIdx}`} />
-            <span className="text-xs text-gray-500">ر.س</span>
-            {bItem.customPrice === 0 && bItem.productId && <span className="text-xs bg-green-100 text-green-700 px-1 rounded">{tc("مجاني", "Free")}</span>}
+            <Input type="number" min={0} step={0.5} placeholder="سعره" value={bItem.customPrice} onChange={(e) => { const n = [...addBundledItems]; n[secIdx].items[itemIdx] = {...n[secIdx].items[itemIdx], customPrice: parseFloat(e.target.value) || 0}; setAddBundledItems(n); }} className="bg-white border-gray-300 text-gray-900 w-20 h-8 text-sm" data-testid={`input-bundle-price-${secIdx}-${itemIdx}`} />
+            <SarIcon size={11} />
+            {bItem.customPrice === 0 && bItem.productId && <span className="text-xs bg-green-100 text-green-700 px-1 rounded">مجاني</span>}
           </div>
           <button type="button" onClick={() => { const n = [...addBundledItems]; n[secIdx].items = n[secIdx].items.filter((_, i) => i !== itemIdx); setAddBundledItems(n); }} className="text-red-400 hover:text-red-600 shrink-0" data-testid={`btn-del-bundle-item-${secIdx}-${itemIdx}`}><X className="w-3 h-3" /></button>
         </div>
@@ -1345,13 +1325,13 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
       <button type="button" onClick={() => { const n = [...addBundledItems]; n[secIdx].items.push({ productId: '', nameAr: '', originalPrice: 0, customPrice: 0 }); setAddBundledItems(n); }} className="text-xs text-purple-600 hover:underline" data-testid={`btn-add-bundle-item-${secIdx}`}>+ إضافة منتج لهذا القسم</button>
     </div>
   ))}
-  <Button type="button" size="sm" variant="outline" onClick={() => setAddBundledItems([...addBundledItems, { sectionTitle: '', selectionType: 'single', minSelectable: 0, maxSelectable: 1, items: [] }])} className="border-purple-400/40 text-purple-600 w-full" data-testid="btn-add-bundle-section"><Plus className="w-4 h-4 ml-1" />{tc("إضافة قسم منتجات مصاحبة", "Add Bundle Section")}</Button>
+  <Button type="button" size="sm" variant="outline" onClick={() => setAddBundledItems([...addBundledItems, { sectionTitle: '', selectionType: 'single', minSelectable: 0, maxSelectable: 1, items: [] }])} className="border-purple-400/40 text-purple-600 w-full" data-testid="btn-add-bundle-section"><Plus className="w-4 h-4 ml-1" />إضافة قسم منتجات مصاحبة</Button>
 </div>
 
 {/* Reservation Section */}
 <div className="space-y-2 border border-amber-200 rounded-lg p-3 bg-amber-50/30">
   <div className="flex items-center justify-between">
-    <Label className="text-gray-700 font-semibold flex items-center gap-2">🗓️ {tc("منتج يحتاج حجز مسبق", "Requires Advance Booking")}</Label>
+    <Label className="text-gray-700 font-semibold flex items-center gap-2">🗓️ منتج يحتاج حجز مسبق</Label>
     <button
       type="button"
       onClick={() => setAddIsReservation(!addIsReservation)}
@@ -1363,8 +1343,8 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
   </div>
   {addIsReservation && (
     <div className="space-y-3 pt-2">
-      <p className="text-xs text-amber-700">{tc("هذا المنتج لا يمكن طلبه مع منتجات أخرى، ويُلزم العميل بالحجز في الفرع فقط مع تأكيد عبر واتساب", "This product cannot be ordered with others and requires in-branch booking confirmed via WhatsApp")}</p>
-      <Label className="text-gray-600 text-sm">{tc("الباقات المتاحة للحجز", "Available Booking Packages")}</Label>
+      <p className="text-xs text-amber-700">هذا المنتج لا يمكن طلبه مع منتجات أخرى، ويُلزم العميل بالحجز في الفرع فقط مع تأكيد عبر واتساب</p>
+      <Label className="text-gray-600 text-sm">الباقات المتاحة للحجز</Label>
       {addReservationPackages.map((pkg, idx) => (
         <div key={idx} className="border border-amber-200 rounded-lg p-3 space-y-2 bg-white">
           <div className="flex items-center gap-2">
@@ -1385,15 +1365,15 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
           </div>
         </div>
       ))}
-      <Button type="button" size="sm" variant="outline" onClick={() => setAddReservationPackages([...addReservationPackages, { packageName: '', price: 0 }])} className="border-amber-400/40 text-amber-700 w-full" data-testid="btn-add-pkg"><Plus className="w-4 h-4 ml-1" />{tc("إضافة باقة", "Add Package")}</Button>
+      <Button type="button" size="sm" variant="outline" onClick={() => setAddReservationPackages([...addReservationPackages, { packageName: '', price: 0 }])} className="border-amber-400/40 text-amber-700 w-full" data-testid="btn-add-pkg"><Plus className="w-4 h-4 ml-1" />إضافة باقة</Button>
     </div>
   )}
 </div>
 
 {canManageMenu && branches.length > 0 && (
    <div>
-     <Label className="text-gray-300">{tc("متوفر في الفروع", "Available at Branches")}</Label>
-     <p className="text-gray-500 text-xs mb-2">{tc("اختر الفروع التي سيتوفر فيها هذا المنتج (اتركه فارغاً للتوفر في جميع الفروع)", "Select the branches where this product is available (leave empty for all branches)")}</p>
+     <Label className="text-gray-300">متوفر في الفروع</Label>
+     <p className="text-gray-500 text-xs mb-2">اختر الفروع التي سيتوفر فيها هذا المنتج (اتركه فارغاً للتوفر في جميع الفروع)</p>
      <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto bg-gray-50 p-3 rounded-lg border border-gray-200">
        {branches.filter((b: any) => b.isActive === 1 || b.isActive === "1").map((branch: any) => {
          const branchId = branch.id;
@@ -1425,14 +1405,14 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
  className="border-gray-600 text-gray-300"
  data-testid="button-cancel"
  >
- {tc("إلغاء", "Cancel")}
+ إلغاء
  </Button>
  <Button
  type="submit"
   className="bg-primary"
  data-testid="button-next"
  >
- {tc("التالي: إضافة المكونات", "Next: Add Ingredients")}
+ "التالي: إضافة المكونات"
  <ArrowLeft className="w-4 h-4 mr-2" />
  </Button>
  </div>
@@ -1440,17 +1420,17 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
  ) : (
  <div className="space-y-4">
    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-     <p className="text-gray-400 text-sm mb-1">{tc("المشروب:", "Item:")}</p>
+     <p className="text-gray-400 text-sm mb-1">المشروب:</p>
      <p className="text-accent font-bold text-lg">{step1Data?.nameAr}</p>
-     <p className="text-gray-500 text-sm">{step1Data?.category && categoryNames[step1Data.category as keyof typeof categoryNames]} • {step1Data?.price} {tc("ريال", "SAR")}</p>
+     <p className="text-gray-500 text-sm">{step1Data?.category && categoryNames[step1Data.category as keyof typeof categoryNames]} • {step1Data?.price} <SarIcon size={11} /></p>
    </div>
 
    <div className="border-t border-gray-200 pt-4">
      <Label className="text-gray-600 text-lg flex items-center gap-2">
        <FlaskConical className="w-5 h-5" />
-       {tc("وصفة المنتج (المواد الخام)", "Product Recipe (Raw Materials)")}
+       وصفة المنتج (المواد الخام)
      </Label>
-     <p className="text-gray-500 text-sm mb-3">{tc("اختر المواد الخام اللازمة لتحضير المشروب مع الكميات", "Select the raw materials needed to prepare the item with quantities")}</p>
+     <p className="text-gray-500 text-sm mb-3">اختر المواد الخام اللازمة لتحضير المشروب مع الكميات</p>
      
     {canManageMenu && rawItems.length > 0 ? (
        <>
@@ -1481,7 +1461,7 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
                  />
                  <label htmlFor={`raw-step2-${raw.id}`} className="text-gray-600 flex-1 cursor-pointer">
                    <span>{raw.nameAr}</span>
-                   <span className="text-gray-500 text-xs mr-2">({raw.unitCost.toFixed(2)} {tc("ريال", "SAR")}/{raw.unit})</span>
+                   <span className="text-gray-500 text-xs mr-2">({raw.unitCost.toFixed(2)} <SarIcon size={10} />/{raw.unit})</span>
                  </label>
                  {isSelected && (
                    <div className="flex items-center gap-2">
@@ -1510,11 +1490,11 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
                          <SelectValue />
                        </SelectTrigger>
                        <SelectContent className="bg-white border-gray-200 text-gray-900">
-                         <SelectItem value="g">{tc("جرام", "g")}</SelectItem>
-                         <SelectItem value="ml">{tc("مل", "ml")}</SelectItem>
-                         <SelectItem value="kg">{tc("كجم", "kg")}</SelectItem>
-                         <SelectItem value="liter">{tc("لتر", "liter")}</SelectItem>
-                         <SelectItem value="piece">{tc("قطعة", "piece")}</SelectItem>
+                         <SelectItem value="g">جرام</SelectItem>
+                         <SelectItem value="ml">مل</SelectItem>
+                         <SelectItem value="kg">كجم</SelectItem>
+                         <SelectItem value="liter">لتر</SelectItem>
+                         <SelectItem value="piece">قطعة</SelectItem>
                        </SelectContent>
                      </Select>
                    </div>
@@ -1557,7 +1537,7 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
                    <div className="flex items-center justify-between mb-3">
                      <span className="text-gray-600 font-medium flex items-center gap-2">
                        <FlaskConical className="w-4 h-4 text-green-400" />
-                       {tc("تكلفة الوصفة التقديرية", "Estimated Recipe Cost")}
+                       تكلفة الوصفة التقديرية
                      </span>
                    </div>
                    
@@ -1566,7 +1546,7 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
                        {breakdown.map((item, idx) => (
                          <div key={idx} className="flex justify-between text-gray-400">
                            <span>{item.name} ({item.quantity} {item.unit})</span>
-                           <span>{item.cost.toFixed(2)} {tc("ريال", "SAR")}</span>
+                           <span>{item.cost.toFixed(2)} <SarIcon size={10} /></span>
                          </div>
                        ))}
                      </div>
@@ -1574,17 +1554,17 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
                    
                    <div className="border-t border-green-500/20 pt-3 space-y-2">
                      <div className="flex justify-between items-center">
-                       <span className="text-gray-300">{tc("تكلفة الوصفة (COGS):", "Recipe Cost (COGS):")}</span>
-                       <span className="text-green-400 font-bold" data-testid="text-recipe-cost">{totalCost.toFixed(2)} {tc("ريال", "SAR")}</span>
+                       <span className="text-gray-300">تكلفة الوصفة (COGS):</span>
+                       <span className="text-green-400 font-bold" data-testid="text-recipe-cost">{totalCost.toFixed(2)} <SarIcon size={11} /></span>
                      </div>
                      <div className="flex justify-between items-center">
-                       <span className="text-gray-300">{tc("سعر البيع:", "Selling Price:")}</span>
-                       <span className="text-white font-bold">{sellingPrice.toFixed(2)} {tc("ريال", "SAR")}</span>
+                       <span className="text-gray-300">سعر البيع:</span>
+                       <span className="text-white font-bold">{sellingPrice.toFixed(2)} <SarIcon size={11} /></span>
                      </div>
                      <div className="flex justify-between items-center">
-                       <span className="text-gray-300">{tc("هامش الربح:", "Profit Margin:")}</span>
+                       <span className="text-gray-300">هامش الربح:</span>
                        <span className={`font-bold ${grossProfit >= 0 ? 'text-green-500' : 'text-red-500'}`} data-testid="text-profit-margin">
-                         {grossProfit.toFixed(2)} {tc("ريال", "SAR")} ({profitMargin.toFixed(1)}%)
+                         {grossProfit.toFixed(2)} <SarIcon size={11} /> ({profitMargin.toFixed(1)}%)
                        </span>
                      </div>
                    </div>
@@ -1598,16 +1578,16 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
            <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-lg p-3 flex items-start gap-2">
              <AlertTriangle className="w-5 h-5 text-yellow-500 mt-0.5 flex-shrink-0" />
              <div>
-               <p className="text-yellow-400 text-sm font-medium">{tc("تنبيه: لم يتم إضافة وصفة", "Warning: No recipe added")}</p>
-               <p className="text-yellow-500/80 text-xs">{tc("المنتجات بدون وصفة لن يتم خصمها من المخزون عند البيع.", "Products without a recipe will not deduct from inventory on sale.")}</p>
+               <p className="text-yellow-400 text-sm font-medium">تنبيه: لم يتم إضافة وصفة</p>
+               <p className="text-yellow-500/80 text-xs">المنتجات بدون وصفة لن يتم خصمها من المخزون عند البيع.</p>
              </div>
            </div>
          )}
        </>
      ) : (
        <div className="bg-gray-800/50 rounded-lg p-4 text-center">
-         <p className="text-gray-400 text-sm">{tc("الوصفات متاحة للمديرين فقط", "Recipes are available to managers only")}</p>
-         <p className="text-gray-500 text-xs mt-1">{tc("أو لا توجد مواد خام متاحة", "Or no raw materials available")}</p>
+         <p className="text-gray-400 text-sm">الوصفات متاحة للمديرين فقط</p>
+         <p className="text-gray-500 text-xs mt-1">أو لا توجد مواد خام متاحة</p>
        </div>
      )}
    </div>
@@ -1621,7 +1601,7 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
        data-testid="button-back-step"
      >
        <ArrowRight className="w-4 h-4 ml-2" />
-       {tc("السابق", "Back")}
+       السابق
      </Button>
      <div className="flex gap-2">
        <Button
@@ -1632,7 +1612,7 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
          className="border-gray-600 text-gray-300"
          data-testid="button-skip"
        >
-         {createItemMutation.isPending ? tc("جاري الإضافة...", "Adding...") : tc("تخطي المكونات", "Skip Ingredients")}
+         {createItemMutation.isPending ? "جاري الإضافة..." : "تخطي المكونات"}
        </Button>
        <Button
          type="button"
@@ -1641,7 +1621,7 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
          className="bg-gradient-to-r from-green-500 to-green-700"
          data-testid="button-submit"
        >
-         {createItemMutation.isPending ? tc("جاري الإضافة...", "Adding...") : tc("إضافة المشروب", "Add Item")}
+         {createItemMutation.isPending ? "جاري الإضافة..." : "إضافة المشروب"}
        </Button>
      </div>
    </div>
@@ -1656,7 +1636,7 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
  className="border-primary/50 text-primary hover:bg-primary hover:text-white"
  data-testid="button-ingredients"
  >
- {tc("إدارة المكونات", "Manage Ingredients")}
+ إدارةالمكونات
  </Button>
  <Button
  variant="outline"
@@ -1665,7 +1645,7 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
  data-testid="button-back"
  >
  <ArrowRight className="w-4 h-4 ml-2" />
- {tc("العودة للوحة التحكم", "Back to Dashboard")}
+ العودةللوحةالتحكم
  </Button>
  </div>
  </div>
@@ -1676,7 +1656,7 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
  {isLoading ? (
  <div className="text-center text-primary py-12">
  <Coffee className="w-12 h-12 animate-spin mx-auto mb-4" />
- <p>{isFood ? tc('جاري تحميل المأكولات...', 'Loading food items...') : tc('جاري تحميل الأطباق...', 'Loading dishes...')}</p>
+ <p>{isFood ? 'جاري تحميل المأكولات...' : 'جاري تحميل المشروبات...'}</p>
  </div>
  ) : (
  Object.entries(categorizedItems).map(([category, items]) => (
@@ -1710,13 +1690,13 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
  <p className="text-gray-400 text-sm">{item.nameEn}</p>
  <div className="flex items-center gap-2 mt-1">
  <span className="text-accent font-bold" data-testid={`text-price-${item.id}`}>
- {parseFloat(String(item.price)).toFixed(2)} {tc("ريال", "SAR")}
+ {parseFloat(String(item.price)).toFixed(2)} <SarIcon size={11} />
  </span>
  {item.coffeeStrength && item.coffeeStrength !== "classic" && (
  <Badge variant="outline" className="text-xs border-gray-300 text-gray-400">
- {item.coffeeStrength === "strong" && tc("قوي", "Strong")}
- {item.coffeeStrength === "medium" && tc("متوسط", "Medium")}
- {item.coffeeStrength === "mild" && tc("خفيف", "Mild")}
+ {item.coffeeStrength === "strong" && "قوي"}
+ {item.coffeeStrength === "medium" && "متوسط"}
+ {item.coffeeStrength === "mild" && "خفيف"}
  </Badge>
  )}
  </div>
@@ -1737,25 +1717,25 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
  {item.availabilityStatus === 'available' && (
  <>
  <CheckCircle className="w-4 h-4 ml-1" />
- {tc("متوفر", "Available")}
+ متوفر
  </>
  )}
  {item.availabilityStatus === 'out_of_stock' && (
  <>
  <XCircle className="w-4 h-4 ml-1" />
- {tc("نفذت الكمية", "Out of Stock")}
+ نفذت الكمية 
  </>
  )}
  {item.availabilityStatus === 'coming_soon' && (
  <>
  <Coffee className="w-4 h-4 ml-1" />
- {tc("قريباً", "Coming Soon")}
+ قريباً
  </>
  )}
  {item.availabilityStatus === 'temporarily_unavailable' && (
  <>
  <XCircle className="w-4 h-4 ml-1" />
- {tc("غير متوفر مؤقتاً", "Temporarily Unavailable")}
+ غير متوفر مؤقتاً
  </>
  )}
  </Badge>
@@ -1767,10 +1747,10 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
  className="bg-gray-50 border border-gray-300 rounded-lg px-3 py-1 text-sm text-primary"
  data-testid={`select-status-${item.id}`}
  >
- <option value="available">{tc(" متوفر", " Available")}</option>
- <option value="out_of_stock">{tc(" نفذت الكمية", " Out of Stock")}</option>
- <option value="temporarily_unavailable">{tc("⏸ غير متوفر مؤقتاً", "⏸ Temporarily Unavailable")}</option>
- <option value="coming_soon">{tc(" قريباً", " Coming Soon")}</option>
+ <option value="available"> متوفر</option>
+ <option value="out_of_stock"> نفذت الكمية </option>
+ <option value="temporarily_unavailable">⏸ غير متوفر مؤقتاً</option>
+ <option value="coming_soon"> قريباً</option>
  </select>
  </div>
 
@@ -1780,11 +1760,11 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
    {getProductRecipeCount(item.id) > 0 ? (
      <Badge className="bg-green-600/20 text-green-400 border-green-500/30 text-xs">
        <FlaskConical className="w-3 h-3 ml-1" />
-       {getProductRecipeCount(item.id)} {tc("مكون", "ingredients")}
+       {getProductRecipeCount(item.id)} مكون
      </Badge>
    ) : (
      <Badge variant="outline" className="border-yellow-500/30 text-yellow-400 text-xs">
-       {tc("بدون وصفة", "No recipe")}
+       بدون وصفة
      </Badge>
    )}
  </div>
@@ -1801,7 +1781,7 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
  data-testid={`button-toggle-new-${item.id}`}
  >
  <Sparkles className="w-4 h-4 ml-1" />
- {item.isNewProduct === 1 ? tc("منتج جديد", "New Product") : tc("جديد؟", "New?")}
+ {item.isNewProduct === 1 ? "منتج جديد" : "جديد؟"}
  </Button>
  <div className="flex gap-1">
  <Button
@@ -1847,13 +1827,13 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
  <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
  <DialogContent className="bg-white border-gray-200 text-gray-900 max-w-2xl max-h-[90vh] overflow-y-auto">
  <DialogHeader>
- <DialogTitle className="text-accent">{tc("تعديل المشروب", "Edit Item")}</DialogTitle>
+ <DialogTitle className="text-accent">تعديل المشروب</DialogTitle>
  </DialogHeader>
  {editingItem && (
  <form onSubmit={handleSubmitEditItem} className="space-y-4">
  <div className="grid grid-cols-2 gap-4">
  <div>
- <Label htmlFor="edit-nameAr" className="text-gray-300">{tc("الاسم بالعربية *", "Arabic Name *")}</Label>
+ <Label htmlFor="edit-nameAr" className="text-gray-300">الاسم بالعربية *</Label>
  <Input
  id="edit-nameAr"
  name="nameAr"
@@ -1926,7 +1906,7 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
  </SelectTrigger>
  <SelectContent className="bg-white border-gray-200 text-gray-900">
  {availableForDropdown.map(cat => (
-   <SelectItem key={cat.id} value={cat.id}>{tc(cat.nameAr, cat.nameEn || cat.nameAr)}</SelectItem>
+   <SelectItem key={cat.id} value={cat.id}>{cat.nameAr}</SelectItem>
  ))}
  </SelectContent>
  </Select>
@@ -1996,67 +1976,50 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
       </button>
     )}
   </div>
-  {editImageUrls.length === 0 && <p className="text-gray-500 text-xs">{tc("اختر صوراً من المكتبة. الصورة الأولى ستكون الرئيسية", "Select photos from the library. The first photo will be the main one.")}</p>}
+  {editImageUrls.length === 0 && <p className="text-gray-500 text-xs">اختر صوراً من المكتبة. الصورة الأولى ستكون الرئيسية</p>}
 </div>
 </div>
 
  {/* Editable Sizes */}
  <div className="space-y-2">
-   <Label className="text-gray-300">{tc("الأحجام المتاحة", "Available Sizes")}</Label>
+   <Label className="text-gray-300">الأحجام المتاحة</Label>
    <div className="space-y-2">
      {editableSizes.map((size, idx) => (
-       <div key={idx} className="flex flex-col gap-1">
-         <div className="flex gap-2 items-center">
-           <div className="flex flex-col gap-1 flex-1">
-             <Input
-               type="text"
-               placeholder={tc("اسم الحجم (مثال: صغير)", "Arabic name (e.g. صغير)")}
-               value={size.nameAr}
-               onChange={(e) => {
-                 const newSizes = [...editableSizes];
-                 newSizes[idx] = { ...newSizes[idx], nameAr: e.target.value };
-                 setEditableSizes(newSizes);
-               }}
-               className="bg-gray-50 border-gray-300 text-gray-900"
-               data-testid={`input-edit-size-name-${idx}`}
-             />
-             <Input
-               type="text"
-               placeholder="English name (e.g. Small)"
-               value={size.nameEn || ''}
-               onChange={(e) => {
-                 const newSizes = [...editableSizes];
-                 newSizes[idx] = { ...newSizes[idx], nameEn: e.target.value };
-                 setEditableSizes(newSizes);
-               }}
-               className="bg-gray-50 border-gray-200 text-gray-900"
-               dir="ltr"
-               data-testid={`input-edit-size-name-en-${idx}`}
-             />
-           </div>
-           <Input
-             type="number"
-             placeholder={tc("السعر", "Price")}
-             value={size.price}
-             onChange={(e) => {
-               const newSizes = [...editableSizes];
-               newSizes[idx] = { ...newSizes[idx], price: parseFloat(e.target.value) || 0 };
-               setEditableSizes(newSizes);
-             }}
-             className="bg-gray-50 border-gray-300 text-gray-900 w-24"
-             data-testid={`input-edit-size-price-${idx}`}
-           />
-           <Button
-             type="button"
-             size="sm"
-             variant="outline"
-             onClick={() => setEditableSizes(editableSizes.filter((_, i) => i !== idx))}
-             className="border-red-500/30 text-red-500 shrink-0"
-             data-testid={`button-delete-size-${idx}`}
-           >
-             <X className="w-4 h-4" />
-           </Button>
-         </div>
+       <div key={idx} className="flex gap-2 items-end">
+         <Input
+           type="text"
+           placeholder="اسم الحجم"
+           value={size.nameAr}
+           onChange={(e) => {
+             const newSizes = [...editableSizes];
+             newSizes[idx].nameAr = e.target.value;
+             setEditableSizes(newSizes);
+           }}
+           className="bg-gray-50 border-gray-300 text-gray-900 flex-1"
+           data-testid={`input-edit-size-name-${idx}`}
+         />
+         <Input
+           type="number"
+           placeholder="السعر"
+           value={size.price}
+           onChange={(e) => {
+             const newSizes = [...editableSizes];
+             newSizes[idx].price = parseFloat(e.target.value) || 0;
+             setEditableSizes(newSizes);
+           }}
+           className="bg-gray-50 border-gray-300 text-gray-900 w-24"
+           data-testid={`input-edit-size-price-${idx}`}
+         />
+         <Button
+           type="button"
+           size="sm"
+           variant="outline"
+           onClick={() => setEditableSizes(editableSizes.filter((_, i) => i !== idx))}
+           className="border-red-500/30 text-red-500"
+           data-testid={`button-delete-size-${idx}`}
+         >
+           <X className="w-4 h-4" />
+         </Button>
        </div>
      ))}
    </div>
@@ -2064,18 +2027,18 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
      type="button"
      size="sm"
      variant="outline"
-     onClick={() => setEditableSizes([...editableSizes, {nameAr: '', nameEn: '', price: 0}])}
+     onClick={() => setEditableSizes([...editableSizes, {nameAr: '', price: 0}])}
      className="border-green-500/30 text-green-400 w-full"
      data-testid="button-add-edit-size"
    >
      <Plus className="w-4 h-4 ml-1" />
-     {tc("إضافة حجم", "Add Size")}
+     إضافة حجم
    </Button>
  </div>
 
  {/* Editable Addons - Grouped by Section */}
  <div className="space-y-2">
-   <Label className="text-gray-300">{tc("الإضافات المتاحة", "Available Add-ons")}</Label>
+   <Label className="text-gray-300">الإضافات المتاحة</Label>
    {(() => {
      const sectionOrder: string[] = [];
      const sectionMap: Record<string, number[]> = {};
@@ -2100,12 +2063,12 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
                    type="text"
                    value={sectionName}
                    onChange={(e) => { const newName = e.target.value; setEditableAddons(prev => prev.map(a => a.section === sectionName ? {...a, section: newName} : a)); }}
-                   placeholder={tc("اسم القسم", "Section name")}
+                   placeholder="اسم القسم"
                    className="flex-1 text-sm font-semibold text-gray-700 bg-transparent border-b border-gray-200 focus:border-primary focus:outline-none"
                    data-testid={"input-edit-section-name-" + sectionName}
                  />
-                 <button type="button" onClick={() => changeSectionType(sectionName, 'multiple')} className={`text-xs px-2 py-0.5 rounded-r-none rounded-l border transition-colors ${selType === 'multiple' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-500 border-gray-300 hover:border-primary/50'}`} data-testid={"btn-edit-sec-multi-" + sectionName}>☑ {tc("متعدد", "Multiple")}</button>
-                 <button type="button" onClick={() => changeSectionType(sectionName, 'single')} className={`text-xs px-2 py-0.5 rounded-l-none rounded-r border-t border-b border-r transition-colors ${selType === 'single' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-500 border-gray-300 hover:border-primary/50'}`} data-testid={"btn-edit-sec-single-" + sectionName}>◉ {tc("واحد", "Single")}</button>
+                 <button type="button" onClick={() => changeSectionType(sectionName, 'multiple')} className={`text-xs px-2 py-0.5 rounded-r-none rounded-l border transition-colors ${selType === 'multiple' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-500 border-gray-300 hover:border-primary/50'}`} data-testid={"btn-edit-sec-multi-" + sectionName}>☑ متعدد</button>
+                 <button type="button" onClick={() => changeSectionType(sectionName, 'single')} className={`text-xs px-2 py-0.5 rounded-l-none rounded-r border-t border-b border-r transition-colors ${selType === 'single' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-500 border-gray-300 hover:border-primary/50'}`} data-testid={"btn-edit-sec-single-" + sectionName}>◉ واحد</button>
                  <button type="button" onClick={() => setEditableAddons(prev => prev.filter((_, i) => !indices.includes(i)))} className="text-red-400 hover:text-red-600 mr-0.5" data-testid={"btn-del-edit-section-" + sectionName}><X className="w-4 h-4" /></button>
                </div>
                <div className="space-y-1.5 pr-2">
@@ -2114,16 +2077,14 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
                      <button type="button" onClick={() => { setEditingAddonImageIdx(idx); setImageLibraryContext("edit-addon"); setIsImageLibraryOpen(true); }} className="w-8 h-8 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center shrink-0 overflow-hidden hover:border-accent/50 transition-colors" data-testid={`button-edit-addon-img-${idx}`}>
                        {addon.imageUrl ? <img src={addon.imageUrl.startsWith('/') ? addon.imageUrl : '/' + addon.imageUrl} className="w-full h-full object-cover rounded-lg" alt="" /> : <Plus className="w-3 h-3 text-gray-400" />}
                      </button>
-                     <div className="flex flex-col gap-1 flex-1">
-                       <Input type="text" placeholder="اسم الخيار (عربي)" value={addon.nameAr} onChange={(e) => { const n = [...editableAddons]; n[idx] = { ...n[idx], nameAr: e.target.value }; setEditableAddons(n); }} className="bg-white border-gray-300 text-gray-900 h-8 text-sm" data-testid={`input-edit-addon-name-${idx}`} />
-                       <Input type="text" placeholder="Option name (English)" value={addon.nameEn || ''} onChange={(e) => { const n = [...editableAddons]; n[idx] = { ...n[idx], nameEn: e.target.value }; setEditableAddons(n); }} className="bg-white border-gray-200 text-gray-900 h-8 text-sm" dir="ltr" data-testid={`input-edit-addon-name-en-${idx}`} />
-                     </div>
+                     <Input type="text" placeholder={tc("اسم الخيار (عربي)", "Option name (AR)")} value={addon.nameAr} onChange={(e) => { const n = [...editableAddons]; n[idx] = { ...n[idx], nameAr: e.target.value }; setEditableAddons(n); }} className="bg-white border-gray-300 text-gray-900 flex-1 h-8 text-sm" data-testid={`input-edit-addon-name-${idx}`} />
+                     <Input type="text" placeholder={tc("الاسم (إنجليزي)", "Option name (EN)")} value={addon.nameEn || ''} onChange={(e) => { const n = [...editableAddons]; n[idx] = { ...n[idx], nameEn: e.target.value }; setEditableAddons(n); }} className="bg-white border-gray-300 text-gray-900 flex-1 h-8 text-sm" dir="ltr" data-testid={`input-edit-addon-name-en-${idx}`} />
                      <Input type="number" placeholder={tc("السعر", "Price")} value={addon.price} onChange={(e) => { const n = [...editableAddons]; n[idx] = { ...n[idx], price: parseFloat(e.target.value) || 0 }; setEditableAddons(n); }} className="bg-white border-gray-300 text-gray-900 w-20 h-8 text-sm" data-testid={`input-edit-addon-price-${idx}`} />
                      <button type="button" onClick={() => setEditableAddons(editableAddons.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 shrink-0" data-testid={`button-delete-addon-${idx}`}><X className="w-4 h-4" /></button>
                    </div>
                  ); })}
                </div>
-               <button type="button" onClick={() => setEditableAddons(prev => [...prev, { nameAr: '', price: 0, imageUrl: '', category: 'other', section: sectionName, selectionType: selType }])} className="text-xs text-primary hover:underline pr-2" data-testid={"btn-edit-add-option-" + sectionName}>+ {tc("إضافة خيار لهذا القسم", "Add option to this section")}</button>
+               <button type="button" onClick={() => setEditableAddons(prev => [...prev, { nameAr: '', price: 0, imageUrl: '', category: 'other', section: sectionName, selectionType: selType }])} className="text-xs text-primary hover:underline pr-2" data-testid={"btn-edit-add-option-" + sectionName}>+ إضافة خيار لهذا القسم</button>
              </div>
            );
          })}
@@ -2133,22 +2094,20 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
                <button type="button" onClick={() => { setEditingAddonImageIdx(idx); setImageLibraryContext("edit-addon"); setIsImageLibraryOpen(true); }} className="w-10 h-10 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center shrink-0 overflow-hidden hover:border-accent/50 transition-colors" data-testid={`button-edit-addon-img-${idx}`}>
                  {addon.imageUrl ? <img src={addon.imageUrl.startsWith('/') ? addon.imageUrl : '/' + addon.imageUrl} className="w-full h-full object-cover rounded-lg" alt="" /> : <Plus className="w-3 h-3 text-gray-500" />}
                </button>
-               <div className="flex flex-col gap-1 flex-1">
-                 <Input type="text" placeholder="اسم الإضافة (عربي)" value={addon.nameAr} onChange={(e) => { const n = [...editableAddons]; n[idx] = { ...n[idx], nameAr: e.target.value }; setEditableAddons(n); }} className="bg-gray-50 border-gray-300 text-gray-900" data-testid={`input-edit-addon-name-${idx}`} />
-                 <Input type="text" placeholder="Addon name (English)" value={addon.nameEn || ''} onChange={(e) => { const n = [...editableAddons]; n[idx] = { ...n[idx], nameEn: e.target.value }; setEditableAddons(n); }} className="bg-gray-50 border-gray-200 text-gray-900" dir="ltr" data-testid={`input-edit-addon-name-en-${idx}`} />
-               </div>
+               <Input type="text" placeholder={tc("اسم الإضافة (عربي)", "Addon name (AR)")} value={addon.nameAr} onChange={(e) => { const n = [...editableAddons]; n[idx] = { ...n[idx], nameAr: e.target.value }; setEditableAddons(n); }} className="bg-gray-50 border-gray-300 text-gray-900 flex-1" data-testid={`input-edit-addon-name-${idx}`} />
+               <Input type="text" placeholder={tc("الاسم (إنجليزي)", "Addon name (EN)")} value={addon.nameEn || ''} onChange={(e) => { const n = [...editableAddons]; n[idx] = { ...n[idx], nameEn: e.target.value }; setEditableAddons(n); }} className="bg-gray-50 border-gray-300 text-gray-900 flex-1" dir="ltr" data-testid={`input-edit-addon-name-en-${idx}`} />
                <Input type="number" placeholder={tc("السعر", "Price")} value={addon.price} onChange={(e) => { const n = [...editableAddons]; n[idx] = { ...n[idx], price: parseFloat(e.target.value) || 0 }; setEditableAddons(n); }} className="bg-gray-50 border-gray-300 text-gray-900 w-20" data-testid={`input-edit-addon-price-${idx}`} />
                <Button type="button" size="sm" variant="outline" onClick={() => setEditableAddons(editableAddons.filter((_, i) => i !== idx))} className="border-red-500/30 text-red-500 shrink-0" data-testid={`button-delete-addon-${idx}`}><X className="w-4 h-4" /></Button>
              </div>
              <div className="flex gap-1">
-               <button type="button" onClick={() => { const n = [...editableAddons]; n[idx] = { ...n[idx], selectionType: 'multiple' }; setEditableAddons(n); }} className={`flex-1 text-xs py-1 rounded border transition-colors ${(addon.selectionType || 'multiple') === 'multiple' ? 'bg-primary text-primary-foreground border-primary' : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-400'}`} data-testid={`button-edit-addon-multi-${idx}`}>☑ {tc("اختيار متعدد", "Multiple choice")}</button>
-               <button type="button" onClick={() => { const n = [...editableAddons]; n[idx] = { ...n[idx], selectionType: 'single' }; setEditableAddons(n); }} className={`flex-1 text-xs py-1 rounded border transition-colors ${(addon.selectionType || 'multiple') === 'single' ? 'bg-primary text-primary-foreground border-primary' : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-400'}`} data-testid={`button-edit-addon-single-${idx}`}>◉ {tc("اختيار واحد فقط", "Single choice only")}</button>
+               <button type="button" onClick={() => { const n = [...editableAddons]; n[idx] = { ...n[idx], selectionType: 'multiple' }; setEditableAddons(n); }} className={`flex-1 text-xs py-1 rounded border transition-colors ${(addon.selectionType || 'multiple') === 'multiple' ? 'bg-primary text-primary-foreground border-primary' : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-400'}`} data-testid={`button-edit-addon-multi-${idx}`}>☑ اختيار متعدد</button>
+               <button type="button" onClick={() => { const n = [...editableAddons]; n[idx] = { ...n[idx], selectionType: 'single' }; setEditableAddons(n); }} className={`flex-1 text-xs py-1 rounded border transition-colors ${(addon.selectionType || 'multiple') === 'single' ? 'bg-primary text-primary-foreground border-primary' : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-400'}`} data-testid={`button-edit-addon-single-${idx}`}>◉ اختيار واحد فقط</button>
              </div>
            </div>
          ); })}
          <div className="flex gap-2">
-           <Button type="button" size="sm" variant="outline" onClick={() => { const newName = `قسم ${sectionOrder.length + 1}`; setEditableAddons(prev => [...prev, { nameAr: '', price: 0, imageUrl: '', category: 'other', section: newName, selectionType: 'multiple' }]); }} className="border-blue-400/40 text-blue-400 flex-1" data-testid="button-add-edit-section"><Plus className="w-4 h-4 ml-1" />{tc("إضافة قسم جديد", "Add Section")}</Button>
-           <Button type="button" size="sm" variant="outline" onClick={() => setEditableAddons([...editableAddons, {nameAr: '', price: 0, imageUrl: '', category: 'other', section: '', selectionType: 'multiple'}])} className="border-green-500/30 text-green-400 flex-1" data-testid="button-add-edit-addon"><Plus className="w-4 h-4 ml-1" />{tc("إضافة خيار بدون قسم", "Add Option (no section)")}</Button>
+           <Button type="button" size="sm" variant="outline" onClick={() => { const newName = `قسم ${sectionOrder.length + 1}`; setEditableAddons(prev => [...prev, { nameAr: '', price: 0, imageUrl: '', category: 'other', section: newName, selectionType: 'multiple' }]); }} className="border-blue-400/40 text-blue-400 flex-1" data-testid="button-add-edit-section"><Plus className="w-4 h-4 ml-1" />إضافة قسم جديد</Button>
+           <Button type="button" size="sm" variant="outline" onClick={() => setEditableAddons([...editableAddons, {nameAr: '', price: 0, imageUrl: '', category: 'other', section: '', selectionType: 'multiple'}])} className="border-green-500/30 text-green-400 flex-1" data-testid="button-add-edit-addon"><Plus className="w-4 h-4 ml-1" />إضافة خيار بدون قسم</Button>
          </div>
        </div>
      );
@@ -2157,8 +2116,8 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
 
  {/* Bundled Items Section - Edit */}
  <div className="space-y-2">
-   <Label className="text-gray-300 flex items-center gap-2"><span>🔗</span> {tc("منتجات مصاحبة مع الطلب", "Bundled Products")}</Label>
-   <p className="text-xs text-gray-500">{tc("منتجات من المنيو تُعرض على العميل عند طلب هذا المنتج", "Menu products shown to the customer when ordering this item")}</p>
+   <Label className="text-gray-300 flex items-center gap-2"><span>🔗</span> منتجات مصاحبة مع الطلب</Label>
+   <p className="text-xs text-gray-500">منتجات من المنيو تُعرض على العميل عند طلب هذا المنتج</p>
    {editBundledItems.map((section, secIdx) => (
      <div key={secIdx} className="border border-purple-200 rounded-lg p-3 space-y-2 bg-purple-50/30">
        <div className="flex items-center gap-2">
@@ -2166,17 +2125,17 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
          <button type="button" onClick={() => setEditBundledItems(editBundledItems.filter((_, i) => i !== secIdx))} className="text-red-400 hover:text-red-600" data-testid={`btn-del-edit-bundle-${secIdx}`}><X className="w-4 h-4" /></button>
        </div>
        <div className="flex gap-2 items-center flex-wrap">
-         <span className="text-xs text-gray-500">{tc("نوع الاختيار:", "Selection:")}</span>
-         <button type="button" onClick={() => { const n = [...editBundledItems]; n[secIdx] = {...n[secIdx], selectionType: 'single', maxSelectable: 1}; setEditBundledItems(n); }} className={`text-xs px-2 py-1 rounded border transition-colors ${section.selectionType === 'single' ? 'bg-purple-500 text-white border-purple-500' : 'bg-white text-gray-600 border-gray-300'}`} data-testid={`btn-edit-bundle-single-${secIdx}`}>◉ {tc("واحد فقط", "One only")}</button>
-         <button type="button" onClick={() => { const n = [...editBundledItems]; n[secIdx] = {...n[secIdx], selectionType: 'multiple'}; setEditBundledItems(n); }} className={`text-xs px-2 py-1 rounded border transition-colors ${section.selectionType === 'multiple' ? 'bg-purple-500 text-white border-purple-500' : 'bg-white text-gray-600 border-gray-300'}`} data-testid={`btn-edit-bundle-multi-${secIdx}`}>☑ {tc("متعدد", "Multiple")}</button>
+         <span className="text-xs text-gray-500">نوع الاختيار:</span>
+         <button type="button" onClick={() => { const n = [...editBundledItems]; n[secIdx] = {...n[secIdx], selectionType: 'single', maxSelectable: 1}; setEditBundledItems(n); }} className={`text-xs px-2 py-1 rounded border transition-colors ${section.selectionType === 'single' ? 'bg-purple-500 text-white border-purple-500' : 'bg-white text-gray-600 border-gray-300'}`} data-testid={`btn-edit-bundle-single-${secIdx}`}>◉ واحد فقط</button>
+         <button type="button" onClick={() => { const n = [...editBundledItems]; n[secIdx] = {...n[secIdx], selectionType: 'multiple'}; setEditBundledItems(n); }} className={`text-xs px-2 py-1 rounded border transition-colors ${section.selectionType === 'multiple' ? 'bg-purple-500 text-white border-purple-500' : 'bg-white text-gray-600 border-gray-300'}`} data-testid={`btn-edit-bundle-multi-${secIdx}`}>☑ متعدد</button>
          {section.selectionType === 'multiple' && (
            <div className="flex items-center gap-1">
-             <span className="text-xs text-gray-500">{tc("حتى:", "Up to:")}</span>
+             <span className="text-xs text-gray-500">حتى:</span>
              <Input type="number" min={1} value={section.maxSelectable || 1} onChange={(e) => { const n = [...editBundledItems]; n[secIdx] = {...n[secIdx], maxSelectable: parseInt(e.target.value) || 1}; setEditBundledItems(n); }} className="bg-white border-gray-300 text-gray-900 w-14 h-7 text-xs" data-testid={`input-edit-bundle-max-${secIdx}`} />
-             <span className="text-xs text-gray-500">{tc("خيار", "option")}</span>
+             <span className="text-xs text-gray-500">خيار</span>
            </div>
          )}
-         <button type="button" onClick={() => { const n = [...editBundledItems]; n[secIdx] = {...n[secIdx], minSelectable: n[secIdx].minSelectable > 0 ? 0 : 1}; setEditBundledItems(n); }} className={`text-xs px-2 py-1 rounded border transition-colors ${section.minSelectable > 0 ? 'bg-orange-400 text-white border-orange-400' : 'bg-white text-gray-600 border-gray-300'}`} data-testid={`btn-edit-bundle-required-${secIdx}`}>{section.minSelectable > 0 ? tc('إلزامي', 'Required') : tc('اختياري', 'Optional')}</button>
+         <button type="button" onClick={() => { const n = [...editBundledItems]; n[secIdx] = {...n[secIdx], minSelectable: n[secIdx].minSelectable > 0 ? 0 : 1}; setEditBundledItems(n); }} className={`text-xs px-2 py-1 rounded border transition-colors ${section.minSelectable > 0 ? 'bg-orange-400 text-white border-orange-400' : 'bg-white text-gray-600 border-gray-300'}`} data-testid={`btn-edit-bundle-required-${secIdx}`}>{section.minSelectable > 0 ? 'إلزامي' : 'اختياري'}</button>
        </div>
        {section.items.map((bItem, itemIdx) => (
          <div key={itemIdx} className="flex items-center gap-2 bg-white rounded p-2 border border-gray-200">
@@ -2186,13 +2145,13 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
              n[secIdx].items[itemIdx] = { productId: e.target.value, nameAr: picked?.nameAr || '', nameEn: picked?.nameEn, imageUrl: picked?.imageUrl, originalPrice: picked?.price || 0, customPrice: n[secIdx].items[itemIdx].customPrice };
              setEditBundledItems(n);
            }} className="flex-1 text-sm border border-gray-300 rounded px-2 py-1 bg-white text-gray-900" data-testid={`select-edit-bundle-product-${secIdx}-${itemIdx}`}>
-             <option value="">{tc("اختر منتجاً من المنيو", "Select a menu product")}</option>
+             <option value="">اختر منتجاً من المنيو</option>
              {coffeeItems.map(c => <option key={c.id} value={c.id}>{c.nameAr} ({c.price} ر.س)</option>)}
            </select>
            <div className="flex items-center gap-1 shrink-0">
-             <Input type="number" min={0} step={0.5} placeholder={tc("سعره", "Price")} value={bItem.customPrice} onChange={(e) => { const n = [...editBundledItems]; n[secIdx].items[itemIdx] = {...n[secIdx].items[itemIdx], customPrice: parseFloat(e.target.value) || 0}; setEditBundledItems(n); }} className="bg-white border-gray-300 text-gray-900 w-20 h-8 text-sm" data-testid={`input-edit-bundle-price-${secIdx}-${itemIdx}`} />
-             <span className="text-xs text-gray-500">ر.س</span>
-             {bItem.customPrice === 0 && bItem.productId && <span className="text-xs bg-green-100 text-green-700 px-1 rounded">{tc("مجاني", "Free")}</span>}
+             <Input type="number" min={0} step={0.5} placeholder="سعره" value={bItem.customPrice} onChange={(e) => { const n = [...editBundledItems]; n[secIdx].items[itemIdx] = {...n[secIdx].items[itemIdx], customPrice: parseFloat(e.target.value) || 0}; setEditBundledItems(n); }} className="bg-white border-gray-300 text-gray-900 w-20 h-8 text-sm" data-testid={`input-edit-bundle-price-${secIdx}-${itemIdx}`} />
+             <SarIcon size={11} />
+             {bItem.customPrice === 0 && bItem.productId && <span className="text-xs bg-green-100 text-green-700 px-1 rounded">مجاني</span>}
            </div>
            <button type="button" onClick={() => { const n = [...editBundledItems]; n[secIdx].items = n[secIdx].items.filter((_, i) => i !== itemIdx); setEditBundledItems(n); }} className="text-red-400 hover:text-red-600 shrink-0" data-testid={`btn-del-edit-bundle-item-${secIdx}-${itemIdx}`}><X className="w-3 h-3" /></button>
          </div>
@@ -2200,13 +2159,13 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
        <button type="button" onClick={() => { const n = [...editBundledItems]; n[secIdx].items.push({ productId: '', nameAr: '', originalPrice: 0, customPrice: 0 }); setEditBundledItems(n); }} className="text-xs text-purple-600 hover:underline" data-testid={`btn-add-edit-bundle-item-${secIdx}`}>+ إضافة منتج لهذا القسم</button>
      </div>
    ))}
-   <Button type="button" size="sm" variant="outline" onClick={() => setEditBundledItems([...editBundledItems, { sectionTitle: '', selectionType: 'single', minSelectable: 0, maxSelectable: 1, items: [] }])} className="border-purple-400/40 text-purple-600 w-full" data-testid="btn-add-edit-bundle-section"><Plus className="w-4 h-4 ml-1" />{tc("إضافة قسم منتجات مصاحبة", "Add Bundle Section")}</Button>
+   <Button type="button" size="sm" variant="outline" onClick={() => setEditBundledItems([...editBundledItems, { sectionTitle: '', selectionType: 'single', minSelectable: 0, maxSelectable: 1, items: [] }])} className="border-purple-400/40 text-purple-600 w-full" data-testid="btn-add-edit-bundle-section"><Plus className="w-4 h-4 ml-1" />إضافة قسم منتجات مصاحبة</Button>
  </div>
 
 {/* Reservation Section - Edit */}
 <div className="space-y-2 border border-amber-200 rounded-lg p-3 bg-amber-50/30">
   <div className="flex items-center justify-between">
-    <Label className="text-gray-700 font-semibold flex items-center gap-2">🗓️ {tc("منتج يحتاج حجز مسبق", "Requires Advance Booking")}</Label>
+    <Label className="text-gray-700 font-semibold flex items-center gap-2">🗓️ منتج يحتاج حجز مسبق</Label>
     <button
       type="button"
       onClick={() => setEditIsReservation(!editIsReservation)}
@@ -2218,8 +2177,8 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
   </div>
   {editIsReservation && (
     <div className="space-y-3 pt-2">
-      <p className="text-xs text-amber-700">{tc("هذا المنتج لا يمكن طلبه مع منتجات أخرى، ويُلزم العميل بالحجز في الفرع فقط مع تأكيد عبر واتساب", "This product cannot be ordered with others and requires in-branch booking confirmed via WhatsApp")}</p>
-      <Label className="text-gray-600 text-sm">{tc("الباقات المتاحة للحجز", "Available Booking Packages")}</Label>
+      <p className="text-xs text-amber-700">هذا المنتج لا يمكن طلبه مع منتجات أخرى، ويُلزم العميل بالحجز في الفرع فقط مع تأكيد عبر واتساب</p>
+      <Label className="text-gray-600 text-sm">الباقات المتاحة للحجز</Label>
       {editReservationPackages.map((pkg, idx) => (
         <div key={idx} className="border border-amber-200 rounded-lg p-3 space-y-2 bg-white">
           <div className="flex items-center gap-2">
@@ -2240,7 +2199,7 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
           </div>
         </div>
       ))}
-      <Button type="button" size="sm" variant="outline" onClick={() => setEditReservationPackages([...editReservationPackages, { packageName: '', price: 0 }])} className="border-amber-400/40 text-amber-700 w-full" data-testid="btn-edit-add-pkg"><Plus className="w-4 h-4 ml-1" />{tc("إضافة باقة", "Add Package")}</Button>
+      <Button type="button" size="sm" variant="outline" onClick={() => setEditReservationPackages([...editReservationPackages, { packageName: '', price: 0 }])} className="border-amber-400/40 text-amber-700 w-full" data-testid="btn-edit-add-pkg"><Plus className="w-4 h-4 ml-1" />إضافة باقة</Button>
     </div>
   )}
 </div>
@@ -2291,12 +2250,12 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
      
      <div className="space-y-4 py-4">
        <div className="bg-gray-50 p-3 rounded-lg border border-green-500/20">
-         <p className="text-gray-400 text-sm">{tc("سعر البيع:", "Selling Price:")} <span className="text-accent font-bold">{editingRecipeItem?.price} {tc("ريال", "SAR")}</span></p>
+         <p className="text-gray-400 text-sm">سعر البيع: <span className="text-accent font-bold">{editingRecipeItem?.price} <SarIcon size={11} /></span></p>
        </div>
        
        <div>
-         <Label className="text-gray-600 text-lg">{tc("اختر المواد الخام للوصفة", "Select raw materials for recipe")}</Label>
-         <p className="text-gray-500 text-sm mb-3">{tc("حدد الكميات المستخدمة في تحضير المنتج", "Specify quantities used in preparing the product")}</p>
+         <Label className="text-gray-600 text-lg">اختر المواد الخام للوصفة</Label>
+         <p className="text-gray-500 text-sm mb-3">حدد الكميات المستخدمة في تحضير المنتج</p>
          
          <div className="space-y-2 max-h-60 overflow-y-auto mb-3">
            {rawItems.filter(r => r.isActive === 1).map((raw) => {
@@ -2325,7 +2284,7 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
                  />
                  <label htmlFor={`recipe-edit-${raw.id}`} className="text-gray-600 flex-1 cursor-pointer">
                    <span>{raw.nameAr}</span>
-                   <span className="text-gray-500 text-xs mr-2">({raw.unitCost.toFixed(2)} {tc("ريال", "SAR")}/{raw.unit})</span>
+                   <span className="text-gray-500 text-xs mr-2">({raw.unitCost.toFixed(2)} <SarIcon size={10} />/{raw.unit})</span>
                  </label>
                  {isSelected && (
                    <div className="flex items-center gap-2">
@@ -2354,11 +2313,11 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
                          <SelectValue />
                        </SelectTrigger>
                        <SelectContent className="bg-white border-gray-200 text-gray-900">
-                         <SelectItem value="g">{tc("جرام", "g")}</SelectItem>
-                         <SelectItem value="ml">{tc("مل", "ml")}</SelectItem>
-                         <SelectItem value="kg">{tc("كجم", "kg")}</SelectItem>
-                         <SelectItem value="liter">{tc("لتر", "liter")}</SelectItem>
-                         <SelectItem value="piece">{tc("قطعة", "piece")}</SelectItem>
+                         <SelectItem value="g">جرام</SelectItem>
+                         <SelectItem value="ml">مل</SelectItem>
+                         <SelectItem value="kg">كجم</SelectItem>
+                         <SelectItem value="liter">لتر</SelectItem>
+                         <SelectItem value="piece">قطعة</SelectItem>
                        </SelectContent>
                      </Select>
                    </div>
@@ -2390,7 +2349,7 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
                        {breakdown.map((item, idx) => (
                          <div key={idx} className="flex justify-between text-gray-400">
                            <span>{item.name} ({item.quantity} {item.unit})</span>
-                           <span>{item.cost.toFixed(2)} {tc("ريال", "SAR")}</span>
+                           <span>{item.cost.toFixed(2)} <SarIcon size={10} /></span>
                          </div>
                        ))}
                      </div>
@@ -2398,17 +2357,17 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
                    
                    <div className="border-t border-green-500/20 pt-3 space-y-2">
                      <div className="flex justify-between items-center">
-                       <span className="text-gray-300">{tc("تكلفة الوصفة (COGS):", "Recipe Cost (COGS):")}</span>
-                       <span className="text-green-400 font-bold">{totalCost.toFixed(2)} {tc("ريال", "SAR")}</span>
+                       <span className="text-gray-300">تكلفة الوصفة (COGS):</span>
+                       <span className="text-green-400 font-bold">{totalCost.toFixed(2)} <SarIcon size={11} /></span>
                      </div>
                      <div className="flex justify-between items-center">
-                       <span className="text-gray-300">{tc("سعر البيع:", "Selling Price:")}</span>
-                       <span className="text-white font-bold">{sellingPrice.toFixed(2)} {tc("ريال", "SAR")}</span>
+                       <span className="text-gray-300">سعر البيع:</span>
+                       <span className="text-white font-bold">{sellingPrice.toFixed(2)} <SarIcon size={11} /></span>
                      </div>
                      <div className="flex justify-between items-center">
-                       <span className="text-gray-300">{tc("هامش الربح:", "Profit Margin:")}</span>
+                       <span className="text-gray-300">هامش الربح:</span>
                        <span className={`font-bold ${grossProfit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                         {grossProfit.toFixed(2)} {tc("ريال", "SAR")} ({profitMargin.toFixed(1)}%)
+                         {grossProfit.toFixed(2)} <SarIcon size={11} /> ({profitMargin.toFixed(1)}%)
                        </span>
                      </div>
                    </div>
@@ -2451,9 +2410,9 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
  <AlertDialog open={!!deletingItemId} onOpenChange={() => setDeletingItemId(null)}>
  <AlertDialogContent className="bg-white border-red-500/20 text-gray-900">
  <AlertDialogHeader>
- <AlertDialogTitle className="text-red-500">{tc("تأكيد الحذف", "Confirm Delete")}</AlertDialogTitle>
+ <AlertDialogTitle className="text-red-500">تأكيد الحذف</AlertDialogTitle>
  <AlertDialogDescription className="text-gray-300">
- {tc("هل أنت متأكد من حذف هذا المشروب؟ لا يمكن التراجع عن هذا الإجراء.", "Are you sure you want to delete this item? This action cannot be undone.")}
+ هل أنت متأكد من حذف هذا المشروب؟ لا يمكن التراجع عن هذا الإجراء.
  </AlertDialogDescription>
  </AlertDialogHeader>
  <AlertDialogFooter>
@@ -2461,7 +2420,7 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
  className="bg-transparent border-gray-600 text-gray-300"
  data-testid="button-delete-cancel"
  >
- {tc("إلغاء", "Cancel")}
+ إلغاء
  </AlertDialogCancel>
  <AlertDialogAction
  onClick={confirmDelete}
@@ -2469,7 +2428,7 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
  className="bg-gradient-to-r from-red-500 to-red-700 text-white"
  data-testid="button-delete-confirm"
  >
- {deleteItemMutation.isPending ? tc("جاري الحذف...", "Deleting...") : tc("حذف", "Delete")}
+ {deleteItemMutation.isPending ? "جاري الحذف..." : "حذف"}
  </AlertDialogAction>
  </AlertDialogFooter>
  </AlertDialogContent>
@@ -2479,15 +2438,15 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
  <AlertDialog open={skipRecipeConfirmOpen} onOpenChange={setSkipRecipeConfirmOpen}>
    <AlertDialogContent className="bg-white border-gray-200 text-gray-900">
      <AlertDialogHeader>
-       <AlertDialogTitle className="text-accent">{tc("تأكيد إنشاء منتج بدون وصفة", "Confirm creating product without recipe")}</AlertDialogTitle>
+       <AlertDialogTitle className="text-accent">تأكيد إنشاء منتج بدون وصفة</AlertDialogTitle>
        <AlertDialogDescription className="text-gray-300">
-         {tc("أنت على وشك إنشاء منتج بدون وصفة. هذا يعني أن:", "You are about to create a product without a recipe. This means:")}
+         أنت على وشك إنشاء منتج بدون وصفة. هذا يعني أن:
          <ul className="list-disc list-inside mt-2 space-y-1 text-gray-400">
-           <li>{tc("لن يتم خصم المخزون تلقائياً عند البيع", "Inventory will not be deducted automatically on sale")}</li>
-           <li>{tc("لن يمكن حساب تكلفة المنتج بدقة", "Product cost cannot be calculated accurately")}</li>
-           <li>{tc('لن يكون المنتج "جاهز للبيع" بالكامل', 'The product will not be fully "ready for sale"')}</li>
+           <li>لن يتم خصم المخزون تلقائياً عند البيع</li>
+           <li>لن يمكن حساب تكلفة المنتج بدقة</li>
+           <li>لن يكون المنتج "جاهز للبيع" بالكامل</li>
          </ul>
-         <p className="mt-3 text-primary">{tc("يمكنك إضافة الوصفة لاحقاً من قائمة المنتجات.", "You can add the recipe later from the product list.")}</p>
+         <p className="mt-3 text-primary">يمكنك إضافة الوصفة لاحقاً من قائمة المنتجات.</p>
        </AlertDialogDescription>
      </AlertDialogHeader>
      <AlertDialogFooter>
@@ -2495,21 +2454,21 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
          className="bg-transparent border-gray-600 text-gray-300"
          data-testid="button-skip-recipe-cancel"
        >
-         {tc("الرجوع لإضافة الوصفة", "Go back to add recipe")}
+         الرجوع لإضافة الوصفة
        </AlertDialogCancel>
        <AlertDialogAction
          onClick={handleConfirmSkipRecipe}
          className="bg-primary text-white"
          data-testid="button-skip-recipe-confirm"
        >
-         {tc("إنشاء بدون وصفة", "Create without recipe")}
+         إنشاء بدون وصفة
        </AlertDialogAction>
      </AlertDialogFooter>
    </AlertDialogContent>
  </AlertDialog>
 {/* Category Reorder Dialog */}
 <Dialog open={isCategoryReorderOpen} onOpenChange={setIsCategoryReorderOpen}>
-  <DialogContent className="bg-card border-border text-foreground max-w-sm" dir="rtl">
+  <DialogContent className="bg-card border-border text-foreground max-w-sm">
     <DialogHeader>
       <DialogTitle className="flex items-center gap-2 text-foreground">
         <ListOrdered className="w-5 h-5 text-primary" />
@@ -2531,7 +2490,7 @@ setEditImageUrls((item as any).imageUrls || (item.imageUrl ? [item.imageUrl] : [
             <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0">
               {idx + 1}
             </span>
-            <span className="flex-1 text-sm font-medium text-foreground">{tc(cat.nameAr, cat.nameEn || cat.nameAr)}</span>
+            <span className="flex-1 text-sm font-medium text-foreground">{cat.nameAr}</span>
             {cat.nameEn && <span className="text-xs text-muted-foreground">{cat.nameEn}</span>}
             <div className="flex flex-col gap-0.5">
               <button

@@ -15,6 +15,37 @@ import {
 } from "lucide-react";
 import * as XLSX from 'xlsx';
 import type { Employee } from "@shared/schema";
+import { MobileBottomNav } from "@/components/MobileBottomNav";
+import { MapContainer, TileLayer, Marker, Popup, Circle, Tooltip } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+
+// Fix Leaflet default marker icons in bundlers
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png",
+  iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png",
+  shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+});
+
+const branchIcon = L.divIcon({
+  className: "",
+  html: `<div style="background:#16a34a;color:white;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:18px;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.4);">🏪</div>`,
+  iconSize: [32, 32],
+  iconAnchor: [16, 16],
+  popupAnchor: [0, -16],
+});
+
+function makeEmployeeIcon(inside: boolean) {
+  const bg = inside ? "#16a34a" : "#dc2626";
+  return L.divIcon({
+    className: "",
+    html: `<div style="background:${bg};color:white;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:15px;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.4);">👤</div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+    popupAnchor: [0, -14],
+  });
+}
 
 interface LeaveRequest {
   id: string;
@@ -68,6 +99,8 @@ interface Branch {
   id: string;
   name?: string;
   nameAr?: string;
+  location?: { lat: number; lng: number };
+  geofenceRadius?: number;
 }
 
 export default function ManagerAttendance() {
@@ -403,7 +436,7 @@ export default function ManagerAttendance() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-background p-4" dir="rtl">
+    <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-background p-4 pb-20">
       <div className="max-w-7xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
@@ -544,13 +577,13 @@ export default function ManagerAttendance() {
                     />
                   </div>
                   <div>
-                    <label className="text-gray-400 text-xs block mb-1">الفرع</label>
+                    <label className="text-gray-400 text-xs block mb-1">{tc("الفرع","Branch")}</label>
                     <Select value={selectedBranch} onValueChange={setSelectedBranch}>
                       <SelectTrigger className="w-40 bg-[#1a1410] border-primary/20 text-white" data-testid="select-monthly-branch">
-                        <SelectValue placeholder="كل الفروع" />
+                        <SelectValue placeholder={tc("كل الفروع","All Branches")} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">كل الفروع</SelectItem>
+                        <SelectItem value="all">{tc("كل الفروع","All Branches")}</SelectItem>
                         {branches.map((b) => (
                           <SelectItem key={b.id} value={b.id}>{b.nameAr || b.name}</SelectItem>
                         ))}
@@ -682,7 +715,7 @@ export default function ManagerAttendance() {
             ) : (
               <div className="text-center py-12 text-gray-400">
                 <FileText className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                <p>اختر الشهر واضغط "عرض التقرير"</p>
+                <p>{tc("اختر الشهر واضغط \"عرض التقرير\"", "Select a month and click \"Show Report\"")}</p>
               </div>
             )}
           </div>
@@ -739,6 +772,119 @@ export default function ManagerAttendance() {
                 تحديث
               </Button>
             </div>
+
+            {/* ── Leaflet Map ── */}
+            {(() => {
+              // Pick a branch to display: the selected one or the first with location
+              const displayBranch = selectedBranch !== 'all'
+                ? branches.find(b => b.id === selectedBranch)
+                : branches.find(b => b.location?.lat && b.location?.lng);
+              const hasEmployeesWithLoc = liveEmployees.some(e => e.lastLocation?.lat);
+              const hasBranchLoc = displayBranch?.location?.lat && displayBranch?.location?.lng;
+
+              // Compute map center: branch location, first employee, or Yanbu default
+              const center: [number, number] = hasBranchLoc
+                ? [displayBranch!.location!.lat, displayBranch!.location!.lng]
+                : hasEmployeesWithLoc
+                ? [liveEmployees[0].lastLocation.lat, liveEmployees[0].lastLocation.lng]
+                : [24.0895, 38.0618]; // ينبع
+
+              return (
+                <Card className="bg-[#1a1410] border-primary/20 overflow-hidden">
+                  <CardHeader className="py-2 px-4">
+                    <CardTitle className="text-accent text-sm flex items-center gap-2">
+                      <MapPin className="w-4 h-4" />
+                      خريطة الفرع والموظفين
+                      {hasBranchLoc && (
+                        <span className="text-xs text-gray-400 font-normal">
+                          — {displayBranch?.nameAr || displayBranch?.name}
+                          {' '}(نطاق {displayBranch?.geofenceRadius || 200}م)
+                        </span>
+                      )}
+                    </CardTitle>
+                  </CardHeader>
+                  <div style={{ height: 340 }}>
+                    <MapContainer
+                      center={center}
+                      zoom={hasBranchLoc || hasEmployeesWithLoc ? 16 : 13}
+                      style={{ height: "100%", width: "100%" }}
+                      key={`${center[0]}-${center[1]}`}
+                    >
+                      <TileLayer
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                      />
+
+                      {/* Branch markers & geofence circles */}
+                      {branches.filter(b => b.location?.lat && b.location?.lng).map(branch => (
+                        <>
+                          <Marker
+                            key={`branch-marker-${branch.id}`}
+                            position={[branch.location!.lat, branch.location!.lng]}
+                            icon={branchIcon}
+                          >
+                            <Popup>
+                              <div dir="rtl" style={{ fontSize: 13 }}>
+                                <strong>🏪 {branch.nameAr || branch.name}</strong><br />
+                                نطاق الحضور: {branch.geofenceRadius || 200} متر
+                              </div>
+                            </Popup>
+                            <Tooltip direction="top" offset={[0, -16]} permanent={false}>
+                              {branch.nameAr || branch.name}
+                            </Tooltip>
+                          </Marker>
+                          <Circle
+                            key={`branch-circle-${branch.id}`}
+                            center={[branch.location!.lat, branch.location!.lng]}
+                            radius={branch.geofenceRadius || 200}
+                            pathOptions={{ color: "#16a34a", fillColor: "#16a34a", fillOpacity: 0.08, weight: 2, dashArray: "6 4" }}
+                          />
+                        </>
+                      ))}
+
+                      {/* Employee markers */}
+                      {liveEmployees.filter(e => e.lastLocation?.lat).map(emp => (
+                        <Marker
+                          key={emp.employeeId}
+                          position={[emp.lastLocation.lat, emp.lastLocation.lng]}
+                          icon={makeEmployeeIcon(emp.isInsideBranch)}
+                        >
+                          <Popup>
+                            <div dir="rtl" className="text-sm space-y-1" style={{ minWidth: 160 }}>
+                              <div className="font-bold">{emp.employeeName}</div>
+                              <div>{emp.isInsideBranch ? '✅ داخل الفرع' : '❌ خارج الفرع'}</div>
+                              <div>المسافة: {emp.distanceFromBranch}م</div>
+                              <div className="text-gray-400 text-xs">آخر تحديث: {new Date(emp.lastSeen).toLocaleTimeString('ar-SA')}</div>
+                              <a
+                                href={`https://www.google.com/maps?q=${emp.lastLocation.lat},${emp.lastLocation.lng}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-500 text-xs"
+                              >
+                                📍 فتح في Google Maps
+                              </a>
+                            </div>
+                          </Popup>
+                          <Tooltip direction="top" offset={[0, -14]}>
+                            {emp.employeeName} — {emp.isInsideBranch ? '✅' : '❌'}
+                          </Tooltip>
+                        </Marker>
+                      ))}
+                    </MapContainer>
+                  </div>
+                  <div className="px-4 py-2 flex flex-wrap gap-3 text-xs text-gray-400 border-t border-primary/10">
+                    <span className="flex items-center gap-1"><span style={{ background: '#16a34a', borderRadius: '50%', display: 'inline-block', width: 10, height: 10 }} /> داخل الفرع</span>
+                    <span className="flex items-center gap-1"><span style={{ background: '#dc2626', borderRadius: '50%', display: 'inline-block', width: 10, height: 10 }} /> خارج الفرع</span>
+                    <span className="flex items-center gap-1"><span style={{ background: '#16a34a', borderRadius: '50%', display: 'inline-block', width: 10, height: 10 }} />🏪 مركز الفرع</span>
+                    {!hasBranchLoc && (
+                      <span className="text-amber-400 flex items-center gap-1">
+                        ⚠️ لم يتم تعيين موقع GPS للفرع — يرجى ضبطه في إعدادات الفرع
+                      </span>
+                    )}
+                  </div>
+                </Card>
+              );
+            })()}
 
             {/* Employee location cards */}
             {liveEmployees.length === 0 ? (
@@ -918,22 +1064,22 @@ export default function ManagerAttendance() {
                   <SelectContent>
                     <SelectItem value="all">{tc("جميع الأدوار", "All Roles")}</SelectItem>
                     <SelectItem value="cashier">{tc("كاشير", "Cashier")}</SelectItem>
-                    <SelectItem value="manager">مدير</SelectItem>
-                    <SelectItem value="admin">إدمن</SelectItem>
+                    <SelectItem value="manager">{tc("مدير","Manager")}</SelectItem>
+                    <SelectItem value="admin">{tc("إدمن","Admin")}</SelectItem>
                   </SelectContent>
                 </Select>
 
                 <Select value={selectedStatus} onValueChange={setSelectedStatus}>
                   <SelectTrigger className="w-40 bg-[#1a1410] border-primary/20 text-white" data-testid="select-status">
                     <Filter className="w-4 h-4 ml-2" />
-                    <SelectValue placeholder="جميع الحالات" />
+                    <SelectValue placeholder={tc("جميع الحالات","All Statuses")} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">جميع الحالات</SelectItem>
-                    <SelectItem value="checked_in">حاضر</SelectItem>
-                    <SelectItem value="checked_out">انصرف</SelectItem>
-                    <SelectItem value="late">متأخر</SelectItem>
-                    <SelectItem value="absent">غياب</SelectItem>
+                    <SelectItem value="all">{tc("جميع الحالات","All Statuses")}</SelectItem>
+                    <SelectItem value="checked_in">{tc("حاضر","Present")}</SelectItem>
+                    <SelectItem value="checked_out">{tc("انصرف","Checked Out")}</SelectItem>
+                    <SelectItem value="late">{tc("متأخر","Late")}</SelectItem>
+                    <SelectItem value="absent">{tc("غياب","Absent")}</SelectItem>
                   </SelectContent>
                 </Select>
 
@@ -1348,6 +1494,7 @@ export default function ManagerAttendance() {
           </div>
         )}
       </div>
+      <MobileBottomNav />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useTranslate } from "@/lib/useTranslate";
+import SarIcon from "@/components/sar-icon";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,39 +20,39 @@ import {
 } from "lucide-react";
 import { useLocation } from "wouter";
 
-const STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  pending: { label: 'بانتظار', color: 'bg-yellow-500' },
-  accepted: { label: 'مقبول', color: 'bg-blue-500' },
-  assigned: { label: 'تم التعيين', color: 'bg-indigo-500' },
-  picking_up: { label: 'جاري الاستلام', color: 'bg-purple-500' },
-  on_the_way: { label: 'في الطريق', color: 'bg-orange-500' },
-  arrived: { label: 'وصل', color: 'bg-teal-500' },
-  delivered: { label: 'تم التوصيل', color: 'bg-green-500' },
-  cancelled: { label: 'ملغي', color: 'bg-red-500' },
-  returned: { label: 'مرتجع', color: 'bg-gray-500' },
+const STATUS_LABELS: Record<string, { labelAr: string; labelEn: string; color: string }> = {
+  pending:    { labelAr: 'بانتظار',        labelEn: 'Pending',      color: 'bg-yellow-500' },
+  accepted:   { labelAr: 'مقبول',          labelEn: 'Accepted',     color: 'bg-blue-500' },
+  assigned:   { labelAr: 'تم التعيين',     labelEn: 'Assigned',     color: 'bg-indigo-500' },
+  picking_up: { labelAr: 'جاري الاستلام',  labelEn: 'Picking Up',   color: 'bg-purple-500' },
+  on_the_way: { labelAr: 'في الطريق',      labelEn: 'On The Way',   color: 'bg-orange-500' },
+  arrived:    { labelAr: 'وصل',            labelEn: 'Arrived',      color: 'bg-teal-500' },
+  delivered:  { labelAr: 'تم التوصيل',     labelEn: 'Delivered',    color: 'bg-green-500' },
+  cancelled:  { labelAr: 'ملغي',           labelEn: 'Cancelled',    color: 'bg-red-500' },
+  returned:   { labelAr: 'مرتجع',          labelEn: 'Returned',     color: 'bg-gray-500' },
 };
 
 const PROVIDER_LABELS: Record<string, string> = {
-  internal: 'توصيل داخلي',
-  noon_food: 'نون فود',
-  hunger_station: 'هنقرستيشن',
-  hungerstation: 'هنقرستيشن',
-  keeta: 'كيتا',
-  jahez: 'جاهز',
-  toyou: 'تو يو',
-  mrsool: 'مرسول',
-  careem: 'كريم',
+  internal:        'Internal',
+  noon_food:       'Noon Food',
+  hunger_station:  'HungerStation',
+  hungerstation:   'HungerStation',
+  keeta:           'Keeta',
+  jahez:           'Jahez',
+  toyou:           'ToYou',
+  mrsool:          'Mrsool',
+  careem:          'Careem',
 };
 
 function formatCurrency(amount: number) {
   return `${amount.toFixed(2)} ر.س`;
 }
 
-const DRIVER_STATUS_CONFIG: Record<string, { label: string; dot: string; ring: string; text: string; animate: boolean }> = {
-  online:   { label: "متاح",     dot: "bg-green-500",  ring: "ring-green-400",  text: "text-green-700",  animate: true },
-  busy:     { label: "مشغول",    dot: "bg-orange-500", ring: "ring-orange-400", text: "text-orange-700", animate: true },
-  offline:  { label: "غير متصل",dot: "bg-gray-400",   ring: "ring-gray-300",   text: "text-gray-500",   animate: false },
-  inactive: { label: "غير نشط", dot: "bg-gray-300",   ring: "ring-gray-200",   text: "text-gray-400",   animate: false },
+const DRIVER_STATUS_CONFIG: Record<string, { labelAr: string; labelEn: string; dot: string; ring: string; text: string; animate: boolean }> = {
+  online:   { labelAr: "متاح",      labelEn: "Available", dot: "bg-green-500",  ring: "ring-green-400",  text: "text-green-700",  animate: true },
+  busy:     { labelAr: "مشغول",     labelEn: "Busy",      dot: "bg-orange-500", ring: "ring-orange-400", text: "text-orange-700", animate: true },
+  offline:  { labelAr: "غير متصل", labelEn: "Offline",   dot: "bg-gray-400",   ring: "ring-gray-300",   text: "text-gray-500",   animate: false },
+  inactive: { labelAr: "غير نشط",  labelEn: "Inactive",  dot: "bg-gray-300",   ring: "ring-gray-200",   text: "text-gray-400",   animate: false },
 };
 
 function LiveDriverTracking() {
@@ -98,14 +99,14 @@ function LiveDriverTracking() {
       <div className="flex items-center justify-center py-20">
         <div className="text-center space-y-3">
           <div className="w-12 h-12 border-4 border-green-500 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-sm text-muted-foreground">جاري تحميل بيانات السائقين...</p>
+          <p className="text-sm text-muted-foreground">{tc("جاري تحميل بيانات السائقين...", "Loading driver data...")}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-5" dir="rtl">
+    <div className="space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -114,12 +115,12 @@ function LiveDriverTracking() {
             {tc("تتبع السائقين - مباشر", "Live Driver Tracking")}
           </h2>
           <p className="text-sm text-muted-foreground mt-0.5">
-            يتحدث كل 20 ثانية • {new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" })}
+            {tc("يتحدث كل 20 ثانية","Updates every 20s")} • {new Date().toLocaleTimeString(tc("ar-SA","en-US"), { hour: "2-digit", minute: "2-digit" })}
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => refetch()}>
           <RefreshCw className="w-4 h-4 ml-1" />
-          تحديث
+          {tc("تحديث","Refresh")}
         </Button>
       </div>
 
@@ -129,21 +130,21 @@ function LiveDriverTracking() {
           <p className="text-3xl font-black text-green-700">{online.length}</p>
           <div className="flex items-center justify-center gap-1.5 mt-1">
             <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            <p className="text-xs font-semibold text-green-700">متاح</p>
+            <p className="text-xs font-semibold text-green-700">{tc("متاح","Available")}</p>
           </div>
         </div>
         <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 text-center">
           <p className="text-3xl font-black text-orange-700">{busy.length}</p>
           <div className="flex items-center justify-center gap-1.5 mt-1">
             <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
-            <p className="text-xs font-semibold text-orange-700">مشغول</p>
+            <p className="text-xs font-semibold text-orange-700">{tc("مشغول","Busy")}</p>
           </div>
         </div>
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-center">
           <p className="text-3xl font-black text-gray-600">{offline.length}</p>
           <div className="flex items-center justify-center gap-1.5 mt-1">
             <span className="w-2 h-2 rounded-full bg-gray-400" />
-            <p className="text-xs font-semibold text-gray-500">غير متصل</p>
+            <p className="text-xs font-semibold text-gray-500">{tc("غير متصل","Offline")}</p>
           </div>
         </div>
       </div>
@@ -159,14 +160,14 @@ function LiveDriverTracking() {
           </CardHeader>
           <CardContent className="space-y-2">
             {activeOrders.map((order: any) => {
-              const statusInfo = STATUS_LABELS[order.status] || { label: order.status, color: "bg-gray-500" };
+              const statusInfo = STATUS_LABELS[order.status] || { labelAr: order.status, labelEn: order.status, color: "bg-gray-500" };
               return (
                 <div key={order.id} className="flex items-center gap-3 p-3 bg-background rounded-xl border border-border/50">
                   <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${statusInfo.color} animate-pulse`} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="font-semibold text-sm truncate">{order.customerName || tc("عميل","Customer")}</p>
-                      <Badge className={`${statusInfo.color} text-white text-xs shrink-0`}>{statusInfo.label}</Badge>
+                      <Badge className={`${statusInfo.color} text-white text-xs shrink-0`}>{tc(statusInfo.labelAr, statusInfo.labelEn)}</Badge>
                     </div>
                     <p className="text-xs text-muted-foreground truncate flex items-center gap-1 mt-0.5">
                       <MapPin className="w-3 h-3 shrink-0" />
@@ -237,18 +238,18 @@ function LiveDriverTracking() {
                         driver.status === "busy" ? "bg-orange-100 text-orange-800 border border-orange-300" :
                         "bg-gray-100 text-gray-600 border border-gray-200"
                       }`}>
-                        {cfg.label}
+                        {tc(cfg.labelAr, cfg.labelEn)}
                       </Badge>
                     </div>
 
                     {/* Stats row */}
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div className="bg-background rounded-lg p-2 border border-border/50">
-                        <p className="text-muted-foreground">التوصيلات</p>
+                        <p className="text-muted-foreground">{tc("التوصيلات","Deliveries")}</p>
                         <p className="font-bold text-sm">{driver.totalDeliveries || 0}</p>
                       </div>
                       <div className="bg-background rounded-lg p-2 border border-border/50">
-                        <p className="text-muted-foreground">التقييم</p>
+                        <p className="text-muted-foreground">{tc("التقييم","Rating")}</p>
                         <p className="font-bold text-sm flex items-center gap-1">
                           {driver.rating ? driver.rating.toFixed(1) : "—"}
                           {driver.rating && <Star className="w-3 h-3 text-yellow-500" />}
@@ -322,11 +323,11 @@ function TrackingModeSelector() {
 }
 
 const DINE_IN_STATUS_STEPS = [
-  { key: 'pending',    label: 'وارد',        color: 'bg-yellow-400', icon: Clock },
-  { key: 'preparing',  label: 'يُحضَّر',     color: 'bg-blue-500',   icon: Coffee },
-  { key: 'ready',      label: 'جاهز',        color: 'bg-purple-500', icon: CheckCircle },
-  { key: 'serving',    label: 'يُقدَّم',     color: 'bg-orange-500', icon: UtensilsCrossed },
-  { key: 'delivered',  label: 'سُلِّم',      color: 'bg-green-500',  icon: CheckCircle },
+  { key: 'pending',    labelAr: 'وارد',      labelEn: 'Received',    color: 'bg-yellow-400', icon: Clock },
+  { key: 'preparing',  labelAr: 'يُحضَّر',   labelEn: 'Preparing',   color: 'bg-blue-500',   icon: Coffee },
+  { key: 'ready',      labelAr: 'جاهز',      labelEn: 'Ready',       color: 'bg-purple-500', icon: CheckCircle },
+  { key: 'serving',    labelAr: 'يُقدَّم',   labelEn: 'Serving',     color: 'bg-orange-500', icon: UtensilsCrossed },
+  { key: 'delivered',  labelAr: 'سُلِّم',    labelEn: 'Delivered',   color: 'bg-green-500',  icon: CheckCircle },
 ];
 
 function CafeInternalTracking() {
@@ -366,24 +367,24 @@ function CafeInternalTracking() {
       <div className="flex items-center justify-center py-20">
         <div className="text-center space-y-3">
           <div className="w-12 h-12 border-4 border-green-500 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-sm text-gray-500">جاري تحميل الطلبات الداخلية...</p>
+          <p className="text-sm text-gray-500">{tc("جاري تحميل الطلبات الداخلية...","Loading in-cafe orders...")}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-5" dir="rtl">
+    <div className="space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-bold flex items-center gap-2 text-gray-900">
             <Coffee className="w-5 h-5 text-green-600 animate-pulse" />
-            {tc("التوصيل الداخلي للمطعم - مباشر", "In-Cafe Live Delivery")}
+            {tc("التوصيل الداخلي للكافيه - مباشر", "In-Cafe Live Delivery")}
           </h2>
           <p className="text-sm text-gray-500 mt-0.5 flex items-center gap-1">
             <Wifi className="w-3 h-3 text-green-500" />
-            يتحدث كل 15 ثانية • {now.toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" })}
+            {tc("يتحدث كل 15 ثانية","Updates every 15s")} • {now.toLocaleTimeString(tc("ar-SA","en-US"), { hour: "2-digit", minute: "2-digit" })}
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => refetch()} className="border-green-300 text-green-700 hover:bg-green-50">
@@ -400,7 +401,7 @@ function CafeInternalTracking() {
           </p>
           <div className="flex items-center justify-center gap-1.5 mt-1">
             <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
-            <p className="text-xs font-semibold text-yellow-700">قيد التحضير</p>
+            <p className="text-xs font-semibold text-yellow-700">{tc("قيد التحضير","Preparing")}</p>
           </div>
         </div>
         <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 text-center">
@@ -409,7 +410,7 @@ function CafeInternalTracking() {
           </p>
           <div className="flex items-center justify-center gap-1.5 mt-1">
             <span className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
-            <p className="text-xs font-semibold text-purple-700">جاهز للتقديم</p>
+            <p className="text-xs font-semibold text-purple-700">{tc("جاهز للتقديم","Ready")}</p>
           </div>
         </div>
         <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 text-center">
@@ -418,7 +419,7 @@ function CafeInternalTracking() {
           </p>
           <div className="flex items-center justify-center gap-1.5 mt-1">
             <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
-            <p className="text-xs font-semibold text-orange-700">يُقدَّم الآن</p>
+            <p className="text-xs font-semibold text-orange-700">{tc("يُقدَّم الآن","Serving Now")}</p>
           </div>
         </div>
       </div>
@@ -430,8 +431,8 @@ function CafeInternalTracking() {
             <div className="w-16 h-16 mx-auto bg-green-50 rounded-full flex items-center justify-center">
               <Coffee className="w-8 h-8 text-green-400" />
             </div>
-            <p className="font-semibold text-gray-600">لا توجد طلبات داخلية نشطة حالياً</p>
-            <p className="text-sm text-gray-400">ستظهر طلبات الطاولات هنا بمجرد ورودها</p>
+            <p className="font-semibold text-gray-600">{tc("لا توجد طلبات داخلية نشطة حالياً","No active in-cafe orders")}</p>
+            <p className="text-sm text-gray-400">{tc("ستظهر طلبات الطاولات هنا بمجرد ورودها","Table orders will appear here as they come in")}</p>
           </CardContent>
         </Card>
       ) : (
@@ -458,7 +459,7 @@ function CafeInternalTracking() {
                       </div>
                       <div>
                         <p className="font-bold text-sm text-gray-900">
-                          {order.tableNumber ? `طاولة ${order.tableNumber}` : (order.customerName || 'طلب داخلي')}
+                          {order.tableNumber ? `${tc("طاولة","Table")} ${order.tableNumber}` : (order.customerName || tc('طلب داخلي','In-Cafe Order'))}
                         </p>
                         <p className="text-xs text-gray-500">#{order.orderNumber || order.id?.slice(-6)}</p>
                       </div>
@@ -466,10 +467,10 @@ function CafeInternalTracking() {
                     <div className="text-left">
                       <Badge className={`${step?.color} text-white text-xs flex items-center gap-1 ${order.status === 'ready' || order.status === 'serving' ? 'animate-pulse' : ''}`}>
                         <StepIcon className="w-3 h-3" />
-                        {step?.label}
+                        {step ? tc(step.labelAr, step.labelEn) : ''}
                       </Badge>
                       <p className={`text-xs mt-1 text-left ${isUrgent ? 'text-red-600 font-bold' : 'text-gray-500'}`}>
-                        {elapsed} دقيقة {isUrgent ? '⚠️' : ''}
+                        {elapsed} {tc("دقيقة","min")} {isUrgent ? '⚠️' : ''}
                       </p>
                     </div>
                   </div>
@@ -509,8 +510,231 @@ function CafeInternalTracking() {
 
                   {/* Total */}
                   <div className="mt-2 flex items-center justify-between">
-                    <span className="text-xs text-gray-400">إجمالي الطلب</span>
-                    <span className="font-bold text-sm text-gray-900">{(order.totalAmount || 0).toFixed(2)} ر.س</span>
+                    <span className="text-xs text-gray-400">{tc("إجمالي الطلب","Order Total")}</span>
+                    <span className="font-bold text-sm text-gray-900">{(order.totalAmount || 0).toFixed(2)} <SarIcon size={11} /></span>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DispatchCenter() {
+  const tc = useTranslate();
+  const { toast } = useToast();
+
+  const { data: unassignedRaw, isLoading: loadingUnassigned, refetch: refetchUnassigned } = useQuery({
+    queryKey: ["/api/delivery/orders/unassigned"],
+    refetchInterval: 8000,
+  });
+
+  const { data: driversRaw, isLoading: loadingDrivers, refetch: refetchDrivers } = useQuery({
+    queryKey: ["/api/delivery/drivers"],
+    queryFn: async () => {
+      const res = await fetch("/api/delivery/drivers", { credentials: "include" });
+      if (!res.ok) return { drivers: [] };
+      return res.json();
+    },
+    refetchInterval: 8000,
+  });
+
+  const unassignedOrders: any[] = (unassignedRaw as any)?.orders || [];
+  const allDrivers: any[] = Array.isArray(driversRaw) ? driversRaw : (driversRaw as any)?.drivers || [];
+  const availableDrivers = allDrivers.filter((d) => d.status === "available" || d.status === "online");
+
+  const assignMutation = useMutation({
+    mutationFn: ({ orderId, driverId }: { orderId: string; driverId: string }) =>
+      apiRequest("PATCH", `/api/delivery/orders/${orderId}/assign`, { driverId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/delivery/orders/unassigned"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/delivery/drivers"] });
+      toast({ title: tc("تم تعيين السائق", "Driver assigned"), className: "bg-green-600 text-white" });
+    },
+    onError: (e: any) => toast({ title: e?.message || tc("فشل التعيين", "Assignment failed"), variant: "destructive" }),
+  });
+
+  const autoAssignMutation = useMutation({
+    mutationFn: (orderId: string) => apiRequest("POST", `/api/delivery/orders/${orderId}/auto-assign`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/delivery/orders/unassigned"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/delivery/drivers"] });
+      toast({ title: tc("تم التعيين التلقائي", "Auto-assigned successfully"), className: "bg-green-600 text-white" });
+    },
+    onError: (e: any) => toast({ title: e?.message || tc("لا يوجد سائق متاح", "No available driver"), variant: "destructive" }),
+  });
+
+  const [selectedDrivers, setSelectedDrivers] = useState<Record<string, string>>({});
+
+  return (
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold flex items-center gap-2">
+            <Zap className="w-5 h-5 text-orange-500 animate-pulse" />
+            {tc("مركز الإرسال", "Dispatch Center")}
+          </h2>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {tc("وزّع الطلبات على السائقين المتاحين", "Assign pending orders to available drivers")}
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => { refetchUnassigned(); refetchDrivers(); }}>
+          <RefreshCw className="w-4 h-4 ml-1" />
+          {tc("تحديث", "Refresh")}
+        </Button>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-center gap-3">
+          <div className="w-10 h-10 bg-orange-500/20 rounded-full flex items-center justify-center">
+            <Package className="w-5 h-5 text-orange-600" />
+          </div>
+          <div>
+            <p className="text-2xl font-black text-orange-700">{unassignedOrders.length}</p>
+            <p className="text-xs text-orange-600">{tc("طلبات بانتظار سائق", "Awaiting Driver")}</p>
+          </div>
+        </div>
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3">
+          <div className="w-10 h-10 bg-green-500/20 rounded-full flex items-center justify-center">
+            <Users className="w-5 h-5 text-green-600" />
+          </div>
+          <div>
+            <p className="text-2xl font-black text-green-700">{availableDrivers.length}</p>
+            <p className="text-xs text-green-600">{tc("سائقون متاحون", "Available Drivers")}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Available Drivers Quick View */}
+      {availableDrivers.length > 0 && (
+        <div>
+          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">
+            {tc("السائقون المتاحون", "Available Drivers")}
+          </p>
+          <div className="flex gap-2 flex-wrap">
+            {availableDrivers.map((d) => (
+              <div key={d.id} className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-full px-3 py-1.5">
+                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                <span className="text-sm font-medium text-green-800">{d.fullName || d.nameAr || d.name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Unassigned Orders */}
+      {loadingUnassigned ? (
+        <div className="flex items-center justify-center py-12">
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : unassignedOrders.length === 0 ? (
+        <Card className="border-dashed">
+          <CardContent className="py-12 text-center space-y-3">
+            <CheckCircle className="w-12 h-12 mx-auto text-green-500 opacity-50" />
+            <p className="font-semibold text-muted-foreground">{tc("لا توجد طلبات بانتظار التعيين", "No orders awaiting assignment")}</p>
+            <p className="text-sm text-muted-foreground">{tc("جميع الطلبات تم تعيينها", "All orders have been assigned")}</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-sm font-medium text-muted-foreground">
+            {tc("الطلبات غير المعيّنة", "Unassigned Orders")} ({unassignedOrders.length})
+          </p>
+          {unassignedOrders.map((order: any) => {
+            const elapsed = Math.floor((Date.now() - new Date(order.createdAt).getTime()) / 60000);
+            const isUrgent = elapsed > 10;
+            return (
+              <Card key={order.id} className={`overflow-hidden border-2 ${isUrgent ? "border-red-300 bg-red-50/20" : "border-orange-200"}`}>
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-bold">{order.customerName || tc("عميل", "Customer")}</p>
+                        {isUrgent && (
+                          <Badge className="bg-red-100 text-red-700 border border-red-300 text-xs animate-pulse">
+                            ⚠️ {elapsed} {tc("دقيقة انتظار", "min wait")}
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                        <MapPin className="w-3 h-3 flex-shrink-0" />
+                        {order.customerAddress || tc("عنوان غير محدد", "Address not set")}
+                      </p>
+                      {order.customerPhone && (
+                        <a href={`tel:${order.customerPhone}`} className="text-xs text-primary flex items-center gap-1 mt-0.5">
+                          <Phone className="w-3 h-3" />
+                          {order.customerPhone}
+                        </a>
+                      )}
+                    </div>
+                    <div className="text-left flex-shrink-0 mr-3">
+                      <p className="font-bold text-sm">{(order.totalAmount || 0).toFixed(0)} <SarIcon size={11} className="inline" /></p>
+                      {!isUrgent && <p className="text-xs text-muted-foreground">{elapsed} {tc("د", "min")}</p>}
+                    </div>
+                  </div>
+
+                  {/* Items */}
+                  {order.items && order.items.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-3">
+                      {order.items.slice(0, 4).map((item: any, idx: number) => (
+                        <span key={idx} className="text-xs bg-muted px-2 py-0.5 rounded-full">
+                          {item.name} ×{item.quantity}
+                        </span>
+                      ))}
+                      {order.items.length > 4 && (
+                        <span className="text-xs text-muted-foreground">+{order.items.length - 4}</span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Assign actions */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {availableDrivers.length > 0 ? (
+                      <>
+                        <Select
+                          value={selectedDrivers[order.id] || ""}
+                          onValueChange={(v) => setSelectedDrivers((prev) => ({ ...prev, [order.id]: v }))}
+                        >
+                          <SelectTrigger className="h-9 flex-1 min-w-32 text-sm">
+                            <SelectValue placeholder={tc("اختر سائقاً", "Select driver")} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableDrivers.map((d) => (
+                              <SelectItem key={d.id} value={d.id}>
+                                {d.fullName || d.nameAr || d.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            const driverId = selectedDrivers[order.id];
+                            if (driverId) assignMutation.mutate({ orderId: order.id, driverId });
+                          }}
+                          disabled={!selectedDrivers[order.id] || assignMutation.isPending}
+                          className="bg-primary hover:bg-primary/90 h-9"
+                        >
+                          <Truck className="w-3.5 h-3.5 ml-1" />
+                          {tc("تعيين", "Assign")}
+                        </Button>
+                      </>
+                    ) : null}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => autoAssignMutation.mutate(order.id)}
+                      disabled={autoAssignMutation.isPending}
+                      className="h-9 border-orange-300 text-orange-700 hover:bg-orange-50"
+                    >
+                      <Zap className="w-3.5 h-3.5 ml-1" />
+                      {tc("تعيين تلقائي", "Auto Assign")}
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
@@ -592,7 +816,7 @@ export default function ManagerDelivery() {
   const pendingOrders = ordersData.filter((o: any) => o.status === 'pending');
 
   return (
-    <div className="p-4 md:p-6 space-y-6 bg-white text-gray-900 min-h-screen" dir="rtl">
+    <div className="p-4 md:p-6 space-y-6 bg-white text-gray-900 min-h-screen">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => navigate("/manager/dashboard")}>
@@ -619,12 +843,16 @@ export default function ManagerDelivery() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid grid-cols-5 w-full max-w-xl">
-          <TabsTrigger value="dashboard">{tc("الرئيسية", "Dashboard")}</TabsTrigger>
-          <TabsTrigger value="orders">{tc("الطلبات", "Orders")}</TabsTrigger>
-          <TabsTrigger value="tracking">{tc("تتبع مباشر", "Live Track")}</TabsTrigger>
-          <TabsTrigger value="settings">{tc("الإعدادات", "Settings")}</TabsTrigger>
-          <TabsTrigger value="integrations">{tc("الربط", "Integrations")}</TabsTrigger>
+        <TabsList className="flex w-full overflow-x-auto gap-0.5">
+          <TabsTrigger value="dashboard" className="flex-1 min-w-fit">{tc("الرئيسية", "Dashboard")}</TabsTrigger>
+          <TabsTrigger value="dispatch" className="flex-1 min-w-fit">
+            <Zap className="w-3.5 h-3.5 ml-1 text-orange-500" />
+            {tc("إرسال", "Dispatch")}
+          </TabsTrigger>
+          <TabsTrigger value="orders" className="flex-1 min-w-fit">{tc("الطلبات", "Orders")}</TabsTrigger>
+          <TabsTrigger value="tracking" className="flex-1 min-w-fit">{tc("تتبع مباشر", "Live Track")}</TabsTrigger>
+          <TabsTrigger value="settings" className="flex-1 min-w-fit">{tc("الإعدادات", "Settings")}</TabsTrigger>
+          <TabsTrigger value="integrations" className="flex-1 min-w-fit">{tc("الربط", "Integrations")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="dashboard" className="space-y-6">
@@ -777,6 +1005,10 @@ export default function ManagerDelivery() {
           )}
         </TabsContent>
 
+        <TabsContent value="dispatch" className="space-y-4">
+          <DispatchCenter />
+        </TabsContent>
+
         <TabsContent value="orders" className="space-y-4">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-bold flex items-center gap-2">
@@ -805,7 +1037,7 @@ export default function ManagerDelivery() {
           ) : (
             <div className="space-y-3">
               {activeOrders.map((order: any) => {
-                const statusInfo = STATUS_LABELS[order.status] || { label: order.status, color: 'bg-gray-500' };
+                const statusInfo = STATUS_LABELS[order.status] || { labelAr: order.status, labelEn: order.status, color: 'bg-gray-500' };
                 return (
                   <Card key={order.id} className="overflow-hidden">
                     <CardContent className="p-4">
@@ -814,7 +1046,7 @@ export default function ManagerDelivery() {
                           <div className="flex items-center gap-2 mb-1">
                             <p className="font-bold">{order.customerName || tc('عميل', 'Customer')}</p>
                             <Badge className={`${statusInfo.color} text-white text-xs`}>
-                              {statusInfo.label}
+                              {tc(statusInfo.labelAr, statusInfo.labelEn)}
                             </Badge>
                           </div>
                           <p className="text-xs text-muted-foreground flex items-center gap-1">

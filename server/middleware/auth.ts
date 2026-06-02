@@ -52,12 +52,6 @@ async function tryRestoreFromHeaders(req: AuthRequest, res?: any): Promise<boole
     const storedKey = (employee as any).lastRestoreKey;
     if (!storedKey || storedKey !== restoreKey) return false;
     
-    const newRestoreKey = require('crypto').randomBytes(32).toString('hex');
-    await EmployeeCollection.updateOne(
-      { _id: employee._id },
-      { $set: { lastRestoreKey: newRestoreKey } }
-    );
-    
     const sessionEmployee = {
       id: employee.id || employee._id.toString(),
       username: employee.username,
@@ -68,9 +62,7 @@ async function tryRestoreFromHeaders(req: AuthRequest, res?: any): Promise<boole
     };
     
     req.session.employee = sessionEmployee;
-    req.session.restoreKey = newRestoreKey;
-    
-    if (res) res.setHeader('X-New-Restore-Key', newRestoreKey);
+    req.session.restoreKey = restoreKey;
     
     req.employee = sessionEmployee;
     return true;
@@ -163,7 +155,7 @@ export function requireKitchenAccess(req: AuthRequest, res: Response, next: Next
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  const kitchenRoles = ["chef", "cook", "waiter", "manager", "branch_manager", "supervisor", "admin", "owner"];
+  const kitchenRoles = ["barista", "cook", "waiter", "manager", "branch_manager", "supervisor", "admin", "owner"];
   if (!kitchenRoles.includes(req.employee.role)) {
     return res.status(403).json({ error: "Forbidden - Kitchen access required" });
   }
@@ -176,7 +168,7 @@ export function requireCashierAccess(req: AuthRequest, res: Response, next: Next
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  const cashierRoles = ["cashier", "chef", "waiter", "manager", "branch_manager", "supervisor", "admin", "owner"];
+  const cashierRoles = ["cashier", "barista", "waiter", "manager", "branch_manager", "supervisor", "admin", "owner"];
   if (!cashierRoles.includes(req.employee.role)) {
     return res.status(403).json({ error: "Forbidden - Cashier access required" });
   }

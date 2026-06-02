@@ -1,5 +1,7 @@
-import { forwardRef } from "react";
-import tasaliLogo from "@assets/receipt-logo.png";
+import { forwardRef, useEffect, useState } from "react";
+import QRCode from "qrcode";
+import JsBarcode from "jsbarcode";
+import blackroseLogo from "@assets/blackrose-logo.png";
 import { brand } from "@/lib/brand";
 import SarIcon from "@/components/sar-icon";
 import { VAT_RATE } from "@/lib/constants";
@@ -9,9 +11,27 @@ interface OrderItem {
     nameAr: string;
     nameEn?: string;
     price: string;
+    availableSizes?: Array<{ nameAr: string; price: number }>;
   };
   quantity: number;
+  selectedSize?: string;
   itemDiscount?: number;
+  customization?: {
+    selectedItemAddons?: Array<{ nameAr: string; nameEn?: string; price?: number }>;
+    [key: string]: any;
+  };
+}
+
+function getItemUnitPriceForReceipt(item: OrderItem): number {
+  const stored = parseNumber((item as any).price ?? (item as any).unitPrice);
+  if (stored > 0) return stored;
+  let base = parseNumber(item.coffeeItem.price);
+  if (item.selectedSize && item.coffeeItem.availableSizes) {
+    const sz = item.coffeeItem.availableSizes.find(s => s.nameAr === item.selectedSize);
+    if (sz) base = Number(sz.price) || base;
+  }
+  const addonsTotal = (item.customization?.selectedItemAddons || []).reduce((s, a) => s + (parseNumber(a.price) || 0), 0);
+  return base + addonsTotal;
 }
 
 interface ReceiptProps {
@@ -37,10 +57,55 @@ interface ReceiptProps {
   isKitchenCopy?: boolean;
 }
 
+const VAT_NUMBER = "312718675800003";
 const COMPANY_NAME = brand.shortNameAr;
 const COMPANY_NAME_EN = brand.nameEn;
-const DEFAULT_BRANCH = "الفرع الرئيسي - الرياض";
-const DEFAULT_ADDRESS = "الرياض، المملكة العربية السعودية";
+const COMPANY_CR = "1163184110";
+const COMPANY_VAT_NAME = "شركة بلاك روز للخدمات الغذائية"; // Added for ZATCA compliance
+const DEFAULT_BRANCH = "الفرع الرئيسي - ينبع";
+const DEFAULT_ADDRESS = "ينبع، المملكة العربية السعودية";
+
+function generateZATCAQRCode(data: {
+  sellerName: string;
+  vatNumber: string;
+  timestamp: string;
+  totalWithVat: string;
+  vatAmount: string;
+}): string {
+  const tlv = (tag: number, value: string): Uint8Array => {
+    const encoder = new TextEncoder();
+    const valueBytes = encoder.encode(value);
+    const result = new Uint8Array(2 + valueBytes.length);
+    result[0] = tag;
+    result[1] = valueBytes.length;
+    result.set(valueBytes, 2);
+    return result;
+  };
+
+  const sellerNameTLV = tlv(1, data.sellerName);
+  const vatNumberTLV = tlv(2, data.vatNumber);
+  const timestampTLV = tlv(3, data.timestamp);
+  const totalWithVatTLV = tlv(4, data.totalWithVat);
+  const vatAmountTLV = tlv(5, data.vatAmount);
+
+  const combined = new Uint8Array(
+    sellerNameTLV.length + vatNumberTLV.length + timestampTLV.length + 
+    totalWithVatTLV.length + vatAmountTLV.length
+  );
+
+  let offset = 0;
+  combined.set(sellerNameTLV, offset); offset += sellerNameTLV.length;
+  combined.set(vatNumberTLV, offset); offset += vatNumberTLV.length;
+  combined.set(timestampTLV, offset); offset += timestampTLV.length;
+  combined.set(totalWithVatTLV, offset); offset += totalWithVatTLV.length;
+  combined.set(vatAmountTLV, offset);
+
+  let binary = '';
+  combined.forEach(byte => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary);
+}
 
 function formatDate(dateStr: string): { date: string; time: string } {
   try {
@@ -66,6 +131,9 @@ function parseNumber(value: number | string | undefined): number {
 
 export const ReceiptPrint = forwardRef<HTMLDivElement, ReceiptProps>(
   ({ orderNumber, invoiceNumber, customerName, customerPhone, items, subtotal, discount, invoiceDiscount, total, paymentMethod, employeeName, tableNumber, date, branchName, branchAddress, isKitchenCopy }, ref) => {
+    const [qrCodeUrl, setQrCodeUrl] = useState<string>("");
+    const [barcodeUrl, setBarcodeUrl] = useState<string>("");
+
     const displayOrderNumber = orderNumber;
     const totalAmount = parseNumber(total);
 
@@ -83,6 +151,53 @@ export const ReceiptPrint = forwardRef<HTMLDivElement, ReceiptProps>(
     const displayBranchName = branchName || DEFAULT_BRANCH;
     const displayBranchAddress = branchAddress || DEFAULT_ADDRESS;
     const displayInvoiceNumber = invoiceNumber || `INV-${orderNumber}`;
+
+    useEffect(() => {
+      const generateQR = async () => {
+        try {
+          const invoiceTimestamp = date ? new Date(date).toISOString() : new Date().toISOString();
+          const zatcaData = generateZATCAQRCode({
+            sellerName: COMPANY_NAME,
+            vatNumber: VAT_NUMBER,
+            timestamp: invoiceTimestamp,
+            totalWithVat: totalAmount.toFixed(2),
+            vatAmount: vatAmount.toFixed(2)
+          });
+
+          const qrDataUrl = await QRCode.toDataURL(zatcaData, {
+            width: 180,
+            margin: 1,
+            color: { dark: '#000000', light: '#FFFFFF' },
+            errorCorrectionLevel: 'M'
+          });
+          setQrCodeUrl(qrDataUrl);
+        } catch (error) {
+          console.error("Error generating QR code:", error);
+        }
+      };
+      if (!isKitchenCopy) generateQR();
+    }, [totalAmount, vatAmount, date, isKitchenCopy]);
+
+    useEffect(() => {
+      const generateBarcode = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          JsBarcode(canvas, orderNumber, {
+            format: "CODE128",
+            width: 1.5,
+            height: 40,
+            displayValue: true,
+            fontSize: 10,
+            margin: 5,
+            textMargin: 2
+          });
+          setBarcodeUrl(canvas.toDataURL());
+        } catch (error) {
+          console.error("Error generating barcode:", error);
+        }
+      };
+      if (orderNumber && !isKitchenCopy) generateBarcode();
+    }, [orderNumber, isKitchenCopy]);
 
     if (isKitchenCopy) {
       return (
@@ -113,17 +228,19 @@ export const ReceiptPrint = forwardRef<HTMLDivElement, ReceiptProps>(
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((item, index) => (
+                  {items.map((item, index) => {
+                    const addons = (item.customization?.selectedItemAddons || []).map((a: any) => a.nameAr).join('، ');
+                    return (
                     <tr key={index} className="border-b border-gray-300">
-                      <td className="text-right py-2">
-                        <div className="font-bold">{item.coffeeItem.nameAr}</div>
-                        {item.coffeeItem.nameEn && (
-                          <div className="text-[10px] text-gray-500 font-normal">{item.coffeeItem.nameEn}</div>
-                        )}
+                      <td className="text-right py-2 font-bold">
+                        <div>{item.coffeeItem.nameAr}</div>
+                        {item.selectedSize && <div className="text-base font-normal text-gray-600">الحجم: {item.selectedSize}</div>}
+                        {addons && <div className="text-base font-normal text-gray-600">+ {addons}</div>}
                       </td>
                       <td className="text-center py-2 text-2xl font-black">{item.quantity}</td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -140,18 +257,35 @@ export const ReceiptPrint = forwardRef<HTMLDivElement, ReceiptProps>(
         <div className="max-w-[80mm] mx-auto bg-white text-black p-3 font-sans" dir="rtl">
           <div className="text-center mb-4 pb-4 border-b-2 border-dashed border-gray-800">
             <img
-              src={tasaliLogo}
-              alt="تسالي كرومش"
-              style={{ width: '110px', height: '110px', objectFit: 'contain', margin: '0 auto 8px', display: 'block' }}
+              src={blackroseLogo}
+              alt={brand.nameEn}
+              style={{ filter: 'invert(1)', mixBlendMode: 'multiply', width: '90px', height: '90px', objectFit: 'contain', margin: '0 auto 6px' }}
             />
             <h1 className="text-2xl font-bold text-gray-900">{COMPANY_NAME}</h1>
             <p className="text-sm text-gray-600 font-medium">{COMPANY_NAME_EN}</p>
             <p className="text-xs text-gray-500 mt-1">{displayBranchName}</p>
             <p className="text-xs text-gray-400">{displayBranchAddress}</p>
-            <p className="text-xs font-bold text-amber-700 mt-1">www.tasaliqurmash.com.sa</p>
+            <p className="text-xs font-bold text-amber-700 mt-1">www.blackrose.com.sa</p>
             <div className="mt-3 pt-3 border-t border-gray-300">
               <p className="text-lg font-bold text-gray-900">فاتورة ضريبية مبسطة</p>
               <p className="text-xs text-gray-500">Simplified Tax Invoice</p>
+            </div>
+          </div>
+
+          <div className="mb-4 pb-3 border-b border-dashed border-gray-400">
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="col-span-2">
+                <div className="flex justify-between items-center bg-gray-100 px-2 py-1 rounded">
+                  <span className="text-gray-600">الرقم الضريبي VAT:</span>
+                  <span className="font-mono font-bold" dir="ltr">{VAT_NUMBER}</span>
+                </div>
+              </div>
+              <div className="col-span-2">
+                <div className="flex justify-between items-center px-2 py-1">
+                  <span className="text-gray-600">السجل التجاري CR:</span>
+                  <span className="font-mono font-bold" dir="ltr">{COMPANY_CR}</span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -211,16 +345,23 @@ export const ReceiptPrint = forwardRef<HTMLDivElement, ReceiptProps>(
               </thead>
               <tbody>
                 {items.map((item, index) => {
-                  const unitPrice = parseNumber(item.coffeeItem.price);
+                  const unitPrice = getItemUnitPriceForReceipt(item);
                   const lineTotal = unitPrice * item.quantity;
                   const itemDiscount = parseNumber(item.itemDiscount);
                   const lineAfterDiscount = lineTotal - itemDiscount;
+                  const addons = (item.customization?.selectedItemAddons || []).map((a: any) => a.nameAr).join('، ');
                   return (
                     <tr key={index} className="border-b border-gray-200">
                       <td className="py-2">
                         <div className="font-medium text-gray-900">{item.coffeeItem.nameAr}</div>
                         {item.coffeeItem.nameEn && (
                           <div className="text-[10px] text-gray-500">{item.coffeeItem.nameEn}</div>
+                        )}
+                        {item.selectedSize && (
+                          <div className="text-[10px] text-blue-600">الحجم: {item.selectedSize}</div>
+                        )}
+                        {addons && (
+                          <div className="text-[10px] text-gray-500">+ {addons}</div>
                         )}
                         {itemDiscount > 0 && (
                           <div className="text-[10px] text-green-600">خصم: {itemDiscount.toFixed(2)}-</div>
@@ -288,6 +429,16 @@ export const ReceiptPrint = forwardRef<HTMLDivElement, ReceiptProps>(
             </div>
           </div>
 
+          <div className="text-center mb-4">
+            <p className="text-xs font-bold text-gray-700 mb-1">رقم الطلب</p>
+            <p className="text-[10px] text-gray-500 mb-2">Order Number</p>
+            {barcodeUrl && (
+              <div className="inline-block p-1 bg-white border border-gray-200 rounded">
+                <img src={barcodeUrl} alt="Order Barcode" className="h-12 mx-auto" />
+              </div>
+            )}
+          </div>
+
           <div className="mb-4 pt-4 border-t-2 border-dashed border-gray-800 text-center">
             <div className="bg-gray-50 rounded-lg p-3">
               <p className="text-xs font-bold text-gray-600 mb-1">ملخص الطلب السريع</p>
@@ -296,15 +447,25 @@ export const ReceiptPrint = forwardRef<HTMLDivElement, ReceiptProps>(
               </p>
               <div className="text-right space-y-1">
                 {items.map((item, idx) => (
-                  <div key={idx} className="text-[11px] text-gray-800">
-                    <span className="font-bold">{item.quantity} x {item.coffeeItem.nameAr}</span>
-                    {item.coffeeItem.nameEn && (
-                      <span className="text-[10px] text-gray-500 mr-1">/ {item.coffeeItem.nameEn}</span>
-                    )}
-                  </div>
+                  <p key={idx} className="text-[11px] font-bold text-gray-800">
+                    {item.quantity} x {item.coffeeItem.nameAr}
+                  </p>
                 ))}
               </div>
             </div>
+          </div>
+
+          <div className="text-center mb-4">
+            <p className="text-xs font-bold text-gray-700 mb-1">رمز الاستجابة السريع للتحقق من الفاتورة</p>
+            <p className="text-[10px] text-gray-500 mb-3">ZATCA Compliant QR Code for Verification</p>
+            {qrCodeUrl && (
+              <div className="inline-block p-2 bg-white border-2 border-gray-300 rounded-lg">
+                <img src={qrCodeUrl} alt="ZATCA QR Code" className="w-36 h-36 mx-auto" />
+              </div>
+            )}
+            <p className="text-[9px] text-gray-400 mt-2">
+              امسح الرمز للتحقق من صحة الفاتورة
+            </p>
           </div>
 
           <div className="text-center pt-4 border-t-2 border-gray-800">

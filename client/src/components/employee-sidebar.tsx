@@ -1,10 +1,10 @@
 import { useLocation } from 'wouter';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { ClipboardList, Settings, LogOut, User, BarChart3, Warehouse, Wallet, ChefHat, Coffee, Languages, Clock, Building2 } from 'lucide-react';
+import { LayoutDashboard, ShoppingCart, ClipboardList, Settings, LogOut, User, BarChart3, Warehouse, Wallet, ChefHat, Table, Coffee, Utensils, Languages, Clock, Truck, Building2, Brain, FileSpreadsheet, Tag, Monitor, Bell, BookOpen, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { Employee } from '@shared/schema';
-import tasaliLogoStaff from "@assets/logo.png";
+import staffLogo from "@assets/employee-logo.png";
 import { brand } from "@/lib/brand";
 
 interface EmployeeSidebarProps {
@@ -15,18 +15,28 @@ interface EmployeeSidebarProps {
 type PageId = string;
 
 const PAGE_ID_TO_PATH: Record<PageId, { path: string; label: string; labelEn: string; icon: any; section: 'base' | 'manager'; isNotifications?: boolean }> = {
+  brand_ai: { path: '/employee/ai', label: 'المساعد الذكي', labelEn: 'AI Assistant', icon: Sparkles, section: 'base' },
+  dashboard: { path: '/employee/dashboard', label: 'لوحة التحكم', labelEn: 'Dashboard', icon: LayoutDashboard, section: 'base' },
+  cashier: { path: '/employee/cashier', label: 'الكاشير', labelEn: 'Cashier', icon: ShoppingCart, section: 'base' },
   pos: { path: '/employee/pos', label: 'نقاط البيع', labelEn: 'POS', icon: BarChart3, section: 'base' },
+  shifts: { path: '/employee/shifts', label: 'الورديات', labelEn: 'Shifts', icon: Clock, section: 'base' },
+  kiosk_qr: { path: '/employee/kiosk-qr', label: 'QR الكيوسك', labelEn: 'Kiosk QR', icon: Monitor, section: 'base' },
   orders: { path: '/employee/orders', label: 'الطلبات', labelEn: 'Orders', icon: ClipboardList, section: 'base' },
   kitchen: { path: '/employee/kitchen', label: 'المطبخ', labelEn: 'Kitchen', icon: ChefHat, section: 'base' },
-  shifts: { path: '/employee/shifts', label: 'الورديات', labelEn: 'Shifts', icon: Clock, section: 'base' },
-  attendance: { path: '/employee/attendance', label: 'الحضور والانصراف', labelEn: 'Attendance', icon: User, section: 'base' },
+  tables: { path: '/employee/table-orders', label: 'الطاولات', labelEn: 'Tables', icon: Table, section: 'base' },
+  notifications: { path: '/notifications', label: 'الإشعارات', labelEn: 'Notifications', icon: Bell, section: 'base', isNotifications: true },
   menu_management: { path: '/employee/menu-management', label: 'إدارة القائمة', labelEn: 'Menu', icon: Coffee, section: 'manager' },
   inventory: { path: '/manager/inventory', label: 'المخزون', labelEn: 'Inventory', icon: Warehouse, section: 'manager' },
-  accounting: { path: '/manager/accounting', label: 'المحاسبة', labelEn: 'Accounting', icon: Wallet, section: 'manager' },
   reports: { path: '/admin/reports', label: 'التقارير', labelEn: 'Reports', icon: BarChart3, section: 'manager' },
-  unified_reports: { path: '/manager/unified-reports', label: 'التقارير الموحدة', labelEn: 'Unified Reports', icon: Building2, section: 'manager' },
+  accounting: { path: '/manager/accounting', label: 'المحاسبة', labelEn: 'Accounting', icon: Wallet, section: 'manager' },
+  erp_accounting: { path: '/erp/accounting', label: 'نظام ERP', labelEn: 'ERP System', icon: BookOpen, section: 'manager' },
   employees: { path: '/admin/employees', label: 'إدارة الموظفين', labelEn: 'Employees', icon: User, section: 'manager' },
   settings: { path: '/admin/settings', label: 'الإعدادات', labelEn: 'Settings', icon: Settings, section: 'manager' },
+  delivery: { path: '/manager/delivery', label: 'إدارة التوصيل', labelEn: 'Delivery', icon: Truck, section: 'manager' },
+  unified_reports: { path: '/manager/unified-reports', label: 'التقارير الموحدة', labelEn: 'Unified Reports', icon: Building2, section: 'manager' },
+  bi_analytics: { path: '/manager/bi-analytics', label: 'تحليلات BI', labelEn: 'BI Analytics', icon: Brain, section: 'manager' },
+  promotions: { path: '/manager/promotions', label: 'العروض الترويجية', labelEn: 'Promotions', icon: Tag, section: 'manager' },
+  kiosk: { path: '/kiosk', label: 'الكشك (كيوسك)', labelEn: 'Kiosk', icon: Monitor, section: 'manager' },
 };
 
 const ADMIN_ROLES = ['manager', 'owner', 'admin', 'branch_manager'];
@@ -46,16 +56,16 @@ function getAccessiblePages(employee: Employee | null): PageId[] {
   }
 
   const roleDefaults: Record<string, PageId[]> = {
-    cashier: ['pos', 'orders', 'shifts', 'attendance'],
-    chef: ['orders', 'kitchen', 'shifts', 'attendance'],
-    cook: ['orders', 'kitchen', 'shifts', 'attendance'],
-    waiter: ['pos', 'orders', 'shifts', 'attendance'],
-    supervisor: ['pos', 'orders', 'kitchen', 'shifts', 'attendance', 'menu_management', 'reports'],
-    manager: ['pos', 'orders', 'kitchen', 'shifts', 'attendance', 'menu_management', 'inventory', 'accounting', 'reports', 'unified_reports', 'employees', 'settings'],
-    branch_manager: ['pos', 'orders', 'kitchen', 'shifts', 'attendance', 'menu_management', 'inventory', 'accounting', 'reports', 'unified_reports', 'employees', 'settings'],
+    cashier: ['brand_ai', 'dashboard', 'cashier', 'pos', 'shifts', 'kiosk_qr', 'orders', 'notifications'],
+    barista: ['brand_ai', 'dashboard', 'orders', 'kitchen', 'shifts', 'kiosk_qr', 'notifications'],
+    cook: ['brand_ai', 'dashboard', 'orders', 'kitchen', 'shifts', 'kiosk_qr', 'notifications'],
+    waiter: ['brand_ai', 'dashboard', 'cashier', 'orders', 'tables', 'shifts', 'kiosk_qr', 'notifications'],
+    supervisor: ['brand_ai', 'dashboard', 'cashier', 'pos', 'shifts', 'kiosk_qr', 'orders', 'kitchen', 'tables', 'menu_management', 'reports', 'notifications'],
+    manager: ['brand_ai', 'dashboard', 'cashier', 'pos', 'shifts', 'orders', 'kitchen', 'tables', 'menu_management', 'inventory', 'reports', 'accounting', 'erp_accounting', 'employees', 'settings', 'delivery', 'unified_reports', 'bi_analytics', 'promotions', 'kiosk', 'notifications'],
+    branch_manager: ['brand_ai', 'dashboard', 'cashier', 'pos', 'shifts', 'orders', 'kitchen', 'tables', 'menu_management', 'inventory', 'reports', 'accounting', 'erp_accounting', 'employees', 'settings', 'delivery', 'unified_reports', 'bi_analytics', 'promotions', 'kiosk', 'notifications'],
   };
 
-  return roleDefaults[role] || ['pos', 'orders', 'shifts', 'attendance'];
+  return roleDefaults[role] || ['dashboard', 'cashier', 'orders', 'notifications'];
 }
 
 function NotifBadge({ count }: { count: number }) {
@@ -109,13 +119,16 @@ export function EmployeeSidebar({ employee, onLogout }: EmployeeSidebarProps) {
       <div className="p-4 border-b border-border">
         <div className="flex items-center gap-3 mb-2">
           <img 
-            src={tasaliLogoStaff} 
+            src={staffLogo} 
             alt={brand.platformNameEn}
             className="w-10 h-10 object-contain rounded-lg"
           />
           <div>
-            <h2 className="text-lg font-bold text-foreground">{brand.platformNameAr}</h2>
-            <p className="text-xs text-muted-foreground">{t('sidebar.employee_system')}</p>
+            <h2 className="text-lg font-bold text-foreground">{isAr ? brand.platformNameAr : brand.platformNameEn}</h2>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <p className="text-xs text-muted-foreground">{t('sidebar.employee_system')}</p>
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-gradient-to-r from-yellow-500 to-amber-400 text-black leading-none tracking-wide shadow-sm">QIROX PRO</span>
+            </div>
           </div>
         </div>
         <p className="text-xs text-muted-foreground mt-2">{t('sidebar.employee_label', { name: employee?.fullName || t('sidebar.loading') })}</p>

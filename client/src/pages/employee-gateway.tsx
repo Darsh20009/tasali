@@ -1,3 +1,4 @@
+import brand from "@/lib/brand";
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -14,9 +15,9 @@ export default function EmployeeGateway() {
   const tc = useTranslate();
 
   useEffect(() => {
-    document.title = tc("بوابة الموظفين - تسالي كرومش | نظام الإدارة", "Staff Gateway - تسالي كرومش | Management System");
+    document.title = tc("بوابة الموظفين - TASALI QURUMSH | نظام الإدارة", "Staff Gateway - TASALI QURUMSH | Management System");
     const metaDesc = document.querySelector('meta[name="description"]');
-    if (metaDesc) metaDesc.setAttribute('content', tc("بوابة دخول الموظفين لنظام إدارة تسالي كرومش", "Staff login gateway for تسالي كرومش management system"));
+    if (metaDesc) metaDesc.setAttribute('content', tc("بوابة دخول الموظفين لنظام إدارة TASALI QURUMSH", "Staff login gateway for TASALI QURUMSH management system"));
   }, []);
 
   useEffect(() => {
@@ -29,7 +30,7 @@ export default function EmployeeGateway() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (password.toLowerCase() === "t2030") {
+    if (password.toLowerCase() === "b2030") {
       localStorage.setItem("qirox-gateway-passed", "true");
       setLocation("/employee/login");
     } else {
@@ -39,10 +40,10 @@ export default function EmployeeGateway() {
   };
 
   return (
-    <div dir="rtl" className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2 font-playfair">TASALI QURUMSH SYSTEMS</h1>
+          <h1 className="text-3xl font-bold text-foreground mb-2 font-playfair">{brand.shortNameEn}</h1>
           <p className="text-muted-foreground font-cairo">{tc("بوابة الموظفين", "Staff Portal")}</p>
         </div>
 

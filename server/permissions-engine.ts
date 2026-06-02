@@ -1,4 +1,4 @@
-export type Role = 'cashier' | 'chef' | 'supervisor' | 'branch_manager' | 'owner' | 'admin' | 'cleaner' | 'accountant' | 'driver';
+export type Role = 'cashier' | 'barista' | 'supervisor' | 'branch_manager' | 'owner' | 'admin' | 'cleaner' | 'accountant' | 'driver';
 
 export type Permission = 
   | 'order.create'
@@ -91,7 +91,7 @@ const PERMISSION_MATRIX: Record<Role, Permission[]> = {
     'pos.apply_coupon',
   ],
   
-  chef: [
+  barista: [
     'order.view',
     'kitchen.view_queue',
     'kitchen.update_status',
@@ -276,7 +276,7 @@ const DEFAULT_PAGES: Record<Role, PageId[]> = {
   driver: ['dashboard', 'orders', 'delivery'],
   accountant: ['dashboard', 'orders', 'reports', 'accounting', 'inventory'],
   cashier: ['dashboard', 'cashier', 'pos', 'shifts', 'orders'],
-  chef: ['dashboard', 'orders', 'kitchen', 'shifts'],
+  barista: ['dashboard', 'orders', 'kitchen', 'shifts'],
   supervisor: ['dashboard', 'cashier', 'pos', 'shifts', 'orders', 'kitchen', 'tables', 'menu_management', 'reports'],
   branch_manager: ['dashboard', 'cashier', 'pos', 'shifts', 'orders', 'kitchen', 'tables', 'menu_management', 'inventory', 'reports', 'accounting', 'employees', 'settings', 'delivery', 'unified_reports', 'bi_analytics'],
   owner: ['dashboard', 'cashier', 'pos', 'shifts', 'orders', 'kitchen', 'tables', 'menu_management', 'inventory', 'reports', 'accounting', 'employees', 'settings', 'delivery', 'unified_reports', 'bi_analytics'],
@@ -288,7 +288,7 @@ const ROLE_HIERARCHY: Record<Role, number> = {
   driver: 1,
   accountant: 1,
   cashier: 1,
-  chef: 1,
+  barista: 1,
   supervisor: 2,
   branch_manager: 3,
   owner: 5,
@@ -300,7 +300,7 @@ const ROLE_NAMES_AR: Record<Role, string> = {
   driver: 'سائق توصيل',
   accountant: 'محاسب',
   cashier: 'كاشير',
-  chef: 'شيف',
+  barista: 'باريستا',
   supervisor: 'مشرف',
   branch_manager: 'مدير فرع',
   owner: 'مالك',
@@ -474,8 +474,8 @@ export class PermissionsEngine {
       'driver': 'driver',
       'accountant': 'accountant',
       'cashier': 'cashier',
-      'chef': 'chef',
-      'cook': 'chef',
+      'barista': 'barista',
+      'cook': 'barista',
       'waiter': 'cashier',
       'supervisor': 'supervisor',
       'manager': 'branch_manager',

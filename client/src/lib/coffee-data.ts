@@ -29,56 +29,56 @@ const getCoffeeImage = (coffeeId: string): string => {
  "coffee-dessert-cup": "/attached_assets/Screenshot 2025-10-05 012338_1759666320915.png"
  };
  
- return imageMap[coffeeId] || "/images/default-coffee.png";
+ return imageMap[coffeeId] || "/images/brand-logo.png";
 };
 
 // Coffee categories configuration
 export const coffeeCategories = [
  {
  id: "basic" as CoffeeCategory,
- nameAr: "سناكس أساسية",
- nameEn: "Main Snacks",
- description: "مجموعة من السناكس الأساسية المحضرة بعناية",
+ nameAr: "قهوة أساسية",
+ nameEn: "Basic Coffee",
+ description: "مجموعة من القهوة الأساسيةالمحضرة بعناية ",
  icon: "coffee"
  },
  {
  id: "hot" as CoffeeCategory,
- nameAr: "وجبات ساخنة",
- nameEn: "Hot Snacks",
- description: "تشكيلة من الأطباق الساخنة اللذيذة",
+ nameAr: "قهوة ساخنة",
+ nameEn: "Hot Coffee",
+ description: "تشكيلة من المشروبات الساخنة اللذيذة",
  icon: "fire"
  },
  {
  id: "cold" as CoffeeCategory,
- nameAr: "مشروبات باردة",
- nameEn: "Cold Drinks",
+ nameAr: "قهوة باردة ",
+ nameEn: "Cold Coffee",
  description: "مشروبات باردة منعشة ومثلجة",
  icon: "snowflake"
  },
  {
  id: "specialty" as CoffeeCategory,
- nameAr: "الأطباق الإضافية ",
- nameEn: "Specialty Items",
- description: "تشكيلة استثنائية من الأطباق المميزة والفريدة",
+ nameAr: "المشروبات الإضافية ",
+ nameEn: "Specialty Drinks",
+ description: "تشكيلة استثنائية من المشروبات المميزة والفريدة",
  icon: "star"
  },
  {
  id: "desserts" as CoffeeCategory,
  nameAr: "الحلويات",
  nameEn: "Desserts",
- description: "حلويات شهية ولذيذة تكمل تجربة الطعام",
+ description: "حلويات شهيةولذيذةتكمل تجربة القهوة ",
  icon: "cake"
  }
 ];
 
-// Perfectly matched restaurant menu data with تسالي كرومش images
+// Perfectly matched coffee menu data with TASALI QURUMSH images
 export const defaultCoffeeMenu: any[] = [
- // Main Snacks
+ // Basic Coffee
  {
  id: "espresso-single",
- nameAr: "تسالي كلاسيك (صغير)",
- nameEn: "Tasali Classic (Small)",
- description: "تسالي مقرمشة بنكهة كلاسيكية لا تُقاوم",
+ nameAr: "إسبريسو (شوت)",
+ nameEn: "Espresso Single",
+ description: "قهوة إسبريسو مركزةمن حبوب عربيةمختارة",
  price: 4.00,
  oldPrice: 5.00,
  category: "basic",
@@ -90,8 +90,8 @@ export const defaultCoffeeMenu: any[] = [
  {
  id: "espresso-double",
  nameAr: "إسبريسو (دبل شوت)",
- nameEn: "Tasali Classic (Large)",
- description: "حصة كبيرة من تسالي كرومش للذواقة",
+ nameEn: "Espresso Double",
+ description: "قهوة إسبريسو مضاعفةللباحثين عن النكهةالقوية",
  price: 5.00,
  oldPrice: 6.00,
  category: "basic",
@@ -102,8 +102,8 @@ export const defaultCoffeeMenu: any[] = [
  },
  {
  id: "americano",
- nameAr: "بطاطس مقلية",
- nameEn: "French Fries",
+ nameAr: "أمريكانو",
+ nameEn: "Americano",
  description: "إسبريسو مخفف بالماء الساخن لطعم معتدل",
  price: 5.00,
  oldPrice: 6.00,
@@ -115,8 +115,8 @@ export const defaultCoffeeMenu: any[] = [
  },
  {
  id: "ristretto",
- nameAr: "أصابع موزاريلا",
- nameEn: "Mozzarella Sticks",
+ nameAr: "ريستريتو",
+ nameEn: "Ristretto",
  description: "إسبريسو مركز بنصف كمية الماء لطعم أقوى",
  price: 5.00,
  oldPrice: 6.00,
@@ -128,9 +128,9 @@ export const defaultCoffeeMenu: any[] = [
  },
  {
  id: "turkish-coffee",
- nameAr: "زنجر برجر",
- nameEn: "Zinger Burger",
- description: "برجر دجاج زنجر حار بنكهة لا تُنسى",
+ nameAr: "قهوة تركي",
+ nameEn: "Turkish Coffee",
+ description: "قهوة تركيةتقليديةمحضرةبطريقة عريقة، غنيةبالنكهةوالتراث",
  price: 5.00,
  oldPrice: undefined,
  category: "basic",
@@ -140,11 +140,11 @@ export const defaultCoffeeMenu: any[] = [
  strengthLevel: 6
  },
  
- // Hot Snacks
+ // Hot Coffee
  {
  id: "cafe-latte",
- nameAr: "ساندويتش دجاج كرومش",
- nameEn: "Crunchy Chicken Sandwich",
+ nameAr: "كافيه لاتيه",
+ nameEn: "Cafe Latte",
  description: "إسبريسو مع حليب مخفوق كريمي ورغوة ناعمة",
  price: 5.00,
  oldPrice: 6.00,
@@ -156,8 +156,8 @@ export const defaultCoffeeMenu: any[] = [
  },
  {
  id: "cappuccino",
- nameAr: "وجبة دجاج مقرمش",
- nameEn: "Crunchy Chicken Meal",
+ nameAr: "كابتشينو",
+ nameEn: "Cappuccino",
  description: "مزيج متوازن من الإسبريسو والحليب والرغوة ",
  price: 5.00,
  oldPrice: 6.00,
@@ -169,8 +169,8 @@ export const defaultCoffeeMenu: any[] = [
  },
  {
  id: "vanilla-latte",
- nameAr: "ناجتس دجاج",
- nameEn: "Chicken Nuggets",
+ nameAr: "فانيلا لاتيه",
+ nameEn: "Vanilla Latte",
  description: "لاتيه كلاسيكي مع نكهةالفانيلا الطبيعية",
  price: 6.00,
  oldPrice: 7.00,
@@ -182,9 +182,9 @@ export const defaultCoffeeMenu: any[] = [
  },
  {
  id: "mocha",
- nameAr: "أجنحة دجاج حارة",
- nameEn: "Spicy Chicken Wings",
- description: "أجنحة دجاج حارة مقرمشة بصلصة BBQ",
+ nameAr: "موكا",
+ nameEn: "Mocha",
+ description: "مزيج رائع من القهوة والشوكولاتةوالحليب",
  price: 7.00,
  oldPrice: 8.00,
  category: "hot",
@@ -195,7 +195,7 @@ export const defaultCoffeeMenu: any[] = [
  },
  {
  id: "con-panna",
- nameAr: "صدور دجاج مشوية",
+ nameAr: "كافيه كون بانا",
  nameEn: "Cafe Con Panna",
  description: "إسبريسو مع كريمة مخفوقة طازجة",
  price: 5.00,
@@ -208,9 +208,9 @@ export const defaultCoffeeMenu: any[] = [
  },
  {
  id: "coffee-day-hot",
- nameAr: "وجبة اليوم (ساخنة)",
+ nameAr: "قهوة اليوم (حار)",
  nameEn: "Coffee of the Day Hot",
- description: "تشكيلة مختارةيومياً من أفضل مكونات الطعام ",
+ description: "تشكيلة مختارةيومياً من أفضل حبوب القهوة ",
  price: 4.95,
  oldPrice: 5.50,
  category: "hot",
@@ -221,9 +221,9 @@ export const defaultCoffeeMenu: any[] = [
  },
  {
  id: "french-press",
- nameAr: "بطاطس بالجبنة",
+ nameAr: "قهوة فرنسي",
  nameEn: "French Press Coffee",
- description: "بطاطس مقلية مغطاة بجبنة الشيدر الذائبة",
+ description: "قهوة فرنسيةفاخرةمحضرةبطريقة الكبس الفرنسي، تمنحك نكهةغنيةومميزة",
  price: 6.00,
  oldPrice: undefined,
  category: "hot",
@@ -276,11 +276,11 @@ export const defaultCoffeeMenu: any[] = [
  ]
  },
  
- // Cold Drinks
+ // Cold Coffee
  {
  id: "iced-latte",
  nameAr: "آيسد لاتيه",
- nameEn: "Cold Pepsi",
+ nameEn: "Iced Latte",
  description: "لاتيه منعش مع الثلج والحليب البارد",
  price: 6.00,
  oldPrice: 7.00,
@@ -293,7 +293,7 @@ export const defaultCoffeeMenu: any[] = [
  {
  id: "iced-mocha",
  nameAr: "آيسد موكا",
- nameEn: "Mirinda Orange",
+ nameEn: "Iced Mocha",
  description: "موكا باردة مع الشوكولاتةوالكريمة المخفوقة",
  price: 7.00,
  oldPrice: 8.00,
@@ -306,7 +306,7 @@ export const defaultCoffeeMenu: any[] = [
  {
  id: "iced-cappuccino",
  nameAr: "آيسد كابتشينو",
- nameEn: "7UP",
+ nameEn: "Iced Cappuccino",
  description: "كابتشينو بارد مع رغوة الحليب المثلجة",
  price: 6.00,
  oldPrice: 7.00,
@@ -318,9 +318,9 @@ export const defaultCoffeeMenu: any[] = [
  },
  {
  id: "iced-condensed",
- nameAr: "موهيتو منعش",
- nameEn: "Cold Drinks with Condensed Milk",
- description: "موهيتو منعش بالنعناع والليمون",
+ nameAr: "قهوة مثلجةبالحليب المكثف",
+ nameEn: "Iced Coffee with Condensed Milk",
+ description: "قهوة باردة مع حليب مكثف حلو ولذيذ",
  price: 5.00,
  oldPrice: 6.00,
  category: "cold",
@@ -332,8 +332,8 @@ export const defaultCoffeeMenu: any[] = [
  {
  id: "vanilla-cold-brew",
  nameAr: "فانيلا كولد برو",
- nameEn: "Strawberry Juice",
- description: "عصير فراولة طازج 100%",
+ nameEn: "Vanilla Cold Brew",
+ description: "قهوة باردة منقوعةببطء مع نكهةالفانيلا",
  price: 6.00,
  oldPrice: 7.00,
  category: "cold",
@@ -344,9 +344,9 @@ export const defaultCoffeeMenu: any[] = [
  },
  {
  id: "cold-brew",
- nameAr: "عصير مانجو",
- nameEn: "Mango Juice",
- description: "عصير مانجو طبيعي بدون إضافات",
+ nameAr: "كولد برو",
+ nameEn: "Cold Brew",
+ description: "قهوة باردة منقوعةببطء لمدة12 ساعة، نكهةناعمة وغنيةبطعم القهوة الأصيلة ",
  price: 4.95,
  oldPrice: 5.50,
  category: "cold",
@@ -357,9 +357,9 @@ export const defaultCoffeeMenu: any[] = [
  },
  {
  id: "coffee-day-cold",
- nameAr: "مشروب اليوم (بارد)",
+ nameAr: "قهوة اليوم (بارد)",
  nameEn: "Coffee of the Day Cold",
- description: "مشروب اليوم البارد المنعش",
+ description: "تشكيلة مختارةيومياً من القهوة الباردة المنعشة ",
  price: 4.95,
  oldPrice: 5.50,
  category: "cold",
@@ -372,9 +372,9 @@ export const defaultCoffeeMenu: any[] = [
  // Desserts
  {
  id: "coffee-dessert-cup",
- nameAr: "حلى تسالي كرومش",
- nameEn: "Kunafa Cup with Nutella",
- description: "كاسة كنافة فاخرة بالنوتيلا والقشطة، تجربة حلوة لا تُنسى",
+ nameAr: "حلى TASALI QURUMSH",
+ nameEn: "Coffee Dessert Cup",
+ description: "حلى قهوة فاخر في كوب، طبقات من الكريمة والقهوة والبسكويت المطحون، تجربة حلوةلا تُنسى",
  price: 8.00,
  oldPrice: undefined,
  category: "desserts",

@@ -1,3 +1,4 @@
+import brand from "@/lib/brand";
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -6,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PhoneInput } from "@/components/phone-input";
 import { Mail, Phone, User, ArrowRight, Eye, EyeOff, ArrowLeft } from "lucide-react";
-import tasaliLogoStaff from "@assets/logo.png";
+import blackroseLogoStaff from "@assets/logo.png";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslate } from "@/lib/useTranslate";
@@ -40,7 +41,7 @@ export default function ForgotPassword() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    document.title = tc("نسيت كلمة المرور - تسالي كرومش | إعادة تعيين", "Forgot Password - تسالي كرومش | Reset");
+    document.title = tc("نسيت كلمة المرور - TASALI QURUMSH | إعادة تعيين", "Forgot Password - TASALI QURUMSH | Reset");
   }, [tc]);
 
   const err = (msg: string) => toast({ title: tc("خطأ", "Error"), description: msg, variant: "destructive" });
@@ -204,12 +205,12 @@ export default function ForgotPassword() {
     <div
       className="min-h-screen flex items-center justify-center p-4"
       style={{ background: "linear-gradient(135deg, hsl(165, 15%, 97%) 0%, hsl(165, 12%, 88%) 50%, hsl(165, 15%, 97%) 100%)" }}
-      dir="rtl"
+     
     >
       <Card className="w-full max-w-md border-primary/30 bg-card backdrop-blur shadow-xl">
         <CardHeader className="space-y-3 text-center pb-4">
           <div className="flex justify-center mb-1">
-            <img src={tasaliLogoStaff} alt="TASALI QURUMSH" className="h-12 object-contain" />
+            <img src={blackroseLogoStaff} alt={brand.shortNameEn} className="h-12 object-contain" />
           </div>
           <CardTitle className="text-2xl font-bold text-foreground">{titles[step]}</CardTitle>
           <CardDescription className="text-muted-foreground">{descs[step]}</CardDescription>

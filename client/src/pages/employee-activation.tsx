@@ -1,3 +1,4 @@
+import brand from "@/lib/brand";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -9,7 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { UserPlus, Eye, EyeOff } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useTranslate } from "@/lib/useTranslate";
-import tasaliLogoStaff from "@assets/logo.png";
+import blackroseLogoStaff from "@assets/logo.png";
 
 export default function EmployeeActivation() {
   const [, setLocation] = useLocation();
@@ -71,11 +72,11 @@ export default function EmployeeActivation() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4" dir="rtl">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <Card className="w-full max-w-md border border-border bg-card shadow-xl">
         <CardHeader className="space-y-3 text-center pb-4">
           <div className="flex justify-center mb-1">
-            <img src={tasaliLogoStaff} alt="TASALI QURUMSH" className="h-12 object-contain" />
+            <img src={blackroseLogoStaff} alt={brand.shortNameEn} className="h-12 object-contain" />
           </div>
           <div className="text-center">
             <CardTitle className="text-2xl font-bold text-foreground">{tc("تفعيل حساب موظف جديد", "Activate New Employee Account")}</CardTitle>

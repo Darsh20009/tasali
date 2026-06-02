@@ -1,7 +1,8 @@
+import brand from "@/lib/brand";
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useCustomer } from "@/contexts/CustomerContext";
-import tasaliLogo from "@assets/logo.png";
+import blackroseLogo from "@assets/logo.png";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -198,11 +199,11 @@ export default function CustomerAuth() {
         <CardHeader className="space-y-3 text-center pb-6">
           <div className="flex justify-center">
             <div className="w-20 h-20 rounded-2xl overflow-hidden shadow-lg shadow-accent/50 backdrop-blur-xl border border-white/20 bg-black/20">
-              <img src={tasaliLogo} alt="تسالي كرومش" className="w-full h-full object-cover rounded-2xl" />
+              <img src={blackroseLogo} alt={brand.nameEn} className="w-full h-full object-cover rounded-2xl" />
             </div>
           </div>
           <CardTitle className="tracking-tight text-3xl font-bold text-foreground">
-            {i18n.language === 'ar' ? "مرحباً بك في تسالي كرومش" : "Welcome to تسالي كرومش"}
+            {i18n.language === 'ar' ? "مرحباً بك في TASALI QURUMSH" : "Welcome to TASALI QURUMSH"}
           </CardTitle>
           <CardDescription className="text-lg text-[#b2babc]">
             {i18n.language === 'ar' ? "سجل دخولك للحصول على حسابك الخاص" : "Sign in to access your account"}

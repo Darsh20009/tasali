@@ -72,7 +72,7 @@ export function AuthGuard({
           }
           case "manager": {
             // Roles that belong ONLY to the employee portal (cannot access manager routes)
-            const employeeOnlyRoles = ["cashier", "chef", "waiter", "cook"];
+            const employeeOnlyRoles = ["cashier", "barista", "waiter", "cook"];
             const manager = localStorage.getItem("currentEmployee") || localStorage.getItem("currentManager");
             if (manager) {
               const parsed = JSON.parse(manager);

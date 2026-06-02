@@ -1,8 +1,9 @@
+import brand from "@/lib/brand";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useOrderWebSocket } from "@/lib/websocket";
+import { useRealtimeEvent } from "@/hooks/useRealtimeEngine";
 import type { CoffeeItem } from "@shared/schema";
-import tasaliLogo from "@assets/logo.png";
+import blackroseLogo from "@assets/logo.png";
 import { useTranslate } from "@/lib/useTranslate";
 
 type DisplayMode = "idle" | "order-review" | "payment-processing" | "payment-success";
@@ -115,11 +116,7 @@ export default function CustomerDisplay() {
     }
   }, [scheduleIdle]);
 
-  useOrderWebSocket({
-    clientType: "pos-display",
-    onPosCartUpdate: handlePosUpdate,
-    enabled: true,
-  });
+  useRealtimeEvent("pos_cart_update", (msg: any) => handlePosUpdate(msg?.payload ?? msg));
 
   useEffect(() => {
     if (stripProducts.length === 0) return;
@@ -157,7 +154,7 @@ export default function CustomerDisplay() {
     };
   }, []);
 
-  const branchName = businessConfig?.tradeNameAr || businessConfig?.tradeNameEn || "تسالي كرومش";
+  const branchName = businessConfig?.tradeNameAr || businessConfig?.tradeNameEn || brand.nameEn;
   const formatPrice = (n: number) => `${n.toFixed(2)} ${tc("ر.س", "SAR")}`;
 
   return (
@@ -216,7 +213,7 @@ function IdleScreen({
       <div className="flex-1 flex flex-col items-center justify-center gap-6 px-16 py-10 relative">
         <div className="flex flex-col items-center gap-5">
           <img
-            src={tasaliLogo}
+            src={blackroseLogo}
             alt="Logo"
             className="w-44 h-44 object-contain rounded-2xl shadow-2xl"
             onError={(e) => {
@@ -277,7 +274,7 @@ function OrderReviewScreen({
         <div className="bg-[#141414] px-8 py-4 flex items-center justify-between border-b border-[#2a2a2a]">
           <div className="flex items-center gap-4">
             <img
-              src={tasaliLogo}
+              src={blackroseLogo}
               alt="Logo"
               className="w-10 h-10 object-contain rounded-lg"
               onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
@@ -342,7 +339,7 @@ function PaymentProcessingScreen({ state, formatPrice, tc }: { state: DisplaySta
   return (
     <div className="flex h-full flex-col items-center justify-center gap-10 bg-[#0a0a0a]">
       <img
-        src={tasaliLogo}
+        src={blackroseLogo}
         alt="Logo"
         className="w-20 h-20 object-contain rounded-xl opacity-60"
         onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
@@ -369,7 +366,7 @@ function PaymentSuccessScreen({ state, formatPrice, tc }: { state: DisplayState;
   return (
     <div className="flex h-full flex-col items-center justify-center gap-8 bg-[#0a0a0a]">
       <img
-        src={tasaliLogo}
+        src={blackroseLogo}
         alt="Logo"
         className="w-24 h-24 object-contain rounded-xl"
         onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}

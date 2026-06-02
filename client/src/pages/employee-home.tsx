@@ -1,20 +1,24 @@
+import brand from "@/lib/brand";
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
+import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import {
-  Coffee, LogOut, ShoppingCart, ClipboardList, ChefHat,
-  Warehouse, Calendar, Lock,
-  ChevronLeft
+  Coffee, LogOut, ShoppingCart, ClipboardList, User, ChefHat,
+  Warehouse, Eye, Calendar, FileText, BarChart3, Lock, Utensils,
+  ChevronLeft, Car, Copy, Sparkles
 } from "lucide-react";
 import type { Employee } from "@shared/schema";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
 import { useTranslate } from "@/lib/useTranslate";
-import tasaliLogo from "@assets/logo.png";
+import blackroseLogo from "@assets/logo.png";
 
 export default function EmployeeHome() {
   const [, setLocation] = useLocation();
   const [employee, setEmployee] = useState<Employee | null>(null);
   const tc = useTranslate();
+  const { toast } = useToast();
+
   useEffect(() => {
     const storedEmployee = localStorage.getItem("currentEmployee");
     if (storedEmployee) {
@@ -38,36 +42,49 @@ export default function EmployeeHome() {
     setLocation("/employee/gateway");
   };
 
+  function copyDriveThroughLink() {
+    const link = `${window.location.origin}/drive-through`;
+    navigator.clipboard.writeText(link).then(() => {
+      toast({ title: tc("✅ تم نسخ رابط Drive-Through", "✅ Drive-Through link copied") });
+    });
+  }
+
   if (!employee) return null;
 
   const isManager = employee.role === "manager" || employee.role === "admin";
 
   const employeeQuickAccess = [
+    { title: tc("المساعد الذكي", "AI Assistant"), icon: Sparkles, path: "/employee/ai", testId: "button-brand-ai", highlight: true },
     { title: tc("نقطة البيع", "Point of Sale"), icon: ShoppingCart, path: "/employee/pos", testId: "button-pos" },
     { title: tc("الطلبات", "Orders"), icon: ClipboardList, path: "/employee/orders", testId: "button-orders" },
+    { title: tc("الحضور", "Attendance"), icon: Calendar, path: "/employee/attendance", testId: "button-attendance" },
+    { title: tc("طلب إجازة", "Leave Request"), icon: FileText, path: "/employee/leave-request", testId: "button-leave" },
     { title: tc("المطبخ", "Kitchen"), icon: ChefHat, path: "/employee/kitchen", testId: "button-kitchen" },
-    { title: tc("الورديات", "Shifts"), icon: Calendar, path: "/employee/shifts", testId: "button-shifts" },
-    { title: tc("الحضور والانصراف", "Attendance"), icon: Calendar, path: "/employee/attendance", testId: "button-attendance" },
+    { title: tc("ملفي الشخصي", "My Profile"), icon: User, path: "/employee/dashboard", testId: "button-hr" },
+    { title: tc("📖 دليل النظام", "📖 System Guide"), icon: FileText, path: "/guide", testId: "button-guide" },
   ];
 
   const managerAccess = [
-    { title: tc("إدارة القائمة", "Menu Management"), icon: Coffee, path: "/employee/menu-management", testId: "button-menu-mgmt" },
-    { title: tc("المخزون", "Inventory"), icon: Warehouse, path: "/manager/inventory", testId: "button-inventory" },
+    { title: tc("إدارة المشروبات", "Drinks Menu"), icon: Coffee, path: "/employee/menu-management", testId: "button-menu-mgmt" },
+    { title: tc("إدارة الطعام", "Food Menu"), icon: Utensils, path: "/employee/menu-management?type=food", testId: "button-food-mgmt" },
+    { title: tc("المواد الخام", "Ingredients"), icon: Warehouse, path: "/employee/ingredients", testId: "button-ingredients-mgmt" },
+    { title: tc("لوحة التحكم", "Dashboard"), icon: BarChart3, path: "/employee/dashboard", testId: "button-dashboard" },
     { title: tc("إدارة الموظفين", "Employees"), icon: Lock, path: "/manager/employees", testId: "button-employees" },
+    { title: tc("الطاولات", "Tables"), icon: Eye, path: "/employee/tables", testId: "button-tables" },
   ];
 
   const initials = (employee.fullName || "?").split(" ").map((w: string) => w[0]).slice(0, 2).join("");
 
   return (
-    <div className="min-h-screen bg-background pb-nav" dir="rtl">
+    <div className="min-h-screen bg-background pb-nav">
 
       {/* Header */}
       <div className="bg-card border-b border-border px-4 py-4">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <img src={tasaliLogo} alt="TASALI QURUMSH" className="w-9 h-9 object-contain rounded-lg" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+            <img src={blackroseLogo} alt={brand.shortNameEn} className="w-9 h-9 object-contain rounded-lg" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
             <div>
-              <p className="text-xs text-muted-foreground leading-none mb-0.5">تسالي كرومش</p>
+              <p className="text-xs text-muted-foreground leading-none mb-0.5">TASALI QURUMSH</p>
               <h1 className="text-sm font-bold text-foreground leading-none">{tc("بوابة الموظفين", "Employee Portal")}</h1>
             </div>
           </div>
@@ -152,6 +169,48 @@ export default function EmployeeHome() {
           </div>
         )}
 
+        {/* Drive-Through Link */}
+        <div className="space-y-3">
+          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">
+            {tc("🚗 Drive-Through", "🚗 Drive-Through")}
+          </h2>
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 rounded-2xl p-4">
+            <div className="flex items-start gap-3 mb-3">
+              <div className="w-9 h-9 rounded-xl bg-amber-500 flex items-center justify-center flex-shrink-0">
+                <Car className="w-5 h-5 text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-amber-900 dark:text-amber-300">
+                  {tc("منيو السيارات", "Car Order Menu")}
+                </p>
+                <p className="text-xs text-amber-700 dark:text-amber-500 mt-0.5">
+                  {tc("شارك هذا الرابط مع عملاء السيارات", "Share this link with drive-through customers")}
+                </p>
+              </div>
+            </div>
+            <div className="bg-white dark:bg-black/30 rounded-xl px-3 py-2 text-xs font-mono text-amber-700 dark:text-amber-400 mb-3 break-all">
+              {window.location.origin}/drive-through
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={copyDriveThroughLink}
+                className="flex-1 flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium py-2.5 rounded-xl transition-colors"
+                data-testid="button-copy-drive-through"
+              >
+                <Copy className="w-4 h-4" />
+                {tc("نسخ الرابط", "Copy Link")}
+              </button>
+              <button
+                onClick={() => window.open("/drive-through", "_blank")}
+                className="flex-1 flex items-center justify-center gap-2 bg-white dark:bg-white/10 hover:bg-amber-50 dark:hover:bg-white/20 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-700/40 text-sm font-medium py-2.5 rounded-xl transition-colors"
+                data-testid="button-open-drive-through"
+              >
+                <Car className="w-4 h-4" />
+                {tc("فتح المنيو", "Open Menu")}
+              </button>
+            </div>
+          </div>
+        </div>
 
       </div>
 

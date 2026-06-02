@@ -1,3 +1,4 @@
+import brand from "@/lib/brand";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useMutation } from "@tanstack/react-query";
@@ -7,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { AtSign, Lock, Phone, Eye, EyeOff, Loader2, ArrowRight, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslate } from "@/lib/useTranslate";
-import tasaliLogoStaff from "@assets/logo.png";
+import blackroseLogoStaff from "@assets/logo.png";
 
 type Step = "username" | "phone" | "password";
 
@@ -100,13 +101,13 @@ export default function EmployeeForgotPassword() {
   };
 
   return (
-    <div dir="rtl" className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-40 h-28 mb-4">
-            <img src={tasaliLogoStaff} alt="TASALI QURUMSH SYSTEMS" className="w-full h-full object-contain" />
+            <img src={blackroseLogoStaff} alt={brand.shortNameEn} className="w-full h-full object-contain" />
           </div>
-          <h1 className="text-3xl font-bold text-foreground mb-2 font-playfair">TASALI QURUMSH SYSTEMS</h1>
+          <h1 className="text-3xl font-bold text-foreground mb-2 font-playfair">{brand.shortNameEn}</h1>
           <p className="text-muted-foreground font-cairo">{tc("استعادة كلمة المرور", "Password Recovery")}</p>
         </div>
 

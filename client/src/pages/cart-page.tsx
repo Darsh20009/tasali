@@ -33,12 +33,12 @@ export default function CartPage() {
 
   // Set SEO metadata
   useEffect(() => {
-    document.title = isAr ? "سلة التسوق - تسالي كرومش | اكتمل طلبك" : "Shopping Cart - تسالي كرومش";
+    document.title = isAr ? "سلة التسوق - TASALI QURUMSH | اكتمل طلبك" : "Shopping Cart - TASALI QURUMSH";
     const metaDesc = document.querySelector('meta[name="description"]');
     if (metaDesc) {
       metaDesc.setAttribute('content', isAr 
-        ? 'سلة التسوق الخاصة بك في تسالي كرومش - أضف المزيد من الأطباق المفضلة وانتقل للدفع' 
-        : 'Your shopping cart at تسالي كرومش - add more of your favorite coffee and proceed to checkout');
+        ? 'سلة التسوق الخاصة بك في TASALI QURUMSH - أضف المزيد من القهوة المفضلة وانتقل للدفع' 
+        : 'Your shopping cart at TASALI QURUMSH - add more of your favorite coffee and proceed to checkout');
     }
   }, [isAr]);
 
@@ -128,7 +128,7 @@ export default function CartPage() {
                             className="w-16 h-16 sm:w-20 sm:h-20 object-cover rounded-xl shadow-lg"
                             loading="lazy"
                             onError={(e) => {
-                              e.currentTarget.src = "/images/default-coffee.png"; e.currentTarget.style.objectFit = "contain"; e.currentTarget.style.padding = "8px"; if (e.currentTarget.parentElement) e.currentTarget.parentElement.style.background = "#1a1a1a";
+                              e.currentTarget.src = "/images/brand-logo.png"; e.currentTarget.style.objectFit = "contain"; e.currentTarget.style.padding = "8px"; if (e.currentTarget.parentElement) e.currentTarget.parentElement.style.background = "#1a1a1a";
                             }}
                           />
                           <div className={`absolute -top-1 sm:-top-2 w-5 h-5 sm:w-6 sm:h-6 bg-primary rounded-full flex items-center justify-center shadow-md ${isAr ? '-right-1 sm:-right-2' : '-left-1 sm:-left-2'}`}>

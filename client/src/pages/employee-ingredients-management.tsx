@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { RawItem, Employee } from "@shared/schema";
 import { useTranslate } from "@/lib/useTranslate";
+import { MobileBottomNav } from "@/components/MobileBottomNav";
 
 const getIngredientIcon = (nameAr: string, category?: string) => {
   if (category === 'packaging') return Package;
@@ -129,7 +130,7 @@ export default function EmployeeIngredientsManagement() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 pb-20">
       <div className="bg-primary text-primary-foreground p-6 shadow-lg">
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -155,7 +156,7 @@ export default function EmployeeIngredientsManagement() {
         <div className="mb-6">
           <div className="bg-card rounded-lg border border-border border-r-4 border-r-primary p-4">
             <p className="text-gray-700 dark:text-gray-300">
-              <strong>{tc("تنبيه:", "Notice:")}</strong> {tc("عند تعطيل أي مادة، سيتم تلقائياً التأثير على جميع الأطباق التي تحتوي على هذه المادة في وصفاتها.", "Disabling any ingredient will automatically affect all drinks that include it in their recipes.")}
+              <strong>{tc("تنبيه:", "Notice:")}</strong> {tc("عند تعطيل أي مادة، سيتم تلقائياً التأثير على جميع المشروبات التي تحتوي على هذه المادة في وصفاتها.", "Disabling any ingredient will automatically affect all drinks that include it in their recipes.")}
             </p>
           </div>
         </div>
@@ -266,6 +267,7 @@ export default function EmployeeIngredientsManagement() {
           </div>
         )}
       </div>
+      <MobileBottomNav />
     </div>
   );
 }

@@ -278,7 +278,7 @@ export default function HardwareManagementPage() {
   }, [printerPort]);
 
   const testPrint = useCallback(async () => {
-    const ok = await sendToPrinter([INIT, ALIGN_CENTER, BOLD_ON, encodeArabic('تسالي كرومش'), BOLD_OFF, encodeArabic(tc('اختبار الطابعة', 'Printer Test')), encodeArabic(new Date().toLocaleString('ar-SA')), FEED, ...(autoCut ? [CUT] : [])]);
+    const ok = await sendToPrinter([INIT, ALIGN_CENTER, BOLD_ON, encodeArabic('TASALI QURUMSH'), BOLD_OFF, encodeArabic(tc('اختبار الطابعة', 'Printer Test')), encodeArabic(new Date().toLocaleString('ar-SA')), FEED, ...(autoCut ? [CUT] : [])]);
     if (ok) toast({ title: tc('✅ تمت الطباعة', '✅ Printed Successfully') });
   }, [sendToPrinter, autoCut]);
 
@@ -295,8 +295,8 @@ export default function HardwareManagementPage() {
       crypto.getRandomValues(challenge);
       const cred = await navigator.credentials.create({
         publicKey: {
-          challenge, rp: { name: 'تسالي كرومش', id: window.location.hostname },
-          user: { id: new Uint8Array(16), name: 'employee', displayName: 'TASALI QURUMSH Employee' },
+          challenge, rp: { name: 'TASALI QURUMSH', id: window.location.hostname },
+          user: { id: new Uint8Array(16), name: 'employee', displayName: 'TASALI Employee' },
           pubKeyCredParams: [{ alg: -7, type: 'public-key' }],
           authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
           timeout: 60000,
@@ -334,7 +334,7 @@ export default function HardwareManagementPage() {
 
   return (
     <PlanGate feature="hardwareSupport">
-      <div className="min-h-screen bg-background" dir="rtl">
+      <div className="min-h-screen bg-background">
         <div className="max-w-7xl mx-auto p-4 md:p-6 space-y-6">
 
           {/* Header */}

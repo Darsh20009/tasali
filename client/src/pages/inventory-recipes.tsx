@@ -132,29 +132,29 @@ const drinkRecipeTemplates: Record<string, { name: string; ingredients: Array<{ 
   "espresso-single": {
     name: "إسبريسو (شوت واحد)",
     ingredients: [
-      { rawCode: "RAW-001", quantity: 9, unit: "g", description: "دجاج طازج" },
+      { rawCode: "RAW-001", quantity: 9, unit: "g", description: "حبوب قهوة أرابيكا" },
       { rawCode: "RAW-013", quantity: 1, unit: "piece", description: "كوب صغير" },
     ]
   },
   "espresso-double": {
     name: "إسبريسو (دبل شوت)",
     ingredients: [
-      { rawCode: "RAW-001", quantity: 18, unit: "g", description: "دجاج طازج" },
+      { rawCode: "RAW-001", quantity: 18, unit: "g", description: "حبوب قهوة أرابيكا" },
       { rawCode: "RAW-013", quantity: 1, unit: "piece", description: "كوب صغير" },
     ]
   },
   "cappuccino": {
     name: "كابتشينو",
     ingredients: [
-      { rawCode: "RAW-001", quantity: 18, unit: "g", description: "دجاج كرومش (حصة كبيرة)" },
+      { rawCode: "RAW-001", quantity: 18, unit: "g", description: "حبوب قهوة (دبل شوت)" },
       { rawCode: "RAW-003", quantity: 120, unit: "ml", description: "حليب طازج" },
       { rawCode: "RAW-014", quantity: 1, unit: "piece", description: "كوب متوسط" },
     ]
   },
   "cafe-latte": {
-    name: "ساندويتش كرومش",
+    name: "كافيه لاتيه",
     ingredients: [
-      { rawCode: "RAW-001", quantity: 18, unit: "g", description: "دجاج كرومش (حصة كبيرة)" },
+      { rawCode: "RAW-001", quantity: 18, unit: "g", description: "حبوب قهوة (دبل شوت)" },
       { rawCode: "RAW-003", quantity: 180, unit: "ml", description: "حليب طازج" },
       { rawCode: "RAW-014", quantity: 1, unit: "piece", description: "كوب متوسط" },
     ]
@@ -162,7 +162,7 @@ const drinkRecipeTemplates: Record<string, { name: string; ingredients: Array<{ 
   "vanilla-latte": {
     name: "فانيلا لاتيه",
     ingredients: [
-      { rawCode: "RAW-001", quantity: 18, unit: "g", description: "دجاج كرومش (حصة كبيرة)" },
+      { rawCode: "RAW-001", quantity: 18, unit: "g", description: "حبوب قهوة (دبل شوت)" },
       { rawCode: "RAW-003", quantity: 180, unit: "ml", description: "حليب طازج" },
       { rawCode: "RAW-006", quantity: 30, unit: "ml", description: "سيرب فانيلا" },
       { rawCode: "RAW-015", quantity: 1, unit: "piece", description: "كوب كبير" },
@@ -171,7 +171,7 @@ const drinkRecipeTemplates: Record<string, { name: string; ingredients: Array<{ 
   "mocha": {
     name: "موكا",
     ingredients: [
-      { rawCode: "RAW-001", quantity: 18, unit: "g", description: "دجاج كرومش (حصة كبيرة)" },
+      { rawCode: "RAW-001", quantity: 18, unit: "g", description: "حبوب قهوة (دبل شوت)" },
       { rawCode: "RAW-003", quantity: 150, unit: "ml", description: "حليب طازج" },
       { rawCode: "RAW-008", quantity: 30, unit: "ml", description: "شوكولاتة سائلة" },
       { rawCode: "RAW-010", quantity: 30, unit: "ml", description: "كريمة مخفوقة" },
@@ -181,7 +181,7 @@ const drinkRecipeTemplates: Record<string, { name: string; ingredients: Array<{ 
   "iced-latte": {
     name: "آيس لاتيه",
     ingredients: [
-      { rawCode: "RAW-001", quantity: 18, unit: "g", description: "دجاج كرومش (حصة كبيرة)" },
+      { rawCode: "RAW-001", quantity: 18, unit: "g", description: "حبوب قهوة (دبل شوت)" },
       { rawCode: "RAW-003", quantity: 200, unit: "ml", description: "حليب طازج بارد" },
       { rawCode: "RAW-015", quantity: 1, unit: "piece", description: "كوب كبير" },
     ]
@@ -189,7 +189,7 @@ const drinkRecipeTemplates: Record<string, { name: string; ingredients: Array<{ 
   "iced-mocha": {
     name: "آيس موكا",
     ingredients: [
-      { rawCode: "RAW-001", quantity: 18, unit: "g", description: "دجاج كرومش (حصة كبيرة)" },
+      { rawCode: "RAW-001", quantity: 18, unit: "g", description: "حبوب قهوة (دبل شوت)" },
       { rawCode: "RAW-003", quantity: 180, unit: "ml", description: "حليب طازج بارد" },
       { rawCode: "RAW-008", quantity: 30, unit: "ml", description: "شوكولاتة سائلة" },
       { rawCode: "RAW-010", quantity: 30, unit: "ml", description: "كريمة مخفوقة" },
@@ -207,14 +207,14 @@ const drinkRecipeTemplates: Record<string, { name: string; ingredients: Array<{ 
   "cold-brew": {
     name: "كولد برو",
     ingredients: [
-      { rawCode: "RAW-019", quantity: 200, unit: "ml", description: "عصير طازج مركز" },
+      { rawCode: "RAW-019", quantity: 200, unit: "ml", description: "قهوة كولد برو مركزة" },
       { rawCode: "RAW-015", quantity: 1, unit: "piece", description: "كوب كبير" },
     ]
   },
   "vanilla-cold-brew": {
     name: "فانيلا كولد برو",
     ingredients: [
-      { rawCode: "RAW-019", quantity: 200, unit: "ml", description: "عصير طازج مركز" },
+      { rawCode: "RAW-019", quantity: 200, unit: "ml", description: "قهوة كولد برو مركزة" },
       { rawCode: "RAW-006", quantity: 30, unit: "ml", description: "سيرب فانيلا" },
       { rawCode: "RAW-015", quantity: 1, unit: "piece", description: "كوب كبير" },
     ]
@@ -543,7 +543,7 @@ export default function InventoryRecipesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-white text-gray-900 p-6 space-y-6" dir="rtl">
+    <div className="min-h-screen bg-white text-gray-900 p-6 space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
           <div className="p-3 rounded-xl bg-gradient-to-br from-emerald-100 to-teal-100">
@@ -778,7 +778,7 @@ export default function InventoryRecipesPage() {
       </Card>
 
       <Dialog open={isRecipeDialogOpen} onOpenChange={setIsRecipeDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto" dir="rtl">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <BookOpen className="h-5 w-5 text-emerald-600" />
@@ -1036,7 +1036,7 @@ export default function InventoryRecipesPage() {
       </Dialog>
 
       <Dialog open={isAddIngredientOpen} onOpenChange={setIsAddIngredientOpen}>
-        <DialogContent className="max-w-2xl" dir="rtl">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Plus className="h-5 w-5 text-emerald-600" />
@@ -1205,7 +1205,7 @@ export default function InventoryRecipesPage() {
       </Dialog>
 
       <Dialog open={isQuickSetupOpen} onOpenChange={setIsQuickSetupOpen}>
-        <DialogContent className="max-w-lg" dir="rtl">
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Zap className="h-5 w-5 text-emerald-600" />
