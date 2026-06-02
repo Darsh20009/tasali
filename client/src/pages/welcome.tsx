@@ -3,8 +3,6 @@ import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import { Coffee, Star, MapPin, ChevronLeft, ChevronRight, LogOut, Sparkles, User, KeyRound, X as XIcon } from "lucide-react";
 import blackroseLogo from "@assets/logo.png";
-import bannerImage1 from "@assets/banner-coffee-1.png";
-import bannerImage2 from "@assets/banner-coffee-2.png";
 import { useCustomer } from "@/contexts/CustomerContext";
 import { useTranslation } from "react-i18next";
 import CurrentOrderBanner from "@/components/current-order-banner";
@@ -33,14 +31,12 @@ export default function WelcomePage() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-primary/5 text-foreground overflow-hidden font-ibm-arabic">
       {/* Hero Section with Background Image */}
       <div className="relative min-h-[100dvh] flex flex-col">
-        {/* Background Image with Overlay */}
+        {/* Background — Tasali Qurumsh Brand Gradient */}
         <div className="absolute inset-0 z-0">
-          <img
-            src={bannerImage1}
-            alt="Coffee Background"
-            className="w-full h-full object-cover"
-          />
-          <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/40 to-black/70" />
+          <div className="w-full h-full bg-gradient-to-br from-[#1a0803] via-[#3D1F08] to-[#7D3D0F]" />
+          <div className="absolute inset-0 opacity-30"
+            style={{ backgroundImage: "radial-gradient(ellipse at 70% 30%, #D4912A44 0%, transparent 60%), radial-gradient(ellipse at 20% 80%, #7D3D0F88 0%, transparent 50%)" }} />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/50" />
         </div>
 
         {/* Floating decorative elements */}
@@ -252,25 +248,33 @@ export default function WelcomePage() {
           </div>
         </div>
       </section>
-      {/* Gallery Section */}
-      <section className="py-16 px-6 bg-slate-50">
+      {/* Gallery / Brand Highlight Section */}
+      <section className="py-16 px-6 bg-[#F5F0EA]">
         <div className="max-w-4xl mx-auto">
           <div className="grid grid-cols-2 gap-4">
             <motion.div
               initial={{ opacity: 0, x: -20 }}
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
-              className="rounded-2xl overflow-hidden shadow-lg"
+              className="rounded-2xl overflow-hidden shadow-lg h-48 flex items-center justify-center bg-gradient-to-br from-[#3D1F08] to-[#7D3D0F]"
             >
-              <img src={bannerImage1} alt="Coffee" className="w-full h-48 object-cover" />
+              <div className="text-center p-4">
+                <Coffee className="w-10 h-10 text-[#D4912A] mx-auto mb-2" />
+                <p className="text-white font-bold text-lg">تسالي كرومش</p>
+                <p className="text-white/70 text-xs">أشهى التسالي</p>
+              </div>
             </motion.div>
             <motion.div
               initial={{ opacity: 0, x: 20 }}
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
-              className="rounded-2xl overflow-hidden shadow-lg"
+              className="rounded-2xl overflow-hidden shadow-lg h-48 flex items-center justify-center bg-gradient-to-br from-[#D4912A] to-[#B8781F]"
             >
-              <img src={bannerImage2} alt="Coffee" className="w-full h-48 object-cover" />
+              <div className="text-center p-4">
+                <Star className="w-10 h-10 text-white mx-auto mb-2" />
+                <p className="text-white font-bold text-lg">TASALI QURUMSH</p>
+                <p className="text-white/80 text-xs">Crunchy Snacks Experience</p>
+              </div>
             </motion.div>
           </div>
         </div>

@@ -119,46 +119,46 @@ a, button, input, select, textarea, label, [role="button"] {
   --elevate-2: rgba(0,0,0, .08);
 
   /* ═══════════════════════════════════════════════════════════════
-     🎨 BLACK ROSE - Elegant Modern Design
-     Light Grey Background with Dark Accents
+     🎨 TASALI QURUMSH — Warm Brown & Golden Palette
+     تسالي كرومش — لوحة بنية دافئة وذهبية
      ═══════════════════════════════════════════════════════════════ */
   
-  /* Base Colors - Clean White & Dark */
-  --background: 0 0% 100%; /* Pure white background */
-  --foreground: 0 0% 0%; /* Absolute black text */
-  --border: 0 0% 90%; /* Subtle border */
-  --card: 0 0% 98%; /* Slightly grey cards */
-  --card-foreground: 0 0% 10%; 
-  --card-border: 0 0% 92%;
+  /* Base Colors — Warm Beige & Dark Brown */
+  --background: 30 10% 96%;   /* #F5F0EA warm beige */
+  --foreground: 28 80% 12%;   /* very dark brown text */
+  --border: 30 20% 86%;       /* warm border */
+  --card: 30 15% 98%;         /* warm white cards */
+  --card-foreground: 28 65% 15%;
+  --card-border: 30 18% 90%;
 
-  /* Sidebar - Light/Glass Theme */
-  --sidebar: 0 0% 98%; 
-  --sidebar-foreground: 0 0% 10%; 
-  --sidebar-border: 0 0% 90%;
-  --sidebar-primary: 0 0% 0%;
+  /* Sidebar — Warm Beige */
+  --sidebar: 30 12% 97%;
+  --sidebar-foreground: 28 60% 20%;
+  --sidebar-border: 30 18% 88%;
+  --sidebar-primary: 28 65% 30%;        /* brand brown */
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 0 0% 94%;
-  --sidebar-accent-foreground: 0 0% 0%;
-  --sidebar-ring: 0 0% 20%;
+  --sidebar-accent: 30 12% 93%;
+  --sidebar-accent-foreground: 28 55% 20%;
+  --sidebar-ring: 28 65% 30%;
 
-  /* Primary - Black */
-  --primary: 0 0% 0%; 
+  /* Primary — Brand Brown */
+  --primary: 28 65% 30%;        /* #7D3D0F */
   --primary-foreground: 0 0% 100%;
 
-  /* Secondary - Neutral Grey */
-  --secondary: 0 0% 85%; 
-  --secondary-foreground: 0 0% 20%;
+  /* Secondary — Warm Beige */
+  --secondary: 30 18% 90%;
+  --secondary-foreground: 28 55% 22%;
 
   /* Muted */
-  --muted: 0 0% 60%;
-  --muted-foreground: 0 0% 45%;
+  --muted: 30 12% 72%;
+  --muted-foreground: 28 18% 48%;
 
-  /* Accent */
-  --accent: 0 0% 80%; 
-  --accent-foreground: 0 0% 0%;
+  /* Accent — Brand Golden */
+  --accent: 38 80% 55%;         /* #D4912A golden */
+  --accent-foreground: 0 0% 100%;
 
   /* Ring */
-  --ring: 0 0% 20%;
+  --ring: 28 65% 30%;
 
   /* Charts - Premium Palette */
   --chart-1: 160 55% 42%; /* Teal Green */
@@ -224,12 +224,12 @@ a, button, input, select, textarea, label, [role="button"] {
   --warning-foreground: 0 0% 5%;
 
   /* Popover / dropdown background */
-  --popover: 0 0% 100%;
-  --popover-foreground: 0 0% 10%;
-  --popover-border: 0 0% 90%;
+  --popover: 30 10% 99%;
+  --popover-foreground: 28 65% 15%;
+  --popover-border: 30 18% 88%;
 
   /* Input surface */
-  --input: 0 0% 92%;
+  --input: 30 15% 90%;
 }
 
 .dark {
@@ -242,56 +242,57 @@ a, button, input, select, textarea, label, [role="button"] {
   --elevate-2: rgba(255,255,255, .09);
 
   /* ═══════════════════════════════════════════════════════════════
-     🌙 BLACK ROSE DARK MODE - Modern Night Theme
+     🌙 TASALI QURUMSH DARK MODE — Deep Brown Night Theme
+     تسالي كرومش — الوضع الليلي البني الداكن
      ═══════════════════════════════════════════════════════════════ */
-  
-  --background: 220 25% 10%; /* Deep navy */
-  --foreground: 0 0% 100%; /* Pure white text */
-  --border: 220 20% 18%; /* Subtle dark border */
-  --card: 220 22% 14%; /* Elevated card surface */
-  --card-foreground: 0 0% 92%; /* Light text */
-  --card-border: 220 18% 20%; /* Card border */
 
-  --sidebar: 180 40% 12%; /* Deep teal sidebar */
-  --sidebar-foreground: 0 0% 92%; /* Light text */
-  --sidebar-border: 180 35% 16%; /* Dark border */
-  --sidebar-primary: 160 55% 50%; /* Bright green */
-  --sidebar-primary-foreground: 0 0% 100%; /* White text */
-  --sidebar-accent: 180 30% 20%; /* Elevated accent */
-  --sidebar-accent-foreground: 0 0% 90%; /* Light text */
-  --sidebar-ring: 160 55% 50%; /* Green ring */
+  --background: 25 40% 8%;     /* very dark brown */
+  --foreground: 30 15% 92%;    /* warm off-white text */
+  --border: 28 30% 18%;
+  --card: 25 38% 11%;
+  --card-foreground: 30 12% 90%;
+  --card-border: 28 28% 20%;
 
-  --popover: 220 22% 14%; /* Card surface */
-  --popover-foreground: 0 0% 92%; /* Light text */
-  --popover-border: 220 18% 20%; /* Border */
+  --sidebar: 25 42% 10%;
+  --sidebar-foreground: 30 15% 88%;
+  --sidebar-border: 28 30% 18%;
+  --sidebar-primary: 38 80% 55%;         /* golden accent */
+  --sidebar-primary-foreground: 0 0% 5%;
+  --sidebar-accent: 25 35% 16%;
+  --sidebar-accent-foreground: 30 12% 85%;
+  --sidebar-ring: 38 80% 55%;
 
-  --primary: 160 55% 48%; /* Bright teal green */
-  --primary-foreground: 0 0% 100%; /* White text */
+  --popover: 25 38% 11%;
+  --popover-foreground: 30 12% 90%;
+  --popover-border: 28 28% 20%;
 
-  --secondary: 220 18% 20%; /* Dark secondary */
-  --secondary-foreground: 0 0% 88%; /* Light text */
+  --primary: 35 70% 48%;        /* lighter brown for dark bg */
+  --primary-foreground: 0 0% 100%;
 
-  --muted: 220 12% 35%; /* Muted gray */
-  --muted-foreground: 220 10% 60%; /* Gray text */
+  --secondary: 28 30% 18%;
+  --secondary-foreground: 30 12% 85%;
 
-  --accent: 200 70% 55%; /* Bright blue accent */
-  --accent-foreground: 0 0% 100%; /* Light text */
+  --muted: 28 20% 35%;
+  --muted-foreground: 30 10% 60%;
+
+  --accent: 38 80% 55%;          /* golden */
+  --accent-foreground: 0 0% 5%;
 
   --destructive: 0 70% 55%;
   --destructive-foreground: 0 0% 100%;
 
-  --success: 160 70% 45%;
+  --success: 142 65% 42%;
   --success-foreground: 0 0% 100%;
 
-  --warning: 38 95% 55%;
-  --warning-foreground: 38 100% 12%;
+  --warning: 38 92% 52%;
+  --warning-foreground: 28 80% 10%;
 
-  --input: 220 20% 16%;
-  --ring: 160 55% 48%;
+  --input: 28 30% 16%;
+  --ring: 38 80% 55%;
 
-  --chart-1: 160 55% 48%;
-  --chart-2: 200 70% 55%;
-  --chart-3: 160 70% 45%;
+  --chart-1: 35 70% 48%;
+  --chart-2: 38 80% 55%;
+  --chart-3: 28 60% 40%;
   --chart-4: 0 70% 55%;
   --chart-5: 270 60% 60%;
 
