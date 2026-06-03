@@ -22560,8 +22560,20 @@ ${existingIngredients ? `المكونات الحالية: ${existingIngredients}
         }),
       });
       const data: any = await response.json();
-      res.json({ answer: data.choices?.[0]?.message?.content || "لا يوجد رد" });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
+      if (!response.ok) {
+        console.error("[AI inventory-insights error]", JSON.stringify(data));
+        return res.status(502).json({ error: "AI service error", detail: data?.error?.message });
+      }
+      const answer = data.choices?.[0]?.message?.content;
+      if (!answer) {
+        console.error("[AI inventory-insights empty]", JSON.stringify(data));
+        return res.status(502).json({ error: "Empty AI response", detail: JSON.stringify(data) });
+      }
+      res.json({ answer });
+    } catch (e: any) {
+      console.error("[AI inventory-insights exception]", e.message);
+      res.status(500).json({ error: e.message });
+    }
   });
 
   // ─── الثالث عشر: CEO AI — Enhanced Manager AI with full business context ───
