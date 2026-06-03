@@ -19816,24 +19816,24 @@ ${businessContext}
         { role: "user", content: message },
       ];
 
-      const groqKey = process.env.GROQ_API_KEY;
-      if (!groqKey) return res.status(200).json({ response: "مساعد الذكاء الاصطناعي غير مفعّل — يرجى ضبط مفتاح GROQ_API_KEY.", configured: false });
+      const aiKey = process.env.OPENAI_API_KEY;
+      if (!aiKey) return res.status(200).json({ response: "مساعد الذكاء الاصطناعي غير مفعّل — يرجى ضبط مفتاح OPENAI_API_KEY.", configured: false });
 
-      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
-        headers: { "Authorization": `Bearer ${groqKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "llama-3.3-70b-versatile", messages, max_tokens: 1000, temperature: 0.7 }),
+        headers: { "Authorization": `Bearer ${aiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "gpt-4o-mini", messages, max_tokens: 1000, temperature: 0.7 }),
       });
 
       if (!response.ok) {
         const errText = await response.text();
-        console.error("Groq chat error:", errText);
-        return res.status(500).json({ error: "فشل الاتصال بـ Groq" });
+        console.error("OpenAI chat error:", errText);
+        return res.status(500).json({ error: "فشل الاتصال بـ OpenAI" });
       }
 
       const data = await response.json() as any;
       const reply = data.choices?.[0]?.message?.content || "";
-      res.json({ reply, model: "groq/llama-3.3-70b-versatile" });
+      res.json({ reply, model: "openai/gpt-4o-mini" });
     } catch (error: any) {
       console.error("AI chat error:", error);
       res.status(500).json({ error: error.message || "خطأ في الذكاء الاصطناعي" });
@@ -19893,18 +19893,18 @@ ${growthPct ? `- النمو مقارنة بالأسبوع الماضي: ${growth
 لا تضف أي نص خارج الـ JSON.`;
 
       const insightsMsgs = [{ role: "user", content: prompt }];
-      const groqKey = process.env.GROQ_API_KEY;
-      if (!groqKey) {
+      const aiKey = process.env.OPENAI_API_KEY;
+      if (!aiKey) {
         return res.json({ insights: [], stats: { todayRevenue, todayOrders: todayOrders.length, weekRevenue, weekOrders: weekOrders.length, growthPct }, configured: false });
       }
 
-      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
-        headers: { "Authorization": `Bearer ${groqKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "llama-3.3-70b-versatile", messages: insightsMsgs, max_tokens: 500, temperature: 0.6 }),
+        headers: { "Authorization": `Bearer ${aiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "gpt-4o-mini", messages: insightsMsgs, max_tokens: 500, temperature: 0.6 }),
       });
 
-      if (!response.ok) return res.json({ insights: [], stats: { todayRevenue, todayOrders: todayOrders.length, weekRevenue, weekOrders: weekOrders.length, growthPct }, error: "فشل الاتصال بـ Groq" });
+      if (!response.ok) return res.json({ insights: [], stats: { todayRevenue, todayOrders: todayOrders.length, weekRevenue, weekOrders: weekOrders.length, growthPct }, error: "فشل الاتصال بـ OpenAI" });
 
       const data = await response.json() as any;
       const content = (data.choices?.[0]?.message?.content || "").trim();
@@ -20018,14 +20018,14 @@ ${contextData}
 - 3-4 مؤشرات KPI
 - JSON صحيح فقط`;
 
-      const groqKey = process.env.GROQ_API_KEY;
-      if (!groqKey) return res.status(200).json({ report: null, configured: false, error: "مفتاح Groq غير مضبوط" });
+      const aiKey = process.env.OPENAI_API_KEY;
+      if (!aiKey) return res.status(200).json({ report: null, configured: false, error: "مفتاح OpenAI غير مضبوط" });
 
-      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
-        headers: { "Authorization": `Bearer ${groqKey}`, "Content-Type": "application/json" },
+        headers: { "Authorization": `Bearer ${aiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
+          model: "gpt-4o-mini",
           messages: [{ role: "user", content: prompt }],
           max_tokens: 1500,
           temperature: 0.5,
@@ -20034,8 +20034,8 @@ ${contextData}
 
       if (!response.ok) {
         const errText = await response.text();
-        console.error("Groq smart-report error:", errText);
-        return res.status(500).json({ error: "فشل الاتصال بـ Groq" });
+        console.error("OpenAI smart-report error:", errText);
+        return res.status(500).json({ error: "فشل الاتصال بـ OpenAI" });
       }
 
       const data = await response.json() as any;
@@ -20161,24 +20161,24 @@ ${existingIngredients ? `المكونات الحالية: ${existingIngredients}
         { role: "user", content: userPrompt },
       ];
 
-      const menuGroqKey = process.env.GROQ_API_KEY;
-      if (!menuGroqKey) return res.status(200).json({ message: "المساعد غير مفعّل حالياً. يرجى ضبط GROQ_API_KEY.", configured: false });
+      const menuAiKey = process.env.OPENAI_API_KEY;
+      if (!menuAiKey) return res.status(200).json({ message: "المساعد غير مفعّل حالياً. يرجى ضبط OPENAI_API_KEY.", configured: false });
 
-      const menuResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      const menuResponse = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
-        headers: { "Authorization": `Bearer ${menuGroqKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "llama-3.3-70b-versatile", messages: menuMsgs, max_tokens: 600, temperature: 0.85 }),
+        headers: { "Authorization": `Bearer ${menuAiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "gpt-4o-mini", messages: menuMsgs, max_tokens: 600, temperature: 0.85 }),
       });
 
       if (!menuResponse.ok) {
         const errText = await menuResponse.text();
-        console.error("Groq menu error:", errText);
-        return res.status(500).json({ error: "فشل في الاتصال بـ Groq" });
+        console.error("OpenAI menu error:", errText);
+        return res.status(500).json({ error: "فشل في الاتصال بـ OpenAI" });
       }
 
       const data = await menuResponse.json() as any;
       const content = data.choices?.[0]?.message?.content || "";
-      res.json({ result: content, task, model: "groq/llama-3.3-70b-versatile" });
+      res.json({ result: content, task, model: "openai/gpt-4o-mini" });
     } catch (error: any) {
       console.error("AI Menu Assist error:", error);
       res.status(500).json({ error: error.message || "حدث خطأ في الذكاء الاصطناعي" });
@@ -21248,16 +21248,16 @@ ${existingIngredients ? `المكونات الحالية: ${existingIngredients}
   //  Smart Suggestions · AI Reports · Inventory Forecasting
   // ════════════════════════════════════════════════════════════════════════
 
-  // Helper: call Groq for natural-language generation
+  // Helper: call OpenAI for natural-language generation
   async function callGroq(systemPrompt: string, userPrompt: string, maxTokens = 600): Promise<string | null> {
-    const groqKey = process.env.GROQ_API_KEY;
-    if (!groqKey) return null;
+    const aiKey = process.env.OPENAI_API_KEY;
+    if (!aiKey) return null;
     try {
-      const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      const r = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
-        headers: { "Authorization": `Bearer ${groqKey}`, "Content-Type": "application/json" },
+        headers: { "Authorization": `Bearer ${aiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
+          model: "gpt-4o-mini",
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },
