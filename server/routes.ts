@@ -22544,15 +22544,17 @@ ${existingIngredients ? `المكونات الحالية: ${existingIngredients}
 3. توقع النفاد: أي المواد ستنفد خلال أسبوع؟
 4. توصيات الشراء: ماذا يجب شراؤه الآن؟`) + `\n\n📦 بيانات المخزون:\n${stockSummary}\n\n🔍 فروقات آخر جرد:\n${stocktakeDiffs || 'لا يوجد جرد حديث'}`;
 
-      const apiKey = process.env.KIMI_API_KEY;
-      if (!apiKey) return res.status(500).json({ error: "KIMI_API_KEY not configured" });
+      const apiKey = process.env.KIMI_API_KEY || process.env.OPENAI_API_KEY;
+      if (!apiKey) return res.status(500).json({ error: "AI key not configured" });
+      const aiEndpoint = process.env.KIMI_API_KEY ? "https://api.moonshot.cn/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
+      const aiModel = process.env.KIMI_API_KEY ? "moonshot-v1-32k" : "gpt-4o-mini";
 
       const history = req.body.history || [];
-      const response = await fetch("https://api.moonshot.cn/v1/chat/completions", {
+      const response = await fetch(aiEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
         body: JSON.stringify({
-          model: "moonshot-v1-32k",
+          model: aiModel,
           messages: [{ role: "system", content: systemPrompt }, ...history, { role: "user", content: userMessage }],
           temperature: 0.3, max_tokens: 2000,
         }),
@@ -22610,14 +22612,16 @@ ${existingIngredients ? `المكونات الحالية: ${existingIngredients}
       const question = req.body.question || "حلل وضع الأعمال الحالي";
       const fullMessage = `${contextData}\n\n❓ السؤال: ${question}`;
 
-      const apiKey = process.env.KIMI_API_KEY;
-      if (!apiKey) return res.status(500).json({ error: "KIMI_API_KEY not configured" });
+      const apiKey = process.env.KIMI_API_KEY || process.env.OPENAI_API_KEY;
+      if (!apiKey) return res.status(500).json({ error: "AI key not configured" });
+      const aiEndpoint = process.env.KIMI_API_KEY ? "https://api.moonshot.cn/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
+      const aiModel = process.env.KIMI_API_KEY ? "moonshot-v1-32k" : "gpt-4o-mini";
 
-      const response = await fetch("https://api.moonshot.cn/v1/chat/completions", {
+      const response = await fetch(aiEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
         body: JSON.stringify({
-          model: "moonshot-v1-32k",
+          model: aiModel,
           messages: [{ role: "system", content: systemPrompt }, ...history, { role: "user", content: fullMessage }],
           temperature: 0.4, max_tokens: 2000,
         }),
@@ -22834,8 +22838,10 @@ ${existingIngredients ? `المكونات الحالية: ${existingIngredients}
   // POST /api/ai/brand-chat — employee brand AI assistant (Kimi AI)
   app.post("/api/ai/brand-chat", requireAuth, async (req: AuthRequest, res) => {
     try {
-      const kimiKey = process.env.KIMI_API_KEY;
+      const kimiKey = process.env.KIMI_API_KEY || process.env.OPENAI_API_KEY;
       if (!kimiKey) return res.status(503).json({ error: "AI not configured" });
+      const kimiEndpoint = process.env.KIMI_API_KEY ? "https://api.moonshot.cn/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
+      const kimiModel = process.env.KIMI_API_KEY ? "moonshot-v1-8k" : "gpt-4o-mini";
 
       const { message, history = [] } = req.body;
       if (!message) return res.status(400).json({ error: "message required" });
@@ -22872,15 +22878,15 @@ ${items.map((i: any) => `• ${i.nameAr}${i.nameEn ? ` (${i.nameEn})` : ""}: ${i
         { role: "user", content: message },
       ];
 
-      const aiRes = await fetch("https://api.moonshot.cn/v1/chat/completions", {
+      const aiRes = await fetch(kimiEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${kimiKey}` },
-        body: JSON.stringify({ model: "moonshot-v1-8k", messages, max_tokens: 800, temperature: 0.7 }),
+        body: JSON.stringify({ model: kimiModel, messages, max_tokens: 800, temperature: 0.7 }),
       });
 
       if (!aiRes.ok) {
         const errText = await aiRes.text();
-        console.error("[Kimi AI brand-chat error]", errText);
+        console.error("[AI brand-chat error]", errText);
         return res.status(502).json({ error: "AI service unavailable" });
       }
 
@@ -22896,8 +22902,10 @@ ${items.map((i: any) => `• ${i.nameAr}${i.nameEn ? ` (${i.nameEn})` : ""}: ${i
   // POST /api/ai/accounting-audit — manager accounting AI (Kimi AI)
   app.post("/api/ai/accounting-audit", requireAuth, requireManager, async (req: AuthRequest, res) => {
     try {
-      const kimiKey = process.env.KIMI_API_KEY;
+      const kimiKey = process.env.KIMI_API_KEY || process.env.OPENAI_API_KEY;
       if (!kimiKey) return res.status(503).json({ error: "AI not configured" });
+      const kimiEndpoint = process.env.KIMI_API_KEY ? "https://api.moonshot.cn/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
+      const kimiModel = process.env.KIMI_API_KEY ? "moonshot-v1-32k" : "gpt-4o-mini";
 
       const { question, period = "month" } = req.body;
       const tenantId = (req as any).tenantId || "demo-tenant";
@@ -22955,11 +22963,11 @@ ${revenueLines}
 
       const userMsg = question || "راجع حساباتي وأعطني تقرير تدقيق شامل مع كشف أي تلاعب أو أخطاء أو مصروفات شاذة";
 
-      const aiRes = await fetch("https://api.moonshot.cn/v1/chat/completions", {
+      const aiRes = await fetch(kimiEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${kimiKey}` },
         body: JSON.stringify({
-          model: "moonshot-v1-32k",
+          model: kimiModel,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userMsg },
@@ -22971,7 +22979,7 @@ ${revenueLines}
 
       if (!aiRes.ok) {
         const errText = await aiRes.text();
-        console.error("[Kimi AI accounting-audit error]", errText);
+        console.error("[AI accounting-audit error]", errText);
         return res.status(502).json({ error: "AI service unavailable" });
       }
 
