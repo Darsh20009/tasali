@@ -42,6 +42,14 @@ function getEndpointForPath(path: string): string {
   return "ceo-chat";
 }
 
+const STAFF_ROUTE_PREFIXES = [
+  "/employee", "/manager", "/admin", "/pos", "/kiosk", "/qirox",
+];
+
+function isStaffRoute(path: string) {
+  return STAFF_ROUTE_PREFIXES.some((prefix) => path.startsWith(prefix));
+}
+
 export function GlobalAIAssistant() {
   const [open, setOpen] = useState(false);
   const [minimized, setMinimized] = useState(false);
@@ -54,6 +62,8 @@ export function GlobalAIAssistant() {
   const recognitionRef = useRef<any>(null);
 
   const endpoint = getEndpointForPath(location);
+
+  if (!isStaffRoute(location)) return null;
 
   const endpointLabels: Record<string, { label: string; color: string }> = {
     "ceo-chat": { label: "CEO AI", color: "bg-purple-600" },
