@@ -19,6 +19,7 @@ import { OfflineIndicator } from "@/components/offline-indicator";
 import { CustomerNotificationListener } from "@/components/customer-notification-listener";
 import { GlobalCommandPalette } from "@/components/global-command-palette";
 import { QuickActionBar } from "@/components/quick-action-bar";
+import { GlobalAIAssistant } from "@/components/GlobalAIAssistant";
 import { useProximityNotify } from "@/hooks/useProximityNotify";
 
 const CartModal = lazy(() => import("@/components/cart-modal"));
@@ -140,6 +141,7 @@ const InventoryCycleDashboard = lazy(() => import("@/pages/inventory-cycle-dashb
 const SmartStocktake = lazy(() => import("@/pages/smart-stocktake"));
 const InventoryAI = lazy(() => import("@/pages/inventory-ai"));
 const CeoAIDashboard = lazy(() => import("@/pages/ceo-ai-dashboard"));
+const AIControlCenter = lazy(() => import("@/pages/ai-control-center"));
 const BusinessSimulator = lazy(() => import("@/pages/business-simulator"));
 const DigitalTwin = lazy(() => import("@/pages/digital-twin"));
 const ManagerDelivery = lazy(() => import("@/pages/manager-delivery"));
@@ -371,6 +373,7 @@ function AppRouter() {
       <Route path="/manager/inventory/cycle"><AuthGuard userType="manager"><InventoryCycleDashboard /></AuthGuard></Route>
       <Route path="/manager/inventory/stocktake"><AuthGuard userType="manager"><SmartStocktake /></AuthGuard></Route>
       <Route path="/manager/inventory/ai"><AuthGuard userType="manager"><InventoryAI /></AuthGuard></Route>
+      <Route path="/manager/ai-center"><AuthGuard userType="manager"><AIControlCenter /></AuthGuard></Route>
       <Route path="/manager/ceo-ai"><AuthGuard userType="manager"><CeoAIDashboard /></AuthGuard></Route>
       <Route path="/manager/simulator"><AuthGuard userType="manager"><BusinessSimulator /></AuthGuard></Route>
       <Route path="/manager/digital-twin"><AuthGuard userType="manager"><DigitalTwin /></AuthGuard></Route>
@@ -594,6 +597,7 @@ function App() {
                 <GlobalPrompts />
                 <GlobalCommandPalette />
                 <QuickActionBar />
+                <GlobalAIAssistant />
                 <PWAUpdateNotifier />
                 <PWAInstallBanner />
                 <OfflineIndicator />

@@ -94,6 +94,7 @@ const NAV_GROUPS: { label: string; labelEn: string; color: string; items: NavIte
   {
     label: "الذكاء الاصطناعي", labelEn: "AI Center", color: "#a855f7",
     items: [
+      { label: "مركز الذكاء الاصطناعي", labelEn: "AI Control Center", icon: Sparkles, path: "/manager/ai-center", color: "#D4912A", badge: "جديد" },
       { label: "CEO AI — مستشار الأعمال", labelEn: "CEO AI", icon: Brain, path: "/manager/ceo-ai", color: "#6d28d9" },
       { label: "محاكي قرارات الأعمال", labelEn: "Business Simulator", icon: Calculator, path: "/manager/simulator", color: "#7c3aed" },
       { label: "التوأم الرقمي للفروع", labelEn: "Digital Twin", icon: Building2, path: "/manager/digital-twin", color: "#a855f7" },

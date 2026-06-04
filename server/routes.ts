@@ -23004,6 +23004,158 @@ ${revenueLines}
     }
   });
 
+  // ─── AI AUTO JOURNAL ENTRIES — قيود محاسبية تلقائية بالذكاء الاصطناعي ───
+  app.post("/api/ai/auto-journal", requireAuth, requireManager, async (req: AuthRequest, res) => {
+    try {
+      const tenantId = (req as any).tenantId || "demo-tenant";
+      const tF = tFilter(tenantId);
+      const today = getSaudiStartOfDay();
+      const todayEnd = getSaudiEndOfDay();
+
+      const [orders, expenses, revenues] = await Promise.all([
+        OrderModel.find({ ...tF, status: { $in: ["completed","payment_confirmed"] }, createdAt: { $gte: today, $lte: todayEnd } })
+          .select("totalAmount costOfGoods paymentMethod items createdAt").lean(),
+        ExpenseErpModel ? ExpenseErpModel.find({ ...tF, date: { $gte: today, $lte: todayEnd } }).lean().catch(() => []) : Promise.resolve([]),
+        RevenueModel ? RevenueModel.find({ ...tF, createdAt: { $gte: today, $lte: todayEnd } }).lean().catch(() => []) : Promise.resolve([]),
+      ]);
+
+      const totalSales = (orders as any[]).reduce((s: number, o: any) => s + (o.totalAmount || 0), 0);
+      const totalCOGS = (orders as any[]).reduce((s: number, o: any) => s + (o.costOfGoods || 0), 0);
+      const cashSales = (orders as any[]).filter((o: any) => o.paymentMethod === "cash").reduce((s: number, o: any) => s + (o.totalAmount || 0), 0);
+      const cardSales = (orders as any[]).filter((o: any) => o.paymentMethod !== "cash").reduce((s: number, o: any) => s + (o.totalAmount || 0), 0);
+      const totalExp = (expenses as any[]).reduce((s: number, e: any) => s + (e.amount || e.totalAmount || 0), 0);
+      const vatAmount = totalSales * 0.15 / 1.15;
+      const netSales = totalSales - vatAmount;
+      const dateStr = new Date().toLocaleDateString("ar-SA", { timeZone: "Asia/Riyadh" });
+
+      const apiKey = process.env.KIMI_API_KEY || process.env.OPENAI_API_KEY;
+      if (!apiKey) return res.status(503).json({ error: "AI not configured" });
+      const aiEndpoint = process.env.KIMI_API_KEY ? "https://api.moonshot.ai/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
+      const aiModel = process.env.KIMI_API_KEY ? "moonshot-v1-32k" : "gpt-4o-mini";
+
+      const prompt = `أنت محاسب قانوني متخصص في مطاعم وكافيهات السعودية. 
+اكتب القيود المحاسبية اليومية بشكل كامل بناءً على البيانات التالية ليوم ${dateStr}:
+
+📊 بيانات اليوم:
+- إجمالي المبيعات (شامل VAT): ${totalSales.toFixed(2)} ريال
+- مبيعات كاش: ${cashSales.toFixed(2)} ريال
+- مبيعات شبكة/بطاقة: ${cardSales.toFixed(2)} ريال  
+- تكلفة البضاعة المباعة (COGS): ${totalCOGS.toFixed(2)} ريال
+- ضريبة القيمة المضافة 15%: ${vatAmount.toFixed(2)} ريال
+- صافي المبيعات (بدون VAT): ${netSales.toFixed(2)} ريال
+- إجمالي المصروفات: ${totalExp.toFixed(2)} ريال
+- عدد الطلبات: ${(orders as any[]).length}
+
+اكتب القيود بهذا الشكل الواضح:
+قيد (1): [اسم القيد]
+من حـ/ [اسم الحساب] ← [المبلغ] ريال
+إلى حـ/ [اسم الحساب] ← [المبلغ] ريال
+---
+ثم في النهاية اكتب ملاحظات مهمة إن وجدت.`;
+
+      const aiRes = await fetch(aiEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+        body: JSON.stringify({ model: aiModel, messages: [{ role: "user", content: prompt }], max_tokens: 2000, temperature: 0.1 }),
+      });
+      const aiData: any = await aiRes.json();
+      if (!aiRes.ok) {
+        console.error("[auto-journal AI error]", JSON.stringify(aiData));
+        return res.status(502).json({ error: "AI service error" });
+      }
+      const journalText = aiData.choices?.[0]?.message?.content || "لم يتمكن من إنشاء القيود.";
+      res.json({ journal: journalText, summary: { totalSales, cashSales, cardSales, totalCOGS, vatAmount, netSales, totalExp, ordersCount: (orders as any[]).length, date: dateStr } });
+    } catch (e: any) {
+      console.error("[auto-journal]", e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ─── AI DAILY REPORT — تقرير يومي شامل تلقائي ───
+  app.post("/api/ai/daily-report", requireAuth, requireManager, async (req: AuthRequest, res) => {
+    try {
+      const tenantId = (req as any).tenantId || "demo-tenant";
+      const tF = tFilter(tenantId);
+      const today = getSaudiStartOfDay();
+      const todayEnd = getSaudiEndOfDay();
+      const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+
+      const [todayOrders, yesterdayOrders, rawItems, branchStocks, employees, attendance] = await Promise.all([
+        OrderModel.find({ ...tF, status: { $in: ["completed","payment_confirmed"] }, createdAt: { $gte: today, $lte: todayEnd } })
+          .select("totalAmount costOfGoods paymentMethod items createdAt").lean(),
+        OrderModel.find({ ...tF, status: { $in: ["completed","payment_confirmed"] }, createdAt: { $gte: yesterday, $lt: today } })
+          .select("totalAmount").lean(),
+        RawItemModel.find(tF).lean(),
+        BranchStockModel.find(tF).lean(),
+        EmployeeModel.find({ ...tF, isActive: true }).select("nameAr role").lean(),
+        AttendanceModel ? AttendanceModel.find({ ...tF, date: { $gte: today, $lte: todayEnd } }).lean().catch(() => []) : Promise.resolve([]),
+      ]);
+
+      const todayRev = (todayOrders as any[]).reduce((s: number, o: any) => s + (o.totalAmount || 0), 0);
+      const yesterdayRev = (yesterdayOrders as any[]).reduce((s: number, o: any) => s + (o.totalAmount || 0), 0);
+      const growth = yesterdayRev > 0 ? (((todayRev - yesterdayRev) / yesterdayRev) * 100).toFixed(1) : "N/A";
+
+      const productSales: Record<string, { name: string; qty: number; rev: number }> = {};
+      for (const o of todayOrders as any[]) {
+        for (const item of (o.items || [])) {
+          if (!productSales[item.id]) productSales[item.id] = { name: item.nameAr || item.name, qty: 0, rev: 0 };
+          productSales[item.id].qty += item.quantity || 1;
+          productSales[item.id].rev += (item.price || 0) * (item.quantity || 1);
+        }
+      }
+      const topProducts = Object.values(productSales).sort((a, b) => b.rev - a.rev).slice(0, 5);
+
+      const lowStock = rawItems.filter((r: any) => {
+        const qty = (branchStocks as any[]).filter((b: any) => b.rawItemId === r.id).reduce((s: number, b: any) => s + (b.currentQuantity || 0), 0);
+        return qty <= (r.minStock || r.reorderPoint || 1);
+      }).map((r: any) => r.nameAr);
+
+      const presentCount = (attendance as any[]).filter((a: any) => a.checkIn).length;
+      const dateStr = new Date().toLocaleDateString("ar-SA", { timeZone: "Asia/Riyadh" });
+
+      const apiKey = process.env.KIMI_API_KEY || process.env.OPENAI_API_KEY;
+      if (!apiKey) return res.status(503).json({ error: "AI not configured" });
+      const aiEndpoint = process.env.KIMI_API_KEY ? "https://api.moonshot.ai/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
+      const aiModel = process.env.KIMI_API_KEY ? "moonshot-v1-32k" : "gpt-4o-mini";
+
+      const prompt = `أنت مستشار أعمال ذكي. اكتب تقرير يومي شامل ومختصر لمدير الكافيه ليوم ${dateStr}.
+
+📊 البيانات:
+• المبيعات اليوم: ${todayRev.toFixed(2)} ريال (${(todayOrders as any[]).length} طلب)
+• المبيعات أمس: ${yesterdayRev.toFixed(2)} ريال  
+• نمو المبيعات: ${growth}%
+• أفضل المنتجات: ${topProducts.map(p => `${p.name}(${p.qty}×)`).join("، ")}
+• مواد مخزون منخفضة: ${lowStock.length > 0 ? lowStock.join("، ") : "لا يوجد"}
+• الموظفون الحاضرون: ${presentCount} من ${(employees as any[]).length}
+
+اكتب تقريراً منظماً يشمل:
+1. 📈 ملخص تنفيذي (3 أسطر)
+2. 🏆 أبرز الإنجازات
+3. ⚠️ التنبيهات والمخاطر
+4. ✅ توصيات فورية (3 نقاط عملية)
+اجعل الأسلوب مباشراً وعملياً للمدير.`;
+
+      const aiRes = await fetch(aiEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+        body: JSON.stringify({ model: aiModel, messages: [{ role: "user", content: prompt }], max_tokens: 1500, temperature: 0.3 }),
+      });
+      const aiData: any = await aiRes.json();
+      if (!aiRes.ok) {
+        console.error("[daily-report AI error]", JSON.stringify(aiData));
+        return res.status(502).json({ error: "AI service error" });
+      }
+      const report = aiData.choices?.[0]?.message?.content || "لم يتمكن من إنشاء التقرير.";
+      res.json({
+        report,
+        stats: { todayRev, yesterdayRev, growth, ordersCount: (todayOrders as any[]).length, topProducts, lowStockCount: lowStock.length, presentCount, totalEmployees: (employees as any[]).length, date: dateStr }
+      });
+    } catch (e: any) {
+      console.error("[daily-report]", e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // GET /api/v1 — discovery endpoint (no auth)
   app.get("/api/v1", (_req, res) => {
     res.json({
