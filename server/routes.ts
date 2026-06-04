@@ -22546,7 +22546,7 @@ ${existingIngredients ? `المكونات الحالية: ${existingIngredients}
 
       const apiKey = process.env.KIMI_API_KEY || process.env.OPENAI_API_KEY;
       if (!apiKey) return res.status(500).json({ error: "AI key not configured" });
-      const aiEndpoint = process.env.KIMI_API_KEY ? "https://api.moonshot.cn/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
+      const aiEndpoint = process.env.KIMI_API_KEY ? "https://api.moonshot.ai/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
       const aiModel = process.env.KIMI_API_KEY ? "moonshot-v1-32k" : "gpt-4o-mini";
 
       const history = req.body.history || [];
@@ -22626,7 +22626,7 @@ ${existingIngredients ? `المكونات الحالية: ${existingIngredients}
 
       const apiKey = process.env.KIMI_API_KEY || process.env.OPENAI_API_KEY;
       if (!apiKey) return res.status(500).json({ error: "AI key not configured" });
-      const aiEndpoint = process.env.KIMI_API_KEY ? "https://api.moonshot.cn/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
+      const aiEndpoint = process.env.KIMI_API_KEY ? "https://api.moonshot.ai/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
       const aiModel = process.env.KIMI_API_KEY ? "moonshot-v1-32k" : "gpt-4o-mini";
 
       const response = await fetch(aiEndpoint, {
@@ -22852,7 +22852,7 @@ ${existingIngredients ? `المكونات الحالية: ${existingIngredients}
     try {
       const kimiKey = process.env.KIMI_API_KEY || process.env.OPENAI_API_KEY;
       if (!kimiKey) return res.status(503).json({ error: "AI not configured" });
-      const kimiEndpoint = process.env.KIMI_API_KEY ? "https://api.moonshot.cn/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
+      const kimiEndpoint = process.env.KIMI_API_KEY ? "https://api.moonshot.ai/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
       const kimiModel = process.env.KIMI_API_KEY ? "moonshot-v1-8k" : "gpt-4o-mini";
 
       const { message, history = [] } = req.body;
@@ -22916,7 +22916,7 @@ ${items.map((i: any) => `• ${i.nameAr}${i.nameEn ? ` (${i.nameEn})` : ""}: ${i
     try {
       const kimiKey = process.env.KIMI_API_KEY || process.env.OPENAI_API_KEY;
       if (!kimiKey) return res.status(503).json({ error: "AI not configured" });
-      const kimiEndpoint = process.env.KIMI_API_KEY ? "https://api.moonshot.cn/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
+      const kimiEndpoint = process.env.KIMI_API_KEY ? "https://api.moonshot.ai/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
       const kimiModel = process.env.KIMI_API_KEY ? "moonshot-v1-32k" : "gpt-4o-mini";
 
       const { question, period = "month" } = req.body;
