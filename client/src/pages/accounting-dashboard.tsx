@@ -449,37 +449,38 @@ export default function AccountingDashboardPage() {
   };
 
   const exportToPDF = (title: string, data: any) => {
-    import('jspdf').then(({ jsPDF }) => {
-      const doc = new jsPDF({ orientation: 'portrait' });
-      doc.setFont('helvetica');
-      doc.setFontSize(18);
-      doc.text(title, 105, 20, { align: 'center' });
-      doc.setFontSize(12);
-      doc.text(`الفترة: ${periodLabels[period]}`, 105, 30, { align: 'center' });
-      doc.text(`التاريخ: ${format(new Date(), 'yyyy/MM/dd')}`, 105, 38, { align: 'center' });
-      
-      let y = 55;
+    try {
+      const rows: string[] = [];
       if (data.summary) {
-        doc.setFontSize(14);
-        doc.text('ملخص الأداء المالي', 105, y, { align: 'center' });
-        y += 12;
-        doc.setFontSize(11);
-        doc.text(`إجمالي الإيرادات: ${data.summary.totalRevenue?.toFixed(2) || 0} ر.س`, 20, y);
-        y += 8;
-        doc.text(`تكلفة المكونات: ${data.summary.totalCogs?.toFixed(2) || 0} ر.س`, 20, y);
-        y += 8;
-        doc.text(`المصروفات: ${data.summary.totalExpenses?.toFixed(2) || 0} ر.س`, 20, y);
-        y += 8;
-        doc.text(`صافي الربح: ${data.summary.netProfit?.toFixed(2) || 0} ر.س`, 20, y);
-        y += 8;
-        doc.text(`هامش الربح: ${data.summary.profitMargin?.toFixed(1) || 0}%`, 20, y);
+        rows.push(`<tr><td>إجمالي الإيرادات</td><td>${data.summary.totalRevenue?.toFixed(2) || 0} ر.س</td></tr>`);
+        rows.push(`<tr><td>تكلفة المكونات</td><td>${data.summary.totalCogs?.toFixed(2) || 0} ر.س</td></tr>`);
+        rows.push(`<tr><td>المصروفات</td><td>${data.summary.totalExpenses?.toFixed(2) || 0} ر.س</td></tr>`);
+        rows.push(`<tr><td>صافي الربح</td><td>${data.summary.netProfit?.toFixed(2) || 0} ر.س</td></tr>`);
+        rows.push(`<tr><td>هامش الربح</td><td>${data.summary.profitMargin?.toFixed(1) || 0}%</td></tr>`);
       }
-      
-      doc.save(`${title}_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
-      toast({ title: tc('تم تصدير التقرير بنجاح', 'Report exported successfully'), description: 'تم حفظ الملف بصيغة PDF' });
-    }).catch(() => {
+      const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"/><style>
+        body{font-family:sans-serif;direction:rtl;padding:30px}
+        h1{color:#D4AF37;text-align:center}
+        p{text-align:center;color:#666}
+        table{width:100%;border-collapse:collapse;margin-top:20px}
+        th,td{padding:10px;border:1px solid #ddd;text-align:right}
+        th{background:#f8f9fa;font-weight:bold}
+        @media print{body{padding:20px}}
+      </style></head><body>
+      <h1>${title}</h1>
+      <p>الفترة: ${(periodLabels as any)[period]} — التاريخ: ${format(new Date(), 'yyyy/MM/dd')}</p>
+      <table><thead><tr><th>البند</th><th>القيمة</th></tr></thead>
+      <tbody>${rows.join('')}</tbody></table>
+      </body></html>`;
+      const blob = new Blob([html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const win = window.open(url, '_blank');
+      if (win) win.onload = () => { win.print(); };
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      toast({ title: tc('تم تصدير التقرير بنجاح', 'Report exported successfully'), description: 'تم فتح نافذة الطباعة' });
+    } catch {
       toast({ title: tc('فشل التصدير', 'Export failed'), variant: 'destructive' });
-    });
+    }
   };
 
   const handleExportSummaryExcel = () => {

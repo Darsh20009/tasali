@@ -1,5 +1,10 @@
 import { useState, useCallback } from "react";
-import type { UppyFile } from "@uppy/core";
+
+type UppyFile<M = Record<string, unknown>, B = Record<string, unknown>> = {
+  name: string;
+  size: number;
+  type: string;
+};
 
 interface UploadMetadata {
   name: string;
