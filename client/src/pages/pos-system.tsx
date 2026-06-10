@@ -1817,32 +1817,14 @@ export default function PosSystem() {
             <Button 
               variant="ghost" 
               size="sm"
-              onClick={() => setShowPrinterSettings(true)}
-              className="relative"
-              data-testid="button-mobile-printer-settings"
-              title={tc("إعدادات الطابعة", "Printer Settings")}
-            >
-              <Printer className="w-4 h-4" />
-              <span className={`absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full ${printerMode === 'network' ? 'bg-blue-500' : printerMode === 'bluetooth' ? 'bg-purple-500' : printerMode === 'webusb' ? 'bg-green-500' : 'bg-gray-400'}`} />
-            </Button>
-            <Button 
-              variant="ghost" 
-              size="sm"
               onClick={() => setShowPOSSettings(true)}
               data-testid="button-mobile-settings"
             >
               <Settings className="w-4 h-4" />
             </Button>
-            {splitViewMode && (
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => setSplitViewMode(false)}
-                data-testid="button-mobile-back"
-              >
-                <ArrowRight className="w-4 h-4" />
-              </Button>
-            )}
+            <Button variant="ghost" size="icon" onClick={() => setLocation("/employee/home")} className="h-8 w-8" data-testid="button-mobile-back-dashboard">
+              <ArrowRight className="w-5 h-5 text-muted-foreground" />
+            </Button>
           </div>
         </div>
 
@@ -1859,68 +1841,13 @@ export default function PosSystem() {
           </Tabs>
         </div>
 
-        <div className="flex items-center flex-wrap gap-2 sm:gap-3 w-full sm:w-auto justify-end">
-          <Button
-            variant={posTerminalConnected ? "default" : "outline"}
-            size="sm"
-            onClick={() => setPosTerminalConnected(!posTerminalConnected)}
-            className="hidden sm:flex gap-1"
-            data-testid="button-pos-terminal-toggle"
-          >
-            <MonitorSmartphone className="w-4 h-4" />
-            <span className="text-xs">{posTerminalConnected ? t('pos.terminal_connected') : t('pos.terminal_disconnected')}</span>
-            <div className={`w-2 h-2 rounded-full ${posTerminalConnected ? 'bg-green-400' : 'bg-orange-400'}`} />
-          </Button>
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => window.open('/customer-display', '_blank')}
-            className="hidden sm:flex gap-1"
-            data-testid="button-customer-display"
-          >
-            <SplitSquareVertical className="w-4 h-4" />
-            <span className="text-xs">{t('pos.customer_display')}</span>
-          </Button>
-
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowPrinterSettings(true)}
-            className="hidden sm:flex relative"
-            data-testid="button-pos-printer-settings"
-            title={tc("إعدادات الطابعة", "Printer Settings")}
-          >
-            <Printer className="w-4 h-4" />
-            <span className={`absolute top-0.5 right-0.5 w-2 h-2 rounded-full border border-background ${printerMode === 'network' ? 'bg-blue-500' : printerMode === 'bluetooth' ? 'bg-purple-500' : printerMode === 'webusb' ? 'bg-green-500' : 'bg-gray-400'}`} />
-          </Button>
-
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowPOSSettings(true)}
-            className="hidden sm:flex"
-            data-testid="button-pos-settings"
-          >
-            <Settings className="w-4 h-4" />
-          </Button>
-
-          <div className="hidden sm:flex">
-            <AudioUnlockBanner
-              pageKey="pos"
-              soundEnabled={soundEnabled}
-              onToggleSound={(val) => { setSoundEnabled(val); saveSoundEnabled('pos', val); }}
-              compact
-            />
-          </div>
-
-          <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-red-500'}`} title={wsConnected ? t('pos.connected_status') : t('pos.disconnected_status')} />
-
+        <div className="hidden sm:flex items-center gap-2">
+          {/* Orders with badge */}
           <Button
             variant="outline"
             size="sm"
             onClick={() => setShowOrdersPanel(true)}
-            className="relative hidden sm:flex"
+            className="relative"
             data-testid="button-desktop-orders"
           >
             <ClipboardList className="w-4 h-4 ml-2" />
@@ -1932,77 +1859,45 @@ export default function PosSystem() {
             )}
           </Button>
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowTablesDialog(true)}
-            className="hidden sm:flex"
-            data-testid="button-tables-grid"
-          >
-            <Grid3X3 className="w-4 h-4 ml-2" />
-            {t('pos.tables')}
-          </Button>
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowOpenBillsDialog(true)}
-            className="relative hidden sm:flex"
-            data-testid="button-open-bills"
-          >
-            <Receipt className="w-4 h-4 ml-2" />
-            {t('pos.open_bills')}
-            {openTableOrders.length > 0 && (
-              <Badge className="absolute -top-2 -right-2 px-1.5 min-w-[18px] h-[18px] bg-primary text-primary-foreground">
-                {openTableOrders.length}
-              </Badge>
-            )}
-          </Button>
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowCarOrdersPanel(true)}
-            className="relative hidden sm:flex gap-1 border-primary/30 text-primary hover:bg-primary/10"
-            data-testid="button-car-orders"
-            title={tc("طلبات السيارات", "Car Orders")}
-          >
-            <Car className="w-4 h-4" />
-            <span className="text-xs font-bold">{tc("سيارات", "Cars")}</span>
-            {carPreparationAlerts.length > 0 && (
-              <Badge className="absolute -top-2 -right-2 px-1.5 min-w-[18px] h-[18px] bg-amber-500 text-white animate-pulse">
+          {/* Car orders badge — shows only when there are alerts */}
+          {carPreparationAlerts.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowCarOrdersPanel(true)}
+              className="relative gap-1 border-amber-300 text-amber-600 hover:bg-amber-50"
+              data-testid="button-car-orders"
+            >
+              <Car className="w-4 h-4" />
+              <Badge className="bg-amber-500 text-white animate-pulse px-1.5 min-w-[18px] h-[18px]">
                 {carPreparationAlerts.length}
               </Badge>
-            )}
-          </Button>
+            </Button>
+          )}
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowRefundDialog(true)}
-            className="hidden sm:flex gap-1 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-400"
-            data-testid="button-refund-open"
-            title={tc("استرجاع طلب / Refund", "Refund Order")}
-          >
-            <RotateCcw className="w-4 h-4" />
-            <span className="text-xs font-bold">{tc("استرجاع", "Refund")}</span>
-          </Button>
+          {/* WS dot */}
+          <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-red-500'}`} title={wsConnected ? t('pos.connected_status') : t('pos.disconnected_status')} />
 
+          {/* Employee name */}
           <div className="flex items-center gap-2 bg-muted/50 px-2 py-1 rounded-full border">
             <div className="w-2 h-2 rounded-full bg-green-500" />
-            <span className="text-[10px] sm:text-xs font-medium">{employee?.fullName || t('pos.employee_fallback')}</span>
+            <span className="text-xs font-medium">{employee?.fullName || t('pos.employee_fallback')}</span>
           </div>
-          
+
+          {/* Settings — all extra features live here */}
           <Button
             variant="ghost"
-            size="sm"
-            onClick={() => i18n.changeLanguage(i18n.language === 'ar' ? 'en' : 'ar')}
-            className="h-8 px-2 text-xs font-bold"
-            data-testid="button-toggle-language-pos"
+            size="icon"
+            onClick={() => setShowPOSSettings(true)}
+            className="h-9 w-9"
+            data-testid="button-pos-settings"
+            title={tc("الإعدادات", "Settings")}
           >
-            {i18n.language === 'ar' ? 'EN' : 'ع'}
+            <Settings className="w-5 h-5" />
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => setLocation("/employee/home")} className="h-8 w-8 sm:h-9 sm:w-9" data-testid="button-back-dashboard" title={t('pos.back_to_dashboard')}>
+
+          {/* Back to dashboard */}
+          <Button variant="ghost" size="icon" onClick={() => setLocation("/employee/home")} className="h-9 w-9" data-testid="button-back-dashboard" title={t('pos.back_to_dashboard')}>
             <ArrowRight className="w-5 h-5 text-muted-foreground" />
           </Button>
         </div>
@@ -4221,12 +4116,97 @@ export default function PosSystem() {
       </Dialog>
 
       <Dialog open={showPOSSettings} onOpenChange={setShowPOSSettings}>
-        <DialogContent className="max-w-md" dir={dir}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto" dir={dir}>
           <DialogHeader>
             <DialogTitle className="text-right font-bold text-xl">{t('pos.settings_title')}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-6 py-4">
-            {/* Printer quick link */}
+          <div className="space-y-4 py-2">
+
+            {/* ── Quick Actions ──────────────────────────────────────── */}
+            <div>
+              <p className="text-xs font-bold text-muted-foreground mb-2 px-1">{tc("الأدوات السريعة", "Quick Tools")}</p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => { setShowPOSSettings(false); setShowTablesDialog(true); }}
+                  className="flex items-center gap-3 p-3 rounded-xl border hover:bg-muted/60 transition-all text-right"
+                  data-testid="button-settings-tables"
+                >
+                  <div className="bg-blue-100 dark:bg-blue-900/30 p-2 rounded-lg shrink-0">
+                    <Grid3X3 className="w-4 h-4 text-blue-600" />
+                  </div>
+                  <span className="text-sm font-bold">{t('pos.tables')}</span>
+                </button>
+
+                <button
+                  onClick={() => { setShowPOSSettings(false); setShowOpenBillsDialog(true); }}
+                  className="relative flex items-center gap-3 p-3 rounded-xl border hover:bg-muted/60 transition-all text-right"
+                  data-testid="button-settings-open-bills"
+                >
+                  <div className="bg-green-100 dark:bg-green-900/30 p-2 rounded-lg shrink-0">
+                    <Receipt className="w-4 h-4 text-green-600" />
+                  </div>
+                  <span className="text-sm font-bold">{t('pos.open_bills')}</span>
+                  {openTableOrders.length > 0 && (
+                    <Badge className="absolute top-1 left-1 px-1.5 min-w-[18px] h-[18px] bg-primary text-primary-foreground text-[9px]">
+                      {openTableOrders.length}
+                    </Badge>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => { setShowPOSSettings(false); setShowCarOrdersPanel(true); }}
+                  className="relative flex items-center gap-3 p-3 rounded-xl border hover:bg-muted/60 transition-all text-right"
+                  data-testid="button-settings-car-orders"
+                >
+                  <div className="bg-amber-100 dark:bg-amber-900/30 p-2 rounded-lg shrink-0">
+                    <Car className="w-4 h-4 text-amber-600" />
+                  </div>
+                  <span className="text-sm font-bold">{tc("طلبات السيارات", "Car Orders")}</span>
+                  {carPreparationAlerts.length > 0 && (
+                    <Badge className="absolute top-1 left-1 px-1.5 min-w-[18px] h-[18px] bg-amber-500 text-white animate-pulse text-[9px]">
+                      {carPreparationAlerts.length}
+                    </Badge>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => { setShowPOSSettings(false); setShowRefundDialog(true); }}
+                  className="flex items-center gap-3 p-3 rounded-xl border hover:bg-red-50 dark:hover:bg-red-950/30 border-red-200 dark:border-red-900/40 transition-all text-right"
+                  data-testid="button-settings-refund"
+                >
+                  <div className="bg-red-100 dark:bg-red-900/30 p-2 rounded-lg shrink-0">
+                    <RotateCcw className="w-4 h-4 text-red-600" />
+                  </div>
+                  <span className="text-sm font-bold text-red-600">{tc("استرجاع طلب", "Refund")}</span>
+                </button>
+
+                <button
+                  onClick={() => { setShowPOSSettings(false); window.open('/customer-display', '_blank'); }}
+                  className="flex items-center gap-3 p-3 rounded-xl border hover:bg-muted/60 transition-all text-right"
+                  data-testid="button-settings-customer-display"
+                >
+                  <div className="bg-purple-100 dark:bg-purple-900/30 p-2 rounded-lg shrink-0">
+                    <SplitSquareVertical className="w-4 h-4 text-purple-600" />
+                  </div>
+                  <span className="text-sm font-bold">{t('pos.customer_display')}</span>
+                </button>
+
+                <button
+                  onClick={() => i18n.changeLanguage(i18n.language === 'ar' ? 'en' : 'ar')}
+                  className="flex items-center gap-3 p-3 rounded-xl border hover:bg-muted/60 transition-all text-right"
+                  data-testid="button-settings-language"
+                >
+                  <div className="bg-muted p-2 rounded-lg shrink-0">
+                    <span className="text-sm font-black text-foreground">{i18n.language === 'ar' ? 'EN' : 'ع'}</span>
+                  </div>
+                  <span className="text-sm font-bold">{tc("تغيير اللغة", "Change Language")}</span>
+                </button>
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* ── Printer ──────────────────────────────────────────── */}
             <button
               onClick={() => { setShowPOSSettings(false); setShowPrinterSettings(true); }}
               className="w-full flex items-center justify-between p-3 rounded-xl border-2 border-dashed border-primary/30 hover:border-primary hover:bg-primary/5 transition-all group"
@@ -4240,12 +4220,12 @@ export default function PosSystem() {
                   <p className="text-sm font-bold">{tc("إعدادات الطابعة", "Printer Settings")}</p>
                   <p className="text-xs text-muted-foreground">
                     {printerMode === 'network'
-                      ? tc("شبكة LAN — ProPos / Epson LAN", "Network LAN — ProPos / Epson LAN")
+                      ? tc("شبكة LAN", "Network LAN")
                       : printerMode === 'bluetooth'
-                        ? tc("بلوتوث BLE — انقر للإعداد", "Bluetooth BLE — Click to configure")
+                        ? tc("بلوتوث BLE", "Bluetooth BLE")
                         : printerMode === 'webusb'
-                          ? tc("USB مباشر — متصلة", "Direct USB — Connected")
-                          : tc("متصفح — انقر لإعداد الطابعة", "Browser — Click to configure printer")
+                          ? tc("USB مباشر", "Direct USB")
+                          : tc("اضغط للإعداد", "Click to configure")
                     }
                   </p>
                 </div>
@@ -4255,86 +4235,67 @@ export default function PosSystem() {
                 <svg className="w-4 h-4 text-muted-foreground group-hover:text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
               </div>
             </button>
+
             <Separator />
-            <div className="flex items-center justify-between">
-              <Label htmlFor="auto-print" className="text-sm font-bold cursor-pointer">{t('pos.auto_print')}</Label>
-              <Switch id="auto-print" checked={autoPrint} onCheckedChange={setAutoPrint} />
-            </div>
-            <div className="flex items-center justify-between">
-              <Label htmlFor="sound-notif" className="text-sm font-bold cursor-pointer">{t('pos.sound_notif')}</Label>
-              <div className="flex items-center gap-2">
-                {soundEnabled && (
-                  <button
-                    onClick={() => testSound('newOrder', 0.8)}
-                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
-                    title={tc("اختبار الصوت","Test sound")}
-                    data-testid="button-test-sound-settings"
-                  >
-                    <PlayCircle className="w-4 h-4" />
-                    <span>{tc("اختبار","Test")}</span>
-                  </button>
-                )}
-                <Switch id="sound-notif" checked={soundEnabled} onCheckedChange={(val) => { setSoundEnabled(val); saveSoundEnabled('pos', val); }} />
+
+            {/* ── Toggles ──────────────────────────────────────────── */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="auto-print" className="text-sm font-bold cursor-pointer">{t('pos.auto_print')}</Label>
+                <Switch id="auto-print" checked={autoPrint} onCheckedChange={setAutoPrint} />
+              </div>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="sound-notif" className="text-sm font-bold cursor-pointer">{t('pos.sound_notif')}</Label>
+                <div className="flex items-center gap-2">
+                  {soundEnabled && (
+                    <button
+                      onClick={() => testSound('newOrder', 0.8)}
+                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
+                      data-testid="button-test-sound-settings"
+                    >
+                      <PlayCircle className="w-4 h-4" />
+                      <span>{tc("اختبار","Test")}</span>
+                    </button>
+                  )}
+                  <Switch id="sound-notif" checked={soundEnabled} onCheckedChange={(val) => { setSoundEnabled(val); saveSoundEnabled('pos', val); }} />
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="show-vat" className="text-sm font-bold cursor-pointer">{t('pos.show_vat')}</Label>
+                <Switch id="show-vat" checked={showVatLabel} onCheckedChange={setShowVatLabel} />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="pos-terminal" className="text-sm font-bold cursor-pointer block">{t('pos.terminal_connection')}</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">{posTerminalConnected ? t('pos.connected_status') : t('pos.disconnected_status')}</p>
+                </div>
+                <Switch id="pos-terminal" checked={posTerminalConnected} onCheckedChange={setPosTerminalConnected} />
               </div>
             </div>
-            <div className="flex items-center justify-between">
-              <Label htmlFor="show-vat" className="text-sm font-bold cursor-pointer">{t('pos.show_vat')}</Label>
-              <Switch id="show-vat" checked={showVatLabel} onCheckedChange={setShowVatLabel} />
-            </div>
+
             <Separator />
+
+            {/* ── Zoom ─────────────────────────────────────────────── */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-sm font-bold">{tc("حجم الشاشة (Zoom)","Screen Size (Zoom)")}</Label>
+                <Label className="text-sm font-bold">{tc("حجم الشاشة","Screen Zoom")}</Label>
                 <span className="text-sm font-mono font-bold text-primary">{posZoom}%</span>
               </div>
               <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1"
-                  disabled={posZoom <= 30}
-                  onClick={() => setPosZoom(z => Math.max(30, z - 5))}
-                  data-testid="button-zoom-out"
-                >
+                <Button variant="outline" size="sm" className="flex-1" disabled={posZoom <= 30} onClick={() => setPosZoom(z => Math.max(30, z - 5))} data-testid="button-zoom-out">
                   <span className="text-lg font-bold">−</span>
                 </Button>
                 <div className="flex-1 flex justify-center gap-1">
-                  {[30, 60, 80, 100].map(v => (
-                    <Button
-                      key={v}
-                      variant={posZoom === v ? "default" : "outline"}
-                      size="sm"
-                      className="flex-1 text-xs px-1"
-                      onClick={() => setPosZoom(v)}
-                      data-testid={`button-zoom-${v}`}
-                    >
-                      {v}%
-                    </Button>
+                  {[60, 80, 100].map(v => (
+                    <Button key={v} variant={posZoom === v ? "default" : "outline"} size="sm" className="flex-1 text-xs px-1" onClick={() => setPosZoom(v)} data-testid={`button-zoom-${v}`}>{v}%</Button>
                   ))}
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1"
-                  disabled={posZoom >= 100}
-                  onClick={() => setPosZoom(z => Math.min(100, z + 5))}
-                  data-testid="button-zoom-in"
-                >
+                <Button variant="outline" size="sm" className="flex-1" disabled={posZoom >= 100} onClick={() => setPosZoom(z => Math.min(100, z + 5))} data-testid="button-zoom-in">
                   <span className="text-lg font-bold">+</span>
                 </Button>
               </div>
-              <p className="text-[10px] text-muted-foreground text-center">
-                {tc("قلل الحجم لتناسب الشاشات الصغيرة دون تشويه","Reduce size to fit small screens without distortion")}
-              </p>
             </div>
-            <Separator />
-            <div className="flex items-center justify-between">
-              <div>
-                <Label htmlFor="pos-terminal" className="text-sm font-bold cursor-pointer block">{t('pos.terminal_connection')}</Label>
-                <p className="text-xs text-muted-foreground mt-1">{posTerminalConnected ? t('pos.connected_status') : t('pos.disconnected_status')}</p>
-              </div>
-              <Switch id="pos-terminal" checked={posTerminalConnected} onCheckedChange={setPosTerminalConnected} />
-            </div>
+
           </div>
         </DialogContent>
       </Dialog>
