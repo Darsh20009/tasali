@@ -63,8 +63,6 @@ export function GlobalAIAssistant() {
 
   const endpoint = getEndpointForPath(location);
 
-  if (!isStaffRoute(location)) return null;
-
   const endpointLabels: Record<string, { label: string; color: string }> = {
     "ceo-chat": { label: "CEO AI", color: "bg-purple-600" },
     "accounting-audit": { label: "مدقق المحاسبة", color: "bg-blue-600" },
@@ -106,6 +104,8 @@ export function GlobalAIAssistant() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, sendMutation.isPending]);
+
+  if (!isStaffRoute(location)) return null;
 
   function send(text?: string) {
     const msg = (text || input).trim();
