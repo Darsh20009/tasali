@@ -1,8 +1,9 @@
 export {
   ObjectStorageService,
   ObjectNotFoundError,
-  objectStorageClient,
 } from "./objectStorage";
+
+export const objectStorageClient = null;
 
 export type {
   ObjectAclPolicy,
