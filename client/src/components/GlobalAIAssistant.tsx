@@ -43,7 +43,7 @@ function getEndpointForPath(path: string): string {
 }
 
 const STAFF_ROUTE_PREFIXES = [
-  "/employee", "/manager", "/admin", "/pos", "/kiosk", "/qirox",
+  "/manager", "/admin", "/qirox",
 ];
 
 function isStaffRoute(path: string) {
