@@ -1104,3 +1104,23 @@ a, button, input, select, textarea, label, [role="button"] {
     display: none !important;
   }
 }
+
+/* ── SAR Icon — adapts to text color context ── */
+.sar-icon {
+  filter: brightness(0);
+  opacity: 0.85;
+}
+/* On dark/colored backgrounds where text is white */
+.text-white .sar-icon,
+[class*="text-white"] .sar-icon,
+.btn .sar-icon,
+button .sar-icon {
+  filter: brightness(0) invert(1);
+  opacity: 1;
+}
+/* On primary brown color text */
+.text-primary .sar-icon,
+[class*="text-primary"] .sar-icon {
+  filter: brightness(0) sepia(1) saturate(3) hue-rotate(350deg);
+  opacity: 0.9;
+}

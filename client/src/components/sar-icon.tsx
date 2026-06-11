@@ -5,12 +5,12 @@ interface SarIconProps {
 
 export default function SarIcon({ className = "", size = 14 }: SarIconProps) {
   return (
-    <span
+    <img
+      src="/sar-icon.png"
+      alt="ريال"
       aria-label="ريال سعودي"
-      className={`inline-block align-middle select-none font-bold ${className}`}
-      style={{ fontSize: Math.max(8, size * 0.75), lineHeight: 1 }}
-    >
-      ر.س
-    </span>
+      className={`inline-block align-middle select-none object-contain sar-icon ${className}`}
+      style={{ width: size, height: size }}
+    />
   );
 }
