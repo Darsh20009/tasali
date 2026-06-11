@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useState } from "react";
 import QRCode from "qrcode";
 import JsBarcode from "jsbarcode";
-import blackroseLogo from "@assets/blackrose-logo.png";
+import tasaliLogo from "@assets/logo.png";
 import { brand } from "@/lib/brand";
 import SarIcon from "@/components/sar-icon";
 import { VAT_RATE } from "@/lib/constants";
@@ -57,13 +57,13 @@ interface ReceiptProps {
   isKitchenCopy?: boolean;
 }
 
-const VAT_NUMBER = "312718675800003";
+const VAT_NUMBER = brand.taxNumber || "";
 const COMPANY_NAME = brand.shortNameAr;
 const COMPANY_NAME_EN = brand.nameEn;
-const COMPANY_CR = "1163184110";
-const COMPANY_VAT_NAME = "شركة بلاك روز للخدمات الغذائية"; // Added for ZATCA compliance
-const DEFAULT_BRANCH = "الفرع الرئيسي - ينبع";
-const DEFAULT_ADDRESS = "ينبع، المملكة العربية السعودية";
+const COMPANY_CR = brand.commercialRegister;
+const COMPANY_VAT_NAME = brand.nameAr;
+const DEFAULT_BRANCH = "الفرع الرئيسي - الرياض";
+const DEFAULT_ADDRESS = "الرياض، المملكة العربية السعودية";
 
 function generateZATCAQRCode(data: {
   sellerName: string;
@@ -257,7 +257,7 @@ export const ReceiptPrint = forwardRef<HTMLDivElement, ReceiptProps>(
         <div className="max-w-[80mm] mx-auto bg-white text-black p-3 font-sans" dir="rtl">
           <div className="text-center mb-4 pb-4 border-b-2 border-dashed border-gray-800">
             <img
-              src={blackroseLogo}
+              src={tasaliLogo}
               alt={brand.nameEn}
               style={{ filter: 'invert(1)', mixBlendMode: 'multiply', width: '90px', height: '90px', objectFit: 'contain', margin: '0 auto 6px' }}
             />
@@ -265,7 +265,7 @@ export const ReceiptPrint = forwardRef<HTMLDivElement, ReceiptProps>(
             <p className="text-sm text-gray-600 font-medium">{COMPANY_NAME_EN}</p>
             <p className="text-xs text-gray-500 mt-1">{displayBranchName}</p>
             <p className="text-xs text-gray-400">{displayBranchAddress}</p>
-            <p className="text-xs font-bold text-amber-700 mt-1">www.blackrose.com.sa</p>
+            <p className="text-xs font-bold text-amber-700 mt-1">{brand.website}</p>
             <div className="mt-3 pt-3 border-t border-gray-300">
               <p className="text-lg font-bold text-gray-900">فاتورة ضريبية مبسطة</p>
               <p className="text-xs text-gray-500">Simplified Tax Invoice</p>
