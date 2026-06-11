@@ -410,7 +410,7 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
 
         {/* ── 12. Powered by ── */}
         <div style={{ borderTop: "1px dashed #ccc", textAlign: "center", padding: "10px 0", marginTop: "4px", fontFamily: "Arial, sans-serif", fontSize: "11px", color: "#555", letterSpacing: "0.3px" }}>
-          Powered by QIROX STUDIO
+          Powered by TASALI QURUMSH SYSTEMS
         </div>
 
         <div style={{ height: "16px" }} />

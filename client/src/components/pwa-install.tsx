@@ -143,8 +143,8 @@ function AppHeader({ onClose, subtitle }: { onClose: () => void; subtitle: strin
     <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "0 20px 14px" }}>
       <AppIcon size={58} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ color: "#fff", fontWeight: 800, fontSize: 17, margin: 0, lineHeight: 1.2 }}>QIROX Cafe</p>
-        <p style={{ color: "rgba(255,255,255,0.35)", fontSize: 11, margin: "2px 0 5px" }}>qirox.cafe</p>
+        <p style={{ color: "#fff", fontWeight: 800, fontSize: 17, margin: 0, lineHeight: 1.2 }}>تسالي كرومش</p>
+        <p style={{ color: "rgba(255,255,255,0.35)", fontSize: 11, margin: "2px 0 5px" }}>tasaliqurmash.com.sa</p>
         <Stars />
       </div>
       <CloseBtn onClose={onClose} />
@@ -297,7 +297,7 @@ function IOSGuide({ onClose }: { onClose: () => void }) {
             }}>
               <AppIcon size={32} />
               <div>
-                <p style={{ color: "rgba(255,255,255,0.8)", fontSize: 13, fontWeight: 600, margin: 0 }}>QIROX Cafe</p>
+                <p style={{ color: "rgba(255,255,255,0.8)", fontSize: 13, fontWeight: 600, margin: 0 }}>تسالي كرومش</p>
                 <p style={{ color: G, fontSize: 11, margin: "2px 0 0", fontWeight: 500 }}>
                   ستظهر الأيقونة على شاشتك فوراً ✨
                 </p>
