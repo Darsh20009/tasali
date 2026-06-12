@@ -9,8 +9,8 @@ export default function SarIcon({ className = "", size = 14 }: SarIconProps) {
       src="/sar-icon.png"
       alt="ريال"
       aria-label="ريال سعودي"
-      className={`inline-block align-middle select-none object-contain sar-icon ${className}`}
-      style={{ width: size, height: size }}
+      className={`sar-icon inline-block align-middle select-none shrink-0 ${className}`}
+      style={{ width: size, height: size, objectFit: "contain" }}
     />
   );
 }

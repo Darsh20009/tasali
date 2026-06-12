@@ -1110,17 +1110,15 @@ a, button, input, select, textarea, label, [role="button"] {
   filter: brightness(0);
   opacity: 0.85;
 }
-/* On dark/colored backgrounds where text is white */
+/* White text context — catches text-white, text-white/70, text-white/60, etc. */
 .text-white .sar-icon,
 [class*="text-white"] .sar-icon,
-.btn .sar-icon,
-button .sar-icon {
-  filter: brightness(0) invert(1);
+[class*="text-white\/"] .sar-icon {
+  filter: brightness(0) invert(1) !important;
   opacity: 1;
 }
-/* On primary brown color text */
-.text-primary .sar-icon,
-[class*="text-primary"] .sar-icon {
-  filter: brightness(0) sepia(1) saturate(3) hue-rotate(350deg);
+/* Dark mode */
+.dark .sar-icon {
+  filter: brightness(0) invert(1);
   opacity: 0.9;
 }
