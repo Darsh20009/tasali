@@ -2424,9 +2424,9 @@ export default function PosSystem() {
                 setPaymentMethod('split' as PaymentMethod);
               };
               return (
-                <div className="mt-1.5 rounded-lg border border-primary/20 bg-primary/5 p-2 space-y-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <Banknote className="w-3.5 h-3.5 text-primary shrink-0" />
+                <div className="mt-1 rounded-lg border border-primary/20 bg-primary/5 p-1.5 space-y-1">
+                  <div className="flex items-center gap-1">
+                    <Banknote className="w-3 h-3 text-primary shrink-0" />
                     <Input
                       type="number"
                       min={0}
@@ -2434,30 +2434,30 @@ export default function PosSystem() {
                       placeholder={finalGrandTotal.toFixed(2)}
                       value={splitCashAmount}
                       onChange={e => setSplitCashAmount(e.target.value)}
-                      className="h-8 text-sm font-bold flex-1"
+                      className="h-7 text-xs font-bold flex-1"
                       data-testid="input-cash-received"
                     />
-                    <SarIcon size={11} />
+                    <SarIcon size={10} />
                   </div>
                   {/* Quick amounts + bills merged */}
-                  <div className="grid grid-cols-4 gap-1">
+                  <div className="grid grid-cols-4 gap-0.5">
                     {quickAmounts.map((q) => (
-                      <Button key={q.testId} type="button" size="sm" variant="outline" className="h-6 text-[9px] font-bold px-0.5 border-primary/30 hover:bg-primary/10" onClick={() => setSplitCashAmount(q.value.toFixed(2))} data-testid={`button-quick-cash-${q.testId}`}>{q.label}</Button>
+                      <Button key={q.testId} type="button" size="sm" variant="outline" className="h-5 text-[8px] font-bold px-0 border-primary/30 hover:bg-primary/10" onClick={() => setSplitCashAmount(q.value.toFixed(2))} data-testid={`button-quick-cash-${q.testId}`}>{q.label}</Button>
                     ))}
                   </div>
-                  <div className="grid grid-cols-4 gap-1">
+                  <div className="grid grid-cols-4 gap-0.5">
                     {bills.map((b) => (
-                      <Button key={b} type="button" size="sm" variant="outline" className="h-6 text-[9px] font-bold px-0.5" onClick={() => setSplitCashAmount(((parseFloat(splitCashAmount) || 0) + b).toFixed(2))} data-testid={`button-add-bill-${b}`}>+{b}</Button>
+                      <Button key={b} type="button" size="sm" variant="outline" className="h-5 text-[8px] font-bold px-0" onClick={() => setSplitCashAmount(((parseFloat(splitCashAmount) || 0) + b).toFixed(2))} data-testid={`button-add-bill-${b}`}>+{b}</Button>
                     ))}
                   </div>
                   {splitCashAmount && received > 0 && (
-                    <div className={`flex items-center justify-between rounded px-2 py-1 text-xs font-bold border ${change >= 0 ? 'bg-green-50 dark:bg-green-950/30 text-green-700 border-green-300' : 'bg-red-50 dark:bg-red-950/20 text-red-600 border-red-300'}`}>
+                    <div className={`flex items-center justify-between rounded px-1.5 py-0.5 text-[10px] font-bold border ${change >= 0 ? 'bg-green-50 dark:bg-green-950/30 text-green-700 border-green-300' : 'bg-red-50 dark:bg-red-950/20 text-red-600 border-red-300'}`}>
                       <span>{change >= 0 ? tc("🪙 الباقي","🪙 Change") : tc("⚠️ ناقص","⚠️ Short")}</span>
-                      <span className="font-black">{Math.abs(change).toFixed(2)} <SarIcon size={11} /></span>
+                      <span className="font-black">{Math.abs(change).toFixed(2)} <SarIcon size={10} /></span>
                     </div>
                   )}
                   {received < finalGrandTotal && (
-                    <Button type="button" size="sm" variant="outline" className="w-full h-7 text-[10px] font-black border-dashed border-primary/50 text-primary hover:bg-primary/10 gap-1" onClick={switchToSplitWithCard} data-testid="button-switch-cash-to-split">
+                    <Button type="button" size="sm" variant="outline" className="w-full h-6 text-[9px] font-black border-dashed border-primary/50 text-primary hover:bg-primary/10 gap-1" onClick={switchToSplitWithCard} data-testid="button-switch-cash-to-split">
                       <CreditCard className="w-3 h-3" />
                       {received > 0
                         ? tc(`الباقي ${(finalGrandTotal - received).toFixed(2)} ر.س على الشبكة`, `Remaining ${(finalGrandTotal - received).toFixed(2)} to card`)
@@ -2468,7 +2468,7 @@ export default function PosSystem() {
                     type="button"
                     size="sm"
                     variant="ghost"
-                    className="w-full h-7 text-[10px] text-muted-foreground"
+                    className="w-full h-6 text-[9px] text-muted-foreground"
                     onClick={() => setSplitCashAmount("")}
                     data-testid="button-clear-cash"
                   >{tc("مسح","Clear")}</Button>
