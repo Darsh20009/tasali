@@ -1,4 +1,4 @@
-const SYMBOL_URL = "/riyal-symbol.svg";
+const SYMBOL_URL = "/sar-icon.png";
 
 const PATTERN = /(ر\.\u200f?س|ريال\s*سعودي|\bSAR\b|\bSR\b)/g;
 
