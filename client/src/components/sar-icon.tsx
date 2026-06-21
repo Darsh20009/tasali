@@ -8,9 +8,9 @@ export default function SarIcon({ className = "", size = 14 }: SarIconProps) {
     <span
       aria-label="ريال سعودي"
       className={`sar-icon inline-block align-middle select-none shrink-0 font-bold leading-none ${className}`}
-      style={{ fontSize: size * 0.9 }}
+      style={{ fontSize: size * 0.85 }}
     >
-      ﷼
+      ر.س
     </span>
   );
 }
