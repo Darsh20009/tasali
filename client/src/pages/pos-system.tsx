@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
 import { useTranslate } from "@/lib/useTranslate";
-import { MobileBottomNav } from "@/components/MobileBottomNav";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRealtimeEvent, useRealtimeStatus, useRealtimeSend } from "@/hooks/useRealtimeEngine";
 import { getSoundEnabled, setSoundEnabled as saveSoundEnabled, testSound, playNotificationSound } from "@/lib/notification-sounds";
@@ -124,7 +123,7 @@ export default function PosSystem() {
   const [customerPoints, setCustomerPoints] = useState(0);
   const [usePoints, setUsePoints] = useState(false);
   const [splitViewMode, setSplitViewMode] = useState(false);
-  const [mobilePanelView, setMobilePanelView] = useState<'products' | 'cart' | 'checkout'>('products');
+  const [mobilePanelView, setMobilePanelView] = useState<'products' | 'checkout'>('products');
   const [soundEnabled, setSoundEnabled] = useState(() => getSoundEnabled('pos'));
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [syncing, setSyncing] = useState(false);
@@ -2101,7 +2100,7 @@ export default function PosSystem() {
           </ScrollArea>
         </section>
 
-        <aside className={`${mobilePanelView === 'cart' || mobilePanelView === 'checkout' ? 'flex' : 'hidden'} md:flex w-full md:w-80 lg:w-[420px] border-r flex flex-col bg-card shrink-0`}>
+        <aside className={`${mobilePanelView === 'checkout' ? 'flex' : 'hidden'} md:flex w-full md:w-80 lg:w-[420px] border-r flex flex-col bg-card shrink-0`}>
           <div className="p-2 sm:p-3 border-b flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Button
@@ -2209,7 +2208,7 @@ export default function PosSystem() {
             </div>
           )}
 
-          <ScrollArea className={`${mobilePanelView === 'checkout' ? 'hidden md:block' : 'block'} flex-1 px-2 sm:px-4 py-2`}>
+          <ScrollArea className="flex-1 px-2 sm:px-4 py-2">
             {orderItems.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-muted-foreground opacity-50 py-20">
                 <ShoppingBag className="w-12 h-12 mb-4" />
@@ -2291,21 +2290,7 @@ export default function PosSystem() {
             )}
           </ScrollArea>
 
-          {/* Mobile: "Go to Payment" shortcut at bottom of cart tab */}
-          {mobilePanelView === 'cart' && orderItems.length > 0 && (
-            <div className="md:hidden px-3 pb-2 pt-1">
-              <Button
-                className="w-full h-10 text-sm font-black rounded-xl gap-2"
-                onClick={() => setMobilePanelView('checkout')}
-                data-testid="button-mobile-go-to-checkout"
-              >
-                <CreditCard className="w-4 h-4" />
-                {i18n.language === 'ar' ? `المتابعة للدفع — ${finalGrandTotal.toFixed(2)} ر.س` : `Continue to Payment — ${finalGrandTotal.toFixed(2)} SAR`}
-              </Button>
-            </div>
-          )}
-
-          <div className={`${mobilePanelView === 'cart' ? 'hidden md:block' : 'block'} border-t`}>
+          <div className="border-t">
             <button
               className="w-full flex items-center justify-between px-3 sm:px-4 py-2 hover:bg-muted/50 transition-colors text-sm"
               onClick={() => setShowCustomerInfo(v => !v)}
@@ -2390,7 +2375,7 @@ export default function PosSystem() {
             )}
           </div>
 
-          <div className={`${mobilePanelView === 'cart' ? 'hidden md:block' : 'block'} px-2 sm:px-4 py-2 border-t`}>
+          <div className="px-2 sm:px-4 py-2 border-t">
             <p className="text-xs sm:text-sm font-bold text-muted-foreground mb-2">{t('pos.payment_method')}</p>
             <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
               {PAYMENT_METHODS.map((method) => (
@@ -2731,7 +2716,7 @@ export default function PosSystem() {
             })()}
           </div>
 
-          <div className={`${mobilePanelView === 'cart' ? 'hidden md:flex' : 'flex'} p-2 sm:p-4 pb-[72px] md:pb-4 border-t bg-muted/10 gap-2 sm:gap-3 flex-col`}>
+          <div className="flex p-2 sm:p-4 pb-[72px] md:pb-4 border-t bg-muted/10 gap-2 sm:gap-3 flex-col">
             {/* Discount coupon input */}
             <div className="rounded-xl border-2 border-dashed border-primary/40 bg-primary/5 p-2 sm:p-3" data-testid="card-pos-discount">
               <div className="flex items-center gap-1.5 mb-1.5">
@@ -2957,12 +2942,12 @@ export default function PosSystem() {
 
       </main>
 
-      {/* Mobile bottom navigation — Products / Cart / Checkout tabs */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-card border-t z-50 flex h-[58px] shadow-lg">
-        {/* Tab 1: Products */}
+      {/* Mobile bottom navigation — 2 tabs only: POS | Review & Pay */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-card border-t z-50 flex h-[62px] shadow-lg">
+        {/* Tab 1: نقطة البيع — product selection */}
         <button
           onClick={() => setMobilePanelView('products')}
-          className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
+          className={`flex-1 flex flex-col items-center justify-center gap-1 transition-colors ${
             mobilePanelView === 'products'
               ? 'text-primary border-t-2 border-primary bg-primary/5'
               : 'text-muted-foreground'
@@ -2970,34 +2955,13 @@ export default function PosSystem() {
           data-testid="button-mobile-tab-products"
         >
           <Grid3X3 className="w-5 h-5" />
-          <span className="text-[10px] font-bold">{i18n.language === 'ar' ? 'المنتجات' : 'Products'}</span>
+          <span className="text-[11px] font-bold">{i18n.language === 'ar' ? 'نقطة البيع' : 'POS'}</span>
         </button>
 
-        {/* Tab 2: Cart / Order */}
-        <button
-          onClick={() => setMobilePanelView('cart')}
-          className={`flex-1 flex flex-col items-center justify-center gap-0.5 relative transition-colors ${
-            mobilePanelView === 'cart'
-              ? 'text-primary border-t-2 border-primary bg-primary/5'
-              : 'text-muted-foreground'
-          }`}
-          data-testid="button-mobile-tab-cart"
-        >
-          <div className="relative">
-            <ShoppingBag className="w-5 h-5" />
-            {orderItems.length > 0 && (
-              <span className="absolute -top-1.5 -right-2 bg-primary text-primary-foreground text-[9px] font-black rounded-full min-w-[16px] h-4 flex items-center justify-center px-0.5">
-                {orderItems.length}
-              </span>
-            )}
-          </div>
-          <span className="text-[10px] font-bold">{i18n.language === 'ar' ? 'الطلب' : 'Cart'}</span>
-        </button>
-
-        {/* Tab 3: Checkout / Payment */}
+        {/* Tab 2: مراجعة الطلب والدفع — cart + payment */}
         <button
           onClick={() => setMobilePanelView('checkout')}
-          className={`flex-1 flex flex-col items-center justify-center gap-0.5 relative transition-colors ${
+          className={`flex-1 flex flex-col items-center justify-center gap-1 relative transition-colors ${
             mobilePanelView === 'checkout'
               ? 'text-primary border-t-2 border-primary bg-primary/5'
               : 'text-muted-foreground'
@@ -3005,14 +2969,18 @@ export default function PosSystem() {
           data-testid="button-mobile-tab-checkout"
         >
           <div className="relative">
-            <CreditCard className="w-5 h-5" />
-            {orderItems.length > 0 && finalGrandTotal > 0 && (
-              <span className="absolute -top-1.5 -right-3 bg-green-600 text-white text-[8px] font-black rounded-full min-w-[20px] h-4 flex items-center justify-center px-0.5 whitespace-nowrap">
-                {finalGrandTotal.toFixed(0)}
+            <Receipt className="w-5 h-5" />
+            {orderItems.length > 0 && (
+              <span className="absolute -top-1.5 -right-2 bg-primary text-primary-foreground text-[9px] font-black rounded-full min-w-[16px] h-4 flex items-center justify-center px-0.5">
+                {orderItems.length}
               </span>
             )}
           </div>
-          <span className="text-[10px] font-bold">{i18n.language === 'ar' ? 'الدفع' : 'Pay'}</span>
+          <span className="text-[11px] font-bold">
+            {orderItems.length > 0 && finalGrandTotal > 0
+              ? `${finalGrandTotal.toFixed(1)} ${t('pos.currency')}`
+              : i18n.language === 'ar' ? 'مراجعة الطلب' : 'Review & Pay'}
+          </span>
         </button>
       </div>
 
@@ -4357,7 +4325,6 @@ export default function PosSystem() {
           </div>
         </DialogContent>
       </Dialog>
-      <MobileBottomNav />
     </div>
     </div>
   );
