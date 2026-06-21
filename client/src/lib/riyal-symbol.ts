@@ -1,5 +1,3 @@
-const SYMBOL_URL = "/sar-icon.png";
-
 const PATTERN = /(ر\.\u200f?س|ريال\s*سعودي|\bSAR\b|\bSR\b)/g;
 
 const SKIP_TAGS = new Set([
@@ -15,14 +13,14 @@ const SKIP_TAGS = new Set([
 
 const PROCESSED_NODES = new WeakSet<Node>();
 
-function makeSymbolElement(): HTMLImageElement {
-  const img = document.createElement("img");
-  img.src = SYMBOL_URL;
-  img.alt = "ريال";
-  img.setAttribute("data-riyal-symbol", "true");
-  img.style.cssText =
-    "display:inline-block;width:0.95em;height:0.95em;vertical-align:-0.15em;margin:0 0.12em;object-fit:contain;";
-  return img;
+function makeSymbolElement(): HTMLSpanElement {
+  const span = document.createElement("span");
+  span.setAttribute("data-riyal-symbol", "true");
+  span.setAttribute("aria-label", "ريال سعودي");
+  span.textContent = "ر.س";
+  span.style.cssText =
+    "display:inline;font-weight:bold;";
+  return span;
 }
 
 function processTextNode(textNode: Text): void {
@@ -33,6 +31,7 @@ function processTextNode(textNode: Text): void {
   if (!tag || SKIP_TAGS.has(tag)) return;
   if ((parent as HTMLElement).closest?.("[data-no-riyal]")) return;
   if ((parent as HTMLElement).closest?.("[contenteditable='true']")) return;
+  if ((parent as HTMLElement).closest?.("[data-riyal-symbol='true']")) return;
 
   const original = textNode.nodeValue || "";
   PATTERN.lastIndex = 0;
