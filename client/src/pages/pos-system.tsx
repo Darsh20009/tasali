@@ -1813,6 +1813,15 @@ export default function PosSystem() {
                 </Badge>
               )}
             </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => i18n.changeLanguage(i18n.language === 'ar' ? 'en' : 'ar')}
+              className="h-8 px-2 text-xs font-bold text-muted-foreground"
+              data-testid="button-mobile-language"
+            >
+              {i18n.language === 'ar' ? 'EN' : 'ع'}
+            </Button>
             <Button 
               variant="ghost" 
               size="sm"
