@@ -17,7 +17,7 @@ import {
   Lock, Bell, BellOff, MonitorSmartphone, ScanLine,
   PauseCircle, Receipt, Settings, User, Wallet, RotateCcw,
   Percent, DollarSign, FolderOpen, Hash, Merge, Users, Scissors, Car,
-  Home, MoreHorizontal
+  Home, MoreHorizontal, Monitor, Smartphone
 } from "lucide-react";
 import {
   type CartSnapshot, type HeldCart as HeldCartType, type LineItemDiscount, type OrderDiscount,
@@ -172,6 +172,30 @@ export default function PosSystem() {
   const [showRefundDialog, setShowRefundDialog] = useState(false);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
+
+  // ── Device layout mode: 'auto' uses window width, 'desktop'/'mobile' forces layout ──
+  const [posLayoutMode, setPosLayoutMode] = useState<'auto' | 'desktop' | 'mobile'>(() => {
+    return (localStorage.getItem('pos-layout-mode') as 'auto' | 'desktop' | 'mobile') || 'auto';
+  });
+  const [windowWidth, setWindowWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 1024);
+
+  // ── isMobile: true when mobile tab-based layout should be shown ──────────
+  const isMobile = posLayoutMode === 'mobile' || (posLayoutMode === 'auto' && windowWidth < 768);
+
+  const cyclePosLayoutMode = () => {
+    setPosLayoutMode(prev => {
+      const next = prev === 'auto' ? 'desktop' : prev === 'desktop' ? 'mobile' : 'auto';
+      localStorage.setItem('pos-layout-mode', next);
+      return next;
+    });
+  };
+
+  const layoutModeLabel = posLayoutMode === 'desktop'
+    ? tc('وضع الحاسوب', 'Desktop mode')
+    : posLayoutMode === 'mobile'
+      ? tc('وضع الجوال', 'Mobile mode')
+      : tc('وضع تلقائي', 'Auto mode');
+  const LayoutModeIcon = posLayoutMode === 'desktop' ? Monitor : posLayoutMode === 'mobile' ? Smartphone : MonitorSmartphone;
 
   // ── Stable callback refs (prevents TDZ in keyboard useEffect) ────────────
   const newCartTabRef     = useRef<() => void>(() => {});
@@ -334,6 +358,13 @@ export default function PosSystem() {
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [showCategoryDropdown]);
+
+  // Track window width for layout mode
+  useEffect(() => {
+    const handler = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
 
   // Offline queue: load count on mount, sync when back online
   useEffect(() => {
@@ -1789,8 +1820,8 @@ export default function PosSystem() {
         transformOrigin: "top left",
       }}
     >
-      <header className="flex flex-col sm:flex-row items-center justify-between px-3 py-2 sm:px-6 sm:py-3 border-b bg-card gap-2 sm:gap-0">
-        <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto justify-between sm:justify-start">
+      <header className={`flex ${isMobile ? 'flex-col' : 'flex-row'} items-center justify-between px-3 py-2 sm:px-6 sm:py-3 border-b bg-card gap-2 sm:gap-0`}>
+        <div className={`flex items-center gap-2 ${isMobile ? 'w-full justify-between' : 'gap-4 w-auto justify-start'}`}>
           <div className="flex items-center gap-2">
             <div className="bg-primary/10 p-1.5 sm:p-2 rounded-lg">
               <Coffee className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
@@ -1798,7 +1829,7 @@ export default function PosSystem() {
             <h1 className="text-lg sm:text-2xl font-black tracking-tight text-primary">TASALI</h1>
           </div>
           
-          <div className="flex items-center gap-2 sm:hidden">
+          <div className={`${isMobile ? 'flex' : 'hidden'} items-center gap-2`}>
             <Button 
               variant="outline" 
               size="sm"
@@ -1822,6 +1853,17 @@ export default function PosSystem() {
             >
               {i18n.language === 'ar' ? 'EN' : 'ع'}
             </Button>
+            {/* Device layout toggle — mobile header */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={cyclePosLayoutMode}
+              className="h-8 w-8"
+              title={layoutModeLabel}
+              data-testid="button-mobile-layout-mode"
+            >
+              <LayoutModeIcon className="w-4 h-4" />
+            </Button>
             <Button 
               variant="ghost" 
               size="sm"
@@ -1836,7 +1878,7 @@ export default function PosSystem() {
           </div>
         </div>
 
-        <div className="hidden sm:flex items-center gap-3">
+        <div className={`${isMobile ? 'hidden' : 'flex'} items-center gap-3`}>
           <Tabs value={orderType} onValueChange={(v) => setOrderType(v as OrderType)} className="w-full max-w-sm">
             <TabsList className="grid grid-cols-4 w-full h-10 p-1">
               {ORDER_TYPES.map((type) => (
@@ -1849,7 +1891,7 @@ export default function PosSystem() {
           </Tabs>
         </div>
 
-        <div className="hidden sm:flex items-center gap-2">
+        <div className={`${isMobile ? 'hidden' : 'flex'} items-center gap-2`}>
           {/* Orders with badge */}
           <Button
             variant="outline"
@@ -1892,6 +1934,18 @@ export default function PosSystem() {
             <span className="text-xs font-medium">{employee?.fullName || t('pos.employee_fallback')}</span>
           </div>
 
+          {/* Device layout toggle — desktop header */}
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={cyclePosLayoutMode}
+            className="h-9 w-9"
+            title={layoutModeLabel}
+            data-testid="button-desktop-layout-mode"
+          >
+            <LayoutModeIcon className="w-4 h-4" />
+          </Button>
+
           {/* Settings — all extra features live here */}
           <Button
             variant="ghost"
@@ -1914,7 +1968,7 @@ export default function PosSystem() {
 
       <main className="flex-1 flex overflow-hidden">
 
-        <section className={`${mobilePanelView === 'products' ? 'flex' : 'hidden'} md:flex flex-1 flex-col overflow-hidden`}>
+        <section className={`${!isMobile || mobilePanelView === 'products' ? 'flex' : 'hidden'} flex-1 flex-col overflow-hidden`}>
           {/* Category Top Bar */}
           <div className={`${mobilePanelView === 'cart' ? 'hidden' : ''} flex border-b bg-muted/30 shrink-0`}>
             {/* Scrollable category buttons */}
@@ -1994,7 +2048,7 @@ export default function PosSystem() {
                 data-testid="input-search-products"
               />
             </div>
-            <div className="flex gap-2 sm:hidden overflow-x-auto whitespace-nowrap pb-1 no-scrollbar">
+            <div className={`${isMobile ? 'flex' : 'hidden'} gap-2 overflow-x-auto whitespace-nowrap pb-1 no-scrollbar`}>
               {ORDER_TYPES.map((type) => (
                 <Button
                   key={type.id}
@@ -2109,19 +2163,19 @@ export default function PosSystem() {
           </ScrollArea>
         </section>
 
-        <aside className={`${mobilePanelView === 'checkout' ? 'flex' : 'hidden'} md:flex w-full md:w-80 lg:w-[420px] border-r flex flex-col bg-card shrink-0`}>
+        <aside className={`${!isMobile || mobilePanelView === 'checkout' ? 'flex' : 'hidden'} ${isMobile ? 'w-full' : 'w-80 lg:w-[420px]'} border-r flex flex-col bg-card shrink-0`}>
           <div className="p-2 sm:p-3 border-b flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
                 size="icon"
-                className="md:hidden h-8 w-8 text-muted-foreground"
+                className={`${isMobile ? 'flex' : 'hidden'} h-8 w-8 text-muted-foreground`}
                 onClick={() => setMobilePanelView('products')}
                 data-testid="button-back-to-products"
               >
                 <ChevronRight className="w-5 h-5" />
               </Button>
-              <div className="bg-primary p-1.5 rounded-lg hidden sm:flex">
+              <div className={`bg-primary p-1.5 rounded-lg ${isMobile ? 'hidden' : 'flex'}`}>
                 <ShoppingBag className="w-4 h-4 text-primary-foreground" />
               </div>
               <div>
@@ -2952,7 +3006,7 @@ export default function PosSystem() {
       </main>
 
       {/* Mobile bottom navigation — part of flex layout (NOT fixed, avoids CSS transform conflict) */}
-      <div className="md:hidden shrink-0 z-50 flex flex-col">
+      <div className={`${isMobile ? 'flex' : 'hidden'} shrink-0 z-50 flex-col`}>
         {/* Checkout pill — floats above bar when items exist */}
         {orderItems.length > 0 && mobilePanelView === 'products' && (
           <div className="px-4 py-2 bg-card/95 border-t" style={{ borderColor: 'hsl(var(--border)/0.6)' }}>
