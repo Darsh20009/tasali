@@ -167,7 +167,7 @@ export default function PosSystem() {
   const [carPlateInput, setCarPlateInput] = useState("");
   const [posZoom, setPosZoom] = useState<number>(() => {
     const saved = localStorage.getItem("pos-zoom");
-    return saved ? Number(saved) : 100;
+    return saved ? Number(saved) : 80;
   });
   const [showRefundDialog, setShowRefundDialog] = useState(false);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
