@@ -200,7 +200,7 @@ export const TaxInvoicePrint = forwardRef<HTMLDivElement, TaxInvoiceProps>(
             <img
               src={tasaliLogo}
               alt={brand.nameEn}
-              style={{ width: '160px', height: 'auto', objectFit: 'contain', margin: '0 auto 6px', display: 'block', filter: 'grayscale(1) contrast(999) brightness(0.05)' }}
+              style={{ width: '160px', height: 'auto', objectFit: 'contain', margin: '0 auto 6px', display: 'block', filter: 'grayscale(1) contrast(20)' }}
             />
             <h1 className="text-2xl font-bold text-gray-900">{COMPANY_NAME}</h1>
             <p className="text-sm text-gray-600 font-medium">{COMPANY_NAME_EN}</p>

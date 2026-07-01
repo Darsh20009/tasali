@@ -874,7 +874,7 @@ export async function buildReceiptCanvas(opts: ReceiptBitmapOpts): Promise<HTMLC
       const size = Math.min(op.size, CONTENT_W);
       const x = Math.floor((DW - size) / 2);
       if (op.isLogo) {
-        ctx.filter = 'grayscale(1) contrast(999) brightness(0.05)';
+        ctx.filter = 'grayscale(1) contrast(20)';
         ctx.drawImage(op.img, x, y, size, size);
         ctx.filter = 'none';
       } else {
