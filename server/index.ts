@@ -81,30 +81,23 @@ async function connectDatabase() {
         // warming is best-effort, never block startup
       }
     });
-    // Ensure admin/owner accounts exist and use the portal password
+    // Create owner account only if it does not exist — never overwrite passwords at startup
     try {
       const bcrypt = await import("bcryptjs");
       const { v4: uuidv4 } = await import("uuid");
       const { EmployeeModel } = await import("@shared/schema");
-      const portalPassword = await bcrypt.hash("123456", 10);
 
-      // Sync admin password if exists
-      const adminResult = await EmployeeModel.updateOne(
-        { username: "admin" },
-        { $set: { password: portalPassword } }
-      );
-      if (adminResult.matchedCount > 0) {
-        console.log(`✅ Portal account 'admin' password synced`);
-      }
-
-      // Create owner account if it doesn't exist
       const ownerExists = await EmployeeModel.findOne({ username: "owner" });
       if (!ownerExists) {
+        // Use OWNER_INITIAL_PASSWORD env var for the seed password; fall back to a random value
+        // so the server never boots with a known default credential.
+        const initialPassword = process.env.OWNER_INITIAL_PASSWORD || uuidv4();
+        const hashed = await bcrypt.hash(initialPassword, 10);
         await EmployeeModel.create({
           id: uuidv4(),
           tenantId: "demo-tenant",
           username: "owner",
-          password: portalPassword,
+          password: hashed,
           fullName: "المالك",
           role: "owner",
           phone: "0000000001",
@@ -112,10 +105,13 @@ async function connectDatabase() {
           isActivated: 1,
           isActive: 1,
         });
-        console.log(`✅ Owner account created with password 123456`);
+        if (process.env.OWNER_INITIAL_PASSWORD) {
+          console.log(`✅ Owner account created with the provided OWNER_INITIAL_PASSWORD`);
+        } else {
+          console.log(`✅ Owner account created. Set OWNER_INITIAL_PASSWORD before first boot to choose the password, or reset it via the database.`);
+        }
       } else {
-        await EmployeeModel.updateOne({ username: "owner" }, { $set: { password: portalPassword, isActivated: 1, isActive: 1 } });
-        console.log(`✅ Portal account 'owner' password synced`);
+        console.log(`✅ Owner account already exists — skipping seed`);
       }
     } catch (err) { console.error("Owner sync error:", err); }
     // Ensure demo-tenant has Infinity plan — all features unlocked
@@ -521,7 +517,7 @@ app.disable('x-powered-by');
 // Session configuration
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || "dev-secret",
+    secret: process.env.SESSION_SECRET || (process.env.NODE_ENV === "production" ? (() => { throw new Error("SESSION_SECRET must be set in production"); })() : "dev-secret-change-in-prod"),
     resave: false,
     saveUninitialized: false, 
     name: 'qirox.sid', // custom cookie name
