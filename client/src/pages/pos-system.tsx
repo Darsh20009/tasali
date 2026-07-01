@@ -2951,25 +2951,24 @@ export default function PosSystem() {
 
       </main>
 
-      {/* Mobile bottom navigation — 2 tabs only: POS | Review & Pay */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      {/* Mobile bottom navigation — part of flex layout (NOT fixed, avoids CSS transform conflict) */}
+      <div className="md:hidden shrink-0 z-50 flex flex-col">
         {/* Checkout pill — floats above bar when items exist */}
         {orderItems.length > 0 && mobilePanelView === 'products' && (
-          <div className="px-4 pb-2">
+          <div className="px-4 py-2 bg-card/95 border-t" style={{ borderColor: 'hsl(var(--border)/0.6)' }}>
             <button
               onClick={() => setMobilePanelView('checkout')}
-              className="w-full h-12 rounded-2xl font-black text-sm flex items-center justify-between px-5 shadow-xl shadow-primary/30 active:scale-95 transition-transform"
-              style={{ background: 'linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--primary)/0.8) 100%)' }}
+              className="w-full h-12 rounded-2xl font-black text-sm flex items-center justify-between px-5 shadow-lg active:scale-95 transition-transform bg-primary text-primary-foreground"
               data-testid="button-mobile-checkout-pill"
             >
-              <div className="flex items-center gap-2 text-primary-foreground">
+              <div className="flex items-center gap-2">
                 <ShoppingCart className="w-4 h-4" />
                 <span>{i18n.language === 'ar' ? 'مراجعة الطلب' : 'Review Order'}</span>
-                <span className="bg-white/25 text-primary-foreground text-[11px] font-black rounded-full w-5 h-5 flex items-center justify-center">
+                <span className="bg-white/25 text-[11px] font-black rounded-full w-5 h-5 flex items-center justify-center">
                   {orderItems.reduce((s, i) => s + i.quantity, 0)}
                 </span>
               </div>
-              <span className="text-primary-foreground font-black text-base">
+              <span className="font-black text-base">
                 {finalGrandTotal.toFixed(1)} <span className="text-[11px] opacity-80">{t('pos.currency')}</span>
               </span>
             </button>
@@ -2977,7 +2976,7 @@ export default function PosSystem() {
         )}
 
         {/* Main tab bar */}
-        <div className="bg-card/95 backdrop-blur-xl border-t flex h-[62px] shadow-2xl"
+        <div className="bg-card border-t flex h-[58px]"
           style={{ borderColor: 'hsl(var(--border)/0.6)' }}
         >
         {/* Tab 1: نقطة البيع — product selection */}
