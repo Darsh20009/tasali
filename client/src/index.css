@@ -1122,3 +1122,210 @@ a, button, input, select, textarea, label, [role="button"] {
   filter: brightness(0) invert(1);
   opacity: 0.9;
 }
+
+/* ══════════════════════════════════════════════════════
+   📱 COMPREHENSIVE MOBILE RESPONSIVENESS — تحسينات الجوال
+   ══════════════════════════════════════════════════════ */
+
+/* ── Scrollable tables on mobile ── */
+.table-responsive {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+/* Force all data tables to be horizontally scrollable */
+@media (max-width: 768px) {
+  /* Universal table scroll wrapper behavior */
+  table {
+    min-width: 500px;
+  }
+  .overflow-x-auto table,
+  [class*="rounded-"] > table {
+    min-width: unset;
+  }
+
+  /* Manager/Admin dashboard cards — stack on mobile */
+  .grid-cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .grid-cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .xl\:grid-cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .lg\:grid-cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .lg\:grid-cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+
+  /* Stat cards — full width on very small screens */
+  @media (max-width: 400px) {
+    .grid-cols-2 { grid-template-columns: repeat(1, minmax(0, 1fr)) !important; }
+    .grid-cols-4 { grid-template-columns: repeat(1, minmax(0, 1fr)) !important; }
+  }
+
+  /* POS system — better layout */
+  .flex.h-screen > .flex-1 {
+    min-width: 0;
+  }
+
+  /* Make dialog/sheet content scroll on mobile */
+  [role="dialog"] {
+    max-height: 90dvh;
+    overflow-y: auto;
+  }
+
+  /* Page headers — compact on mobile */
+  .text-3xl { font-size: 1.25rem !important; }
+  .text-2xl { font-size: 1.125rem !important; }
+
+  /* Prevent input zoom on iOS (min 16px font) */
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+  input::placeholder { font-size: 14px !important; }
+}
+
+/* ── Mobile-friendly tap targets ── */
+@media (max-width: 768px) {
+  button:not(.no-min-tap) {
+    min-height: 36px;
+  }
+  .h-9 { min-height: 36px; }
+  .h-10 { min-height: 40px; }
+}
+
+/* ── Manager sidebar — mobile drawer improvements ── */
+@media (max-width: 1024px) {
+  /* Main content in manager layout gets full width */
+  .flex.h-screen.bg-white > main {
+    width: 100%;
+    padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* ── Horizontal scroll containers with visible indicator ── */
+.scroll-x-container {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted)) transparent;
+  overscroll-behavior-x: contain;
+}
+.scroll-x-container::-webkit-scrollbar {
+  height: 4px;
+}
+.scroll-x-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scroll-x-container::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted));
+  border-radius: 4px;
+}
+
+/* ── No scrollbar utility ── */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ── Forms — better mobile experience ── */
+@media (max-width: 640px) {
+  /* Stack form rows */
+  .grid.grid-cols-2:has(input, select, textarea) {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Dialog/modal — full width on phone */
+  [role="dialog"] > div {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    margin: 0 !important;
+    border-radius: 1rem 1rem 0 0 !important;
+  }
+
+  /* Sheet bottom — proper height */
+  [data-radix-popper-content-wrapper] {
+    max-height: 85dvh;
+  }
+
+  /* Floating action buttons — larger on mobile */
+  .fixed.bottom-4 button,
+  .fixed.bottom-6 button {
+    min-width: 48px;
+    min-height: 48px;
+  }
+
+  /* Page padding on mobile */
+  .p-6 { padding: 0.875rem !important; }
+  .p-8 { padding: 1rem !important; }
+  .px-6 { padding-left: 0.875rem !important; padding-right: 0.875rem !important; }
+  .px-8 { padding-left: 1rem !important; padding-right: 1rem !important; }
+}
+
+/* ── Mobile bottom nav safe area ── */
+@media (max-width: 640px) {
+  /* Ensure pages with bottom nav have proper padding */
+  main.flex-1 {
+    padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+  }
+  /* But NOT on pages that already have pb-nav */
+  main.flex-1.pb-nav {
+    padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* ── Kitchen display — mobile touch friendly ── */
+@media (max-width: 768px) {
+  /* Kitchen order cards — bigger tap targets */
+  [data-testid*="kitchen-order"] button {
+    min-height: 44px;
+    padding: 10px 16px;
+  }
+
+  /* POS product grid — 2 columns on small screens */
+  [data-testid="pos-products-grid"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+/* ── Receipt / invoice — print-safe ── */
+@media print {
+  .no-print { display: none !important; }
+  body * { visibility: hidden; }
+  [data-testid="invoice-preview"],
+  [data-testid="invoice-preview"] * { visibility: visible; }
+  [data-testid="invoice-preview"] {
+    position: absolute; left: 0; top: 0; width: 100%;
+  }
+}
+
+/* ── Smooth page transitions ── */
+@keyframes slideInFromBottom {
+  from { transform: translateY(16px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+.page-enter {
+  animation: slideInFromBottom 0.22s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* ── Mobile card spacing ── */
+@media (max-width: 640px) {
+  .space-y-6 { --tw-space-y-reverse: 0; margin-top: calc(1rem * calc(1 - var(--tw-space-y-reverse))); margin-bottom: calc(1rem * var(--tw-space-y-reverse)); }
+  .gap-6 { gap: 0.875rem !important; }
+  .gap-4 { gap: 0.625rem !important; }
+}
+
+/* ── Employee/Manager header on mobile ── */
+@media (max-width: 640px) {
+  header h1 { font-size: 1rem !important; }
+  header .text-lg { font-size: 0.9rem !important; }
+}
+
+/* ── Stat number font on mobile ── */
+@media (max-width: 480px) {
+  .text-4xl { font-size: 1.75rem !important; }
+  .text-5xl { font-size: 2rem !important; }
+}
+
+/* ── RTL mobile fixes ── */
+[dir="rtl"] {
+  text-align: right;
+}
+@media (max-width: 640px) {
+  [dir="rtl"] .flex-row-reverse-mobile {
+    flex-direction: row-reverse;
+  }
+}

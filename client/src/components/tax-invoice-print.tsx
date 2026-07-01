@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useState } from "react";
 import QRCode from "qrcode";
 import JsBarcode from "jsbarcode";
-import tasaliLogo from "@assets/logo.png";
+const tasaliLogo = "/images/logo-bw.png";
 import SarIcon from "@/components/sar-icon";
 import { brand } from "@/lib/brand";
 import { VAT_RATE } from "@/lib/constants";
@@ -195,7 +195,7 @@ export const TaxInvoicePrint = forwardRef<HTMLDivElement, TaxInvoiceProps>(
             <img
               src={tasaliLogo}
               alt={brand.nameEn}
-              style={{ filter: 'invert(1)', mixBlendMode: 'multiply', width: '90px', height: '90px', objectFit: 'contain', margin: '0 auto 6px' }}
+              style={{ width: '160px', height: 'auto', objectFit: 'contain', margin: '0 auto 6px', display: 'block' }}
             />
             <h1 className="text-2xl font-bold text-gray-900">{COMPANY_NAME}</h1>
             <p className="text-sm text-gray-600 font-medium">{COMPANY_NAME_EN}</p>
