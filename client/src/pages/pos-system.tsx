@@ -2952,45 +2952,79 @@ export default function PosSystem() {
       </main>
 
       {/* Mobile bottom navigation — 2 tabs only: POS | Review & Pay */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-card border-t z-50 flex h-[62px] shadow-lg">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        {/* Checkout pill — floats above bar when items exist */}
+        {orderItems.length > 0 && mobilePanelView === 'products' && (
+          <div className="px-4 pb-2">
+            <button
+              onClick={() => setMobilePanelView('checkout')}
+              className="w-full h-12 rounded-2xl font-black text-sm flex items-center justify-between px-5 shadow-xl shadow-primary/30 active:scale-95 transition-transform"
+              style={{ background: 'linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--primary)/0.8) 100%)' }}
+              data-testid="button-mobile-checkout-pill"
+            >
+              <div className="flex items-center gap-2 text-primary-foreground">
+                <ShoppingCart className="w-4 h-4" />
+                <span>{i18n.language === 'ar' ? 'مراجعة الطلب' : 'Review Order'}</span>
+                <span className="bg-white/25 text-primary-foreground text-[11px] font-black rounded-full w-5 h-5 flex items-center justify-center">
+                  {orderItems.reduce((s, i) => s + i.quantity, 0)}
+                </span>
+              </div>
+              <span className="text-primary-foreground font-black text-base">
+                {finalGrandTotal.toFixed(1)} <span className="text-[11px] opacity-80">{t('pos.currency')}</span>
+              </span>
+            </button>
+          </div>
+        )}
+
+        {/* Main tab bar */}
+        <div className="bg-card/95 backdrop-blur-xl border-t flex h-[62px] shadow-2xl"
+          style={{ borderColor: 'hsl(var(--border)/0.6)' }}
+        >
         {/* Tab 1: نقطة البيع — product selection */}
         <button
           onClick={() => setMobilePanelView('products')}
-          className={`flex-1 flex flex-col items-center justify-center gap-1 transition-colors ${
+          className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-all duration-200 relative ${
             mobilePanelView === 'products'
-              ? 'text-primary border-t-2 border-primary bg-primary/5'
+              ? 'text-primary'
               : 'text-muted-foreground'
           }`}
           data-testid="button-mobile-tab-products"
         >
-          <Grid3X3 className="w-5 h-5" />
-          <span className="text-[11px] font-bold">{i18n.language === 'ar' ? 'نقطة البيع' : 'POS'}</span>
+          {mobilePanelView === 'products' && (
+            <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[3px] rounded-b-full bg-primary" />
+          )}
+          <div className={`w-10 h-8 rounded-xl flex items-center justify-center transition-all duration-200 ${mobilePanelView === 'products' ? 'bg-primary/10' : ''}`}>
+            <Grid3X3 className="w-5 h-5" />
+          </div>
+          <span className="text-[10px] font-bold">{i18n.language === 'ar' ? 'نقطة البيع' : 'POS'}</span>
         </button>
 
         {/* Tab 2: مراجعة الطلب والدفع — cart + payment */}
         <button
           onClick={() => setMobilePanelView('checkout')}
-          className={`flex-1 flex flex-col items-center justify-center gap-1 relative transition-colors ${
+          className={`flex-1 flex flex-col items-center justify-center gap-0.5 relative transition-all duration-200 ${
             mobilePanelView === 'checkout'
-              ? 'text-primary border-t-2 border-primary bg-primary/5'
+              ? 'text-primary'
               : 'text-muted-foreground'
           }`}
           data-testid="button-mobile-tab-checkout"
         >
-          <div className="relative">
+          {mobilePanelView === 'checkout' && (
+            <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[3px] rounded-b-full bg-primary" />
+          )}
+          <div className={`w-10 h-8 rounded-xl flex items-center justify-center transition-all duration-200 relative ${mobilePanelView === 'checkout' ? 'bg-primary/10' : ''}`}>
             <Receipt className="w-5 h-5" />
             {orderItems.length > 0 && (
-              <span className="absolute -top-1.5 -right-2 bg-primary text-primary-foreground text-[9px] font-black rounded-full min-w-[16px] h-4 flex items-center justify-center px-0.5">
-                {orderItems.length}
+              <span className="absolute -top-1 -right-1.5 bg-primary text-primary-foreground text-[9px] font-black rounded-full min-w-[15px] h-[15px] flex items-center justify-center px-0.5 shadow-sm">
+                {orderItems.reduce((s, i) => s + i.quantity, 0)}
               </span>
             )}
           </div>
-          <span className="text-[11px] font-bold">
-            {orderItems.length > 0 && finalGrandTotal > 0
-              ? `${finalGrandTotal.toFixed(1)} ${t('pos.currency')}`
-              : i18n.language === 'ar' ? 'مراجعة الطلب' : 'Review & Pay'}
+          <span className="text-[10px] font-bold">
+            {i18n.language === 'ar' ? 'الطلب' : 'Order'}
           </span>
         </button>
+        </div>
       </div>
 
       <Dialog open={showOrdersPanel} onOpenChange={(open) => { setShowOrdersPanel(open); if (open) setNewOrdersCount(0); }}>
