@@ -1,39 +1,16 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useTranslate } from "@/lib/useTranslate";
 import { useQuery } from "@tanstack/react-query";
-import { useCustomer } from "@/contexts/CustomerContext";
 import { useLocation } from "wouter";
-import { 
-  Coffee, 
-  Flame, 
-  Snowflake, 
-  Star, 
-  Cake, 
-  User, 
-  Search, 
-  MapPin, 
-  Clock, 
-  Utensils, 
-  Sparkles,
-  Languages,
-  Phone,
-  ShoppingCart,
-  Trash2,
-  Plus,
-  Minus,
-  X,
-  ChevronUp,
-  Eye,
-  ArrowRight,
-  Send,
+import {
+  Coffee, Flame, Snowflake, Star, Cake, Utensils, Sparkles,
+  Languages, Phone, MapPin, Clock, Search, X, ChevronDown,
+  User, ArrowLeft,
 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
 import tasaliLogo from "@assets/logo.png";
 import type { CoffeeItem, IProductAddon } from "@shared/schema";
-import { AddToCartModal } from "@/components/add-to-cart-modal";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useScroll, useTransform } from "framer-motion";
 import { useTranslation } from "react-i18next";
-import type { AddonPreview } from "@/components/menu-layouts";
 import SarIcon from "@/components/sar-icon";
 
 interface MenuCategory {
@@ -41,758 +18,862 @@ interface MenuCategory {
   nameAr: string;
   nameEn?: string;
   icon?: string;
-  department?: 'drinks' | 'food';
+  department?: "drinks" | "food";
   orderIndex: number;
-  isSystem?: boolean;
 }
 
-interface CartEntry {
-  key: string;
-  cartItem: any;
-  nameAr: string;
-  nameEn?: string;
-  price: number;
-  imageUrl?: string;
-  quantity: number;
-}
+/* ────────────────────────────────────────────────
+   THEME TOKENS
+──────────────────────────────────────────────── */
+const T = {
+  bg:        "#0d0603",
+  card:      "#1a0c05",
+  cardBorder:"rgba(212,145,42,0.12)",
+  gold:      "#D4912A",
+  goldLight: "#E8B060",
+  cream:     "#F5E8D5",
+  brown:     "#7D3D0F",
+  brownDeep: "#3D1A0A",
+  glass:     "rgba(255,255,255,0.04)",
+  glassBorder:"rgba(255,255,255,0.08)",
+};
 
 export default function MenuPage() {
   const tc = useTranslate();
-  const { isAuthenticated, customer } = useCustomer();
-  const { toast } = useToast();
   const [, setLocation] = useLocation();
   const { i18n } = useTranslation();
-  const dir = i18n.language === 'ar' ? 'rtl' : 'ltr';
+  const dir = i18n.language === "ar" ? "rtl" : "ltr";
 
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
-  const [selectedItem, setSelectedItem] = useState<CoffeeItem | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [cart, setCart] = useState<CartEntry[]>([]);
-  const [isCartOpen, setIsCartOpen] = useState(false);
-  const [customerNote, setCustomerNote] = useState("");
-  const [showOrderDisplay, setShowOrderDisplay] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<CoffeeItem | null>(null);
+  const heroRef = useRef<HTMLDivElement>(null);
+  const { scrollY } = useScroll();
+  const heroOpacity = useTransform(scrollY, [0, 220], [1, 0]);
+  const heroScale  = useTransform(scrollY, [0, 220], [1, 0.92]);
 
+  /* ── Data fetching ── */
   const { data: coffeeItems = [], isLoading } = useQuery<CoffeeItem[]>({
     queryKey: ["/api/coffee-items"],
   });
-
-  const { data: allAddons = [] } = useQuery<IProductAddon[]>({
-    queryKey: ["/api/product-addons"],
-  });
-
-  const { data: itemsWithAddonsList = [] } = useQuery<string[]>({
-    queryKey: ["/api/coffee-items/with-addons"],
-    staleTime: 5 * 60 * 1000,
-  });
-  const itemsWithAddonsSet = useMemo(() => new Set(itemsWithAddonsList), [itemsWithAddonsList]);
-
-  const { data: itemAddonsMap = {} } = useQuery<Record<string, AddonPreview[]>>({
-    queryKey: ["/api/coffee-items/addons-preview"],
-    staleTime: 5 * 60 * 1000,
-  });
-
   const { data: dynamicCategories = [] } = useQuery<MenuCategory[]>({
     queryKey: ["/api/menu-categories"],
   });
-
   const { data: businessConfig } = useQuery<any>({
     queryKey: ["/api/business-config"],
   });
 
-  const isStoreOpen = () => {
+  /* ── Store open logic ── */
+  const storeOpen = useMemo(() => {
     if (!businessConfig) return true;
     if (businessConfig.isEmergencyClosed) return false;
     const storeHours = businessConfig.storeHours || {};
-    const isAlwaysOpenGlobal = Object.values(storeHours).every((h: any) => h?.isAlwaysOpen || (h?.open === "00:00" && h?.close === "23:59"));
-    if (isAlwaysOpenGlobal) return true;
+    const alwaysOpen = Object.values(storeHours).every(
+      (h: any) => h?.isAlwaysOpen || (h?.open === "00:00" && h?.close === "23:59")
+    );
+    if (alwaysOpen) return true;
     const now = new Date();
-    const riyadhTime = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Riyadh', hour: '2-digit', minute: '2-digit', hour12: false, weekday: 'long'
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Riyadh",
+      hour: "2-digit", minute: "2-digit", hour12: false, weekday: "long",
     }).formatToParts(now);
-    const currentDay = riyadhTime.find(p => p.type === 'weekday')?.value.toLowerCase() || 'monday';
-    const currentHour = parseInt(riyadhTime.find(p => p.type === 'hour')?.value || '0');
-    const currentMinute = parseInt(riyadhTime.find(p => p.type === 'minute')?.value || '0');
-    const currentTimeInMinutes = currentHour * 60 + currentMinute;
-    const hours = businessConfig.storeHours?.[currentDay];
-    if (!hours || !hours.isOpen) return false;
-    if (hours.isAlwaysOpen || (hours.open === '00:00' && hours.close === '23:59')) return true;
-    const [openH, openM] = (hours.open || '06:00').split(':').map(Number);
-    const [closeH, closeM] = (hours.close || '03:00').split(':').map(Number);
-    const openMinutes = openH * 60 + openM;
-    let closeMinutes = closeH * 60 + closeM;
-    if (closeMinutes <= openMinutes) {
-      if (currentTimeInMinutes >= openMinutes || currentTimeInMinutes <= closeMinutes) return true;
-    } else {
-      if (currentTimeInMinutes >= openMinutes && currentTimeInMinutes <= closeMinutes) return true;
-    }
-    return false;
-  };
+    const currentDay = parts.find(p => p.type === "weekday")?.value.toLowerCase() || "monday";
+    const h  = parseInt(parts.find(p => p.type === "hour")?.value   || "0");
+    const m  = parseInt(parts.find(p => p.type === "minute")?.value || "0");
+    const now_m = h * 60 + m;
+    const hours = storeHours[currentDay];
+    if (!hours?.isOpen) return false;
+    if (hours.isAlwaysOpen) return true;
+    const [oh, om] = (hours.open  || "06:00").split(":").map(Number);
+    const [ch, cm] = (hours.close || "03:00").split(":").map(Number);
+    const o_m = oh * 60 + om, c_m = ch * 60 + cm;
+    return c_m <= o_m
+      ? now_m >= o_m || now_m <= c_m
+      : now_m >= o_m && now_m <= c_m;
+  }, [businessConfig]);
 
+  /* ── Categories ── */
   const iconMap: Record<string, any> = { Coffee, Flame, Snowflake, Star, Cake, Utensils, Sparkles };
-
-  const allTab = { id: "all", name: tc("الكل", "All"), icon: Coffee };
-  const categories = [
-    allTab,
+  const categories = useMemo(() => [
+    { id: "all", nameAr: "الكل", nameEn: "All", icon: Coffee },
     ...dynamicCategories.map(c => ({
       id: c.id,
-      name: i18n.language === 'ar' ? c.nameAr : (c.nameEn || c.nameAr),
-      icon: iconMap[c.icon || 'Coffee'] || Coffee,
+      nameAr: c.nameAr,
+      nameEn: c.nameEn || c.nameAr,
+      icon: iconMap[c.icon || "Coffee"] || Coffee,
     })),
-  ];
+  ], [dynamicCategories]);
 
-  const getGroupingKey = (item: CoffeeItem): string => {
-    if ((item as any).groupId) return `${item.category}::${(item as any).groupId}`;
-    return `${item.category}::${(item as any).id || item.nameAr}`;
-  };
-
-  const groupedItems = useMemo(() => coffeeItems.reduce((acc: Record<string, CoffeeItem[]>, item) => {
-    const key = getGroupingKey(item);
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(item);
-    return acc;
-  }, {}), [coffeeItems]);
+  /* ── Grouping & filtering ── */
+  const groupedItems = useMemo(() =>
+    coffeeItems.reduce((acc: Record<string, CoffeeItem[]>, item) => {
+      const key = `${item.category}::${(item as any).groupId || (item as any).id || item.nameAr}`;
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(item);
+      return acc;
+    }, {}),
+  [coffeeItems]);
 
   const representativeItems = useMemo(() =>
-    Object.values(groupedItems).map(group => group[0]),
-    [groupedItems]
-  );
+    Object.values(groupedItems).map(g => g[0]),
+  [groupedItems]);
 
-  const filteredItems = useMemo(() => {
-    return representativeItems
+  const maxSales = useMemo(() =>
+    Math.max(0, ...coffeeItems.map(i => (i as any).salesCount || 0)),
+  [coffeeItems]);
+
+  const filteredItems = useMemo(() =>
+    representativeItems
       .filter(item => {
-        const matchesCategory = selectedCategory === "all" || item.category === selectedCategory;
-        const name = i18n.language === 'ar' ? item.nameAr : item.nameEn || item.nameAr;
-        const matchesSearch = name.toLowerCase().includes(searchQuery.toLowerCase());
-        return matchesCategory && matchesSearch;
+        const cat   = selectedCategory === "all" || item.category === selectedCategory;
+        const name  = i18n.language === "ar" ? item.nameAr : (item as any).nameEn || item.nameAr;
+        const match = name.toLowerCase().includes(searchQuery.toLowerCase());
+        return cat && match;
       })
-      .sort((a, b) => ((b as any).salesCount || 0) - ((a as any).salesCount || 0));
-  }, [representativeItems, selectedCategory, searchQuery, i18n.language]);
+      .sort((a, b) => ((b as any).salesCount || 0) - ((a as any).salesCount || 0)),
+  [representativeItems, selectedCategory, searchQuery, i18n.language]);
 
-  const maxSalesCount = useMemo(() => {
-    if (!coffeeItems.length) return 0;
-    return Math.max(0, ...coffeeItems.map(item => (item as any).salesCount || 0));
-  }, [coffeeItems]);
-
-  const cartTotal = useMemo(() =>
-    cart.reduce((sum, entry) => sum + entry.price * entry.quantity, 0),
-    [cart]
-  );
-  const cartItemCount = useMemo(() =>
-    cart.reduce((sum, entry) => sum + entry.quantity, 0),
-    [cart]
-  );
-
-  const handleItemClick = (item: CoffeeItem) => {
-    setSelectedItem(item);
-    setIsModalOpen(true);
-  };
-
-  const handleAddToCart = (cartItemData: any) => {
-    if (!selectedItem) return;
-    const price = typeof selectedItem.price === 'number' ? selectedItem.price : parseFloat(String(selectedItem.price) || '0');
-    const key = `${(selectedItem as any).id}-${cartItemData.selectedSize}`;
-    setCart(prev => {
-      const existing = prev.findIndex(e => e.key === key);
-      if (existing >= 0) {
-        return prev.map((e, i) => i === existing ? { ...e, quantity: e.quantity + (cartItemData.quantity || 1) } : e);
-      }
-      return [...prev, {
-        key,
-        cartItem: cartItemData,
-        nameAr: selectedItem.nameAr,
-        nameEn: (selectedItem as any).nameEn,
-        price,
-        imageUrl: selectedItem.imageUrl,
-        quantity: cartItemData.quantity || 1,
-      }];
-    });
-    toast({
-      title: tc("تمت الإضافة ✓", "Added ✓"),
-      description: i18n.language === 'ar' ? selectedItem.nameAr : ((selectedItem as any).nameEn || selectedItem.nameAr),
-    });
-  };
-
-  const removeFromCart = (key: string) => {
-    setCart(prev => prev.filter(e => e.key !== key));
-  };
-
-  const changeQty = (key: string, delta: number) => {
-    setCart(prev => prev.map(e => {
-      if (e.key !== key) return e;
-      const newQty = e.quantity + delta;
-      return newQty <= 0 ? null! : { ...e, quantity: newQty };
-    }).filter(Boolean));
-  };
-
-  const handleShowOrder = () => {
-    if (cart.length === 0) return;
-    setIsCartOpen(false);
-    setShowOrderDisplay(true);
-  };
-
+  /* ── Loading ── */
   if (isLoading) {
     return (
-      <div dir={dir} className="min-h-screen bg-[#1a0f08] flex items-center justify-center">
-        <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: "linear" }}>
-          <Coffee className="w-10 h-10 text-[#D4912A]" />
+      <div dir={dir} className="min-h-screen flex flex-col items-center justify-center gap-6"
+        style={{ background: T.bg }}>
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+        >
+          <Coffee className="w-10 h-10" style={{ color: T.gold }} />
         </motion.div>
+        <motion.p
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+          className="text-sm font-bold tracking-widest uppercase"
+          style={{ color: T.gold, opacity: 0.6 }}
+        >
+          Tasali Qurumsh
+        </motion.p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#F5F0EA] dark:bg-[#0f0a06]" dir={dir}>
+    <div className="min-h-screen select-none" dir={dir} style={{ background: T.bg, fontFamily: "'IBM Plex Sans Arabic','Tajawal',sans-serif" }}>
 
-      {/* ── Fixed Header ── */}
-      <header className="fixed top-0 inset-x-0 z-50 bg-[#3D1A0A]/95 backdrop-blur-md border-b border-white/10 flex items-center justify-between px-4 h-16">
-        <div className="flex items-center gap-3">
-          <img src={tasaliLogo} alt="تسالي كرومش" className="w-10 h-10 object-contain rounded-xl" />
-          <div className="flex flex-col leading-none">
-            <span className="text-white font-black text-sm tracking-wide">تسالي كرومش</span>
-            <span className="text-[#D4912A] text-[10px] font-bold tracking-widest uppercase opacity-80">TASALI QURUMSH</span>
+      {/* ══════════════════════════════════════════════
+          TOP NAV — floating glass bar
+      ══════════════════════════════════════════════ */}
+      <header className="fixed top-0 inset-x-0 z-50 flex items-center justify-between px-4 h-14"
+        style={{
+          background: "rgba(13,6,3,0.80)",
+          backdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(20px)",
+          borderBottom: `1px solid ${T.glassBorder}`,
+        }}>
+        {/* Logo + Name */}
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl overflow-hidden border flex-shrink-0"
+            style={{ borderColor: `${T.gold}30` }}>
+            <img src={tasaliLogo} alt="تسالي كرومش" className="w-full h-full object-cover" />
+          </div>
+          <div className="leading-none">
+            <p className="text-white font-black text-sm">تسالي كرومش</p>
+            <p className="font-bold tracking-widest text-[9px]" style={{ color: T.gold }}>TASALI QURUMSH</p>
           </div>
         </div>
 
+        {/* Right controls */}
         <div className="flex items-center gap-2">
-          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-bold ${
-            isStoreOpen()
-              ? 'bg-green-500/20 border-green-500/40 text-green-400'
-              : 'bg-red-500/20 border-red-500/40 text-red-400'
+          {/* Store badge */}
+          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border ${
+            storeOpen
+              ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
+              : "text-red-400 border-red-500/30 bg-red-500/10"
           }`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${isStoreOpen() ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`} />
-            {isStoreOpen() ? tc('مفتوح', 'Open') : tc('مغلق', 'Closed')}
+            <span className={`w-1.5 h-1.5 rounded-full ${storeOpen ? "bg-emerald-400 animate-pulse" : "bg-red-400"}`} />
+            {storeOpen ? tc("مفتوح", "Open") : tc("مغلق", "Closed")}
           </div>
 
+          {/* Search toggle */}
           <button
-            onClick={() => i18n.changeLanguage(i18n.language === 'ar' ? 'en' : 'ar')}
-            className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors"
-            data-testid="button-toggle-language"
+            onClick={() => setShowSearch(v => !v)}
+            className="w-9 h-9 rounded-xl flex items-center justify-center transition-all"
+            style={{ background: showSearch ? T.gold : T.glass, border: `1px solid ${T.glassBorder}` }}
+            data-testid="button-toggle-search"
           >
-            <Languages className="w-4 h-4" />
+            {showSearch
+              ? <X className="w-4 h-4 text-white" />
+              : <Search className="w-4 h-4" style={{ color: T.cream }} />
+            }
           </button>
 
+          {/* Language */}
           <button
-            onClick={() => {
-              const storedCustomer = localStorage.getItem("qahwa-customer") || localStorage.getItem("currentCustomer");
-              if (isAuthenticated || customer || storedCustomer) {
-                setLocation("/profile");
-              } else {
-                setLocation("/auth");
-              }
-            }}
-            className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors"
+            onClick={() => i18n.changeLanguage(i18n.language === "ar" ? "en" : "ar")}
+            className="w-9 h-9 rounded-xl flex items-center justify-center transition-all"
+            style={{ background: T.glass, border: `1px solid ${T.glassBorder}` }}
+            data-testid="button-toggle-language"
+          >
+            <Languages className="w-4 h-4" style={{ color: T.cream }} />
+          </button>
+
+          {/* Profile */}
+          <button
+            onClick={() => setLocation("/auth")}
+            className="w-9 h-9 rounded-xl flex items-center justify-center transition-all"
+            style={{ background: T.glass, border: `1px solid ${T.glassBorder}` }}
             data-testid="button-profile"
           >
-            <User className="w-4 h-4" />
+            <User className="w-4 h-4" style={{ color: T.cream }} />
           </button>
         </div>
       </header>
 
-      {/* ── Brand Hero ── */}
-      <div className="pt-16">
-        <div className="relative bg-gradient-to-b from-[#3D1A0A] via-[#5C2A10] to-[#F5F0EA] dark:to-[#0f0a06] pb-10">
-          <div className="max-w-md mx-auto px-6 pt-10 pb-4 text-center">
-            <motion.div
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ duration: 0.6, ease: "easeOut" }}
-              className="w-24 h-24 mx-auto mb-4 rounded-3xl overflow-hidden shadow-2xl shadow-black/40 border-2 border-[#D4912A]/40"
-            >
-              <img src={tasaliLogo} alt="تسالي كرومش" className="w-full h-full object-contain bg-white/10 p-1" />
-            </motion.div>
-            <motion.h1
-              initial={{ y: 20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ duration: 0.5, delay: 0.2 }}
-              className="text-3xl font-black text-white mb-1"
-            >
-              تسالي كرومش
-            </motion.h1>
-            <motion.p
-              initial={{ y: 20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ duration: 0.5, delay: 0.3 }}
-              className="text-[#D4912A] text-sm font-bold tracking-widest uppercase mb-1"
-            >
-              TASALI QURUMSH
-            </motion.p>
-            <motion.p
-              initial={{ y: 20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ duration: 0.5, delay: 0.4 }}
-              className="text-white/60 text-xs flex items-center justify-center gap-1.5"
-            >
-              <MapPin className="w-3 h-3 text-[#D4912A]" />
-              {tc('الرياض، المملكة العربية السعودية', 'Riyadh, Saudi Arabia')}
-            </motion.p>
-          </div>
-        </div>
-
-        {/* ── Content Area ── */}
-        <div className="max-w-md mx-auto px-4 pb-40 space-y-5 -mt-4">
-
-          {/* ── Search ── */}
-          <div className="relative">
-            <Search className={`absolute ${dir === 'rtl' ? 'right-4' : 'left-4'} top-1/2 -translate-y-1/2 w-4 h-4 text-[#7D3D0F]/50`} />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder={tc('ابحث عن منتج...', 'Search products...')}
-              className={`w-full h-12 ${dir === 'rtl' ? 'pr-12 pl-4' : 'pl-12 pr-4'} bg-white dark:bg-white/10 border border-[#7D3D0F]/20 rounded-2xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#7D3D0F]/30 shadow-sm`}
-              data-testid="input-search"
-            />
-          </div>
-
-          {/* ── Category Tabs ── */}
-          <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 pb-1">
-            {categories.map((cat) => {
-              const IconComp = cat.icon;
-              const isActive = selectedCategory === cat.id;
-              return (
-                <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategory(cat.id)}
-                  className={`flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-all border ${
-                    isActive
-                      ? 'bg-[#7D3D0F] text-white border-[#7D3D0F] shadow-md shadow-[#7D3D0F]/30'
-                      : 'bg-white dark:bg-white/10 text-[#7D3D0F] dark:text-foreground border-[#7D3D0F]/20 hover:border-[#7D3D0F]/40'
-                  }`}
-                  data-testid={`button-category-${cat.id}`}
-                >
-                  <IconComp className={`w-3.5 h-3.5 ${isActive ? 'text-white' : 'text-[#D4912A]'}`} />
-                  {cat.name}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* ── Count ── */}
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-muted-foreground font-medium">
-              {filteredItems.length} {tc('منتج', 'items')}
-            </p>
-            {!isStoreOpen() && (
-              <div className="flex items-center gap-1 text-xs text-red-500 font-bold">
-                <Clock className="w-3 h-3" />
-                {tc('المتجر مغلق حالياً', 'Store currently closed')}
-              </div>
-            )}
-          </div>
-
-          {/* ── Products Grid ── */}
-          {filteredItems.length === 0 ? (
-            <div className="text-center py-16 text-muted-foreground">
-              <Coffee className="w-12 h-12 mx-auto mb-3 opacity-20" />
-              <p className="font-bold">{tc('لا توجد منتجات', 'No products found')}</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-3">
-              <AnimatePresence>
-                {filteredItems.map((item, index) => {
-                  const name = i18n.language === 'ar' ? item.nameAr : item.nameEn || item.nameAr;
-                  const nameSecondary = i18n.language === 'ar' ? item.nameEn : item.nameAr;
-                  const isAvailable = item.isAvailable !== 0;
-                  const salesCount = (item as any).salesCount || 0;
-                  const isNew = (item as any).isNewProduct === 1;
-                  const isBestSeller = salesCount > 0 && maxSalesCount > 0 && salesCount >= maxSalesCount * 0.6;
-                  const price = typeof item.price === 'number' ? item.price : parseFloat(String(item.price) || '0');
-                  const cartKey = `${(item as any).id}-default`;
-                  const inCart = cart.find(e => e.key.startsWith(`${(item as any).id}-`));
-
-                  return (
-                    <motion.button
-                      key={(item as any).id || index}
-                      initial={{ opacity: 0, y: 16 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      transition={{ duration: 0.25, delay: Math.min(index * 0.04, 0.4) }}
-                      onClick={() => handleItemClick(item)}
-                      className="group relative bg-white dark:bg-white/8 rounded-2xl overflow-hidden border border-[#7D3D0F]/10 hover:border-[#D4912A]/40 shadow-sm hover:shadow-md transition-all text-start active:scale-[0.98]"
-                      data-testid={`card-product-${(item as any).id}`}
-                    >
-                      {/* Product Image */}
-                      <div className="relative aspect-[4/3] bg-gradient-to-br from-[#F5E8D5] to-[#EDD8B5] dark:from-[#2a1208] dark:to-[#1a0c05] overflow-hidden">
-                        {item.imageUrl ? (
-                          <img
-                            src={item.imageUrl}
-                            alt={name}
-                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                            onError={(e) => {
-                              const img = e.target as HTMLImageElement;
-                              img.style.display = 'none';
-                              img.nextElementSibling?.classList.remove('hidden');
-                            }}
-                          />
-                        ) : null}
-                        <div className={`${item.imageUrl ? 'hidden' : ''} w-full h-full flex items-center justify-center`}>
-                          <img src={tasaliLogo} alt={name} className="w-16 h-16 object-contain opacity-30" />
-                        </div>
-
-                        {/* Badges */}
-                        <div className="absolute top-2 left-2 flex flex-col gap-1">
-                          {isBestSeller && (
-                            <div className="bg-[#D4912A] text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm whitespace-nowrap">
-                              ⭐ {tc('الأكثر طلباً', 'Best Seller')}
-                            </div>
-                          )}
-                          {isNew && (
-                            <div className="bg-green-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm whitespace-nowrap">
-                              ✨ {tc('جديد', 'New')}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* In-cart indicator */}
-                        {inCart && (
-                          <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-[#7D3D0F] flex items-center justify-center shadow-md">
-                            <span className="text-white text-[10px] font-black">{inCart.quantity}</span>
-                          </div>
-                        )}
-
-                        {/* Unavailable overlay */}
-                        {!isAvailable && (
-                          <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                            <span className="text-white text-[11px] font-bold bg-black/60 px-2 py-1 rounded-lg">
-                              {tc('غير متوفر', 'Unavailable')}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Product Info */}
-                      <div className="p-3 space-y-1">
-                        <h3 className="font-black text-[#3D1A0A] dark:text-foreground text-sm leading-snug line-clamp-1">{name}</h3>
-                        {nameSecondary && nameSecondary !== name && (
-                          <p className="text-[11px] text-muted-foreground line-clamp-1">{nameSecondary}</p>
-                        )}
-                        <div className="flex items-center justify-between pt-0.5">
-                          <span className="text-[#7D3D0F] dark:text-[#D4912A] font-black text-base">
-                            {isNaN(price) ? '—' : price.toFixed(2)}
-                            <span className="text-[10px] font-normal mr-0.5 opacity-70">
-                              <SarIcon />
-                            </span>
-                          </span>
-                          <div className="w-7 h-7 rounded-lg bg-[#7D3D0F] flex items-center justify-center shadow-sm">
-                            <Plus className="w-3.5 h-3.5 text-white" />
-                          </div>
-                        </div>
-                      </div>
-                    </motion.button>
-                  );
-                })}
-              </AnimatePresence>
-            </div>
-          )}
-
-          {/* ── Footer ── */}
-          <div className="pt-4 text-center space-y-2">
-            <div className="flex items-center justify-center gap-4 text-xs text-muted-foreground">
-              <a href="tel:+966566507666" className="flex items-center gap-1 hover:text-[#7D3D0F] transition-colors" data-testid="link-footer-call">
-                <Phone className="w-3 h-3" />
-                <span dir="ltr">+966 56 650 7666</span>
-              </a>
-              <span className="text-muted-foreground/30">•</span>
-              <a
-                href="https://maps.app.goo.gl/zhHFfQVjWRxVKEBn6?g_st=ic"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 hover:text-[#7D3D0F] transition-colors"
-                data-testid="link-footer-maps"
-              >
-                <MapPin className="w-3 h-3" />
-                {tc('موقعنا', 'Location')}
-              </a>
-            </div>
-            <p className="text-[10px] text-muted-foreground/40">
-              {tc('جميع الأسعار شاملة الضريبة', 'All prices include VAT')}
-            </p>
-            <a
-              href="https://qiroxstudio.online"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-[10px] text-muted-foreground/50 hover:text-[#7D3D0F] transition-colors mt-1"
-              data-testid="link-qirox-studio"
-            >
-              <span>صنع عبر</span>
-              <span className="font-black tracking-wide text-[#D4912A]/70 hover:text-[#D4912A]">QIROX STUDIO</span>
-              <span className="text-[8px]">↗</span>
-            </a>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Floating Cart Button ── */}
+      {/* ══════════════════════════════════════════════
+          SEARCH BAR — slides down
+      ══════════════════════════════════════════════ */}
       <AnimatePresence>
-        {cart.length > 0 && !isCartOpen && (
-          <motion.button
-            initial={{ y: 80, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 80, opacity: 0 }}
-            transition={{ type: "spring", stiffness: 300, damping: 30 }}
-            onClick={() => setIsCartOpen(true)}
-            className="fixed bottom-6 inset-x-4 max-w-md mx-auto z-40 bg-[#7D3D0F] hover:bg-[#6B3310] text-white rounded-2xl shadow-xl shadow-[#7D3D0F]/40 flex items-center justify-between px-5 py-4 transition-colors"
-            data-testid="button-open-cart"
-          >
-            <div className="flex items-center gap-3">
-              <div className="relative">
-                <ShoppingCart className="w-5 h-5" />
-                <span className="absolute -top-2 -right-2 w-4 h-4 bg-[#D4912A] rounded-full text-[10px] font-black flex items-center justify-center">
-                  {cartItemCount}
-                </span>
-              </div>
-              <span className="font-bold text-sm">{tc('عرض الطلب', 'View Order')}</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="font-black text-base">{cartTotal.toFixed(2)}</span>
-              <SarIcon />
-              <ChevronUp className="w-4 h-4 opacity-70 mr-1" />
-            </div>
-          </motion.button>
-        )}
-      </AnimatePresence>
-
-      {/* ── Cart Sheet (Bottom Drawer) ── */}
-      <AnimatePresence>
-        {isCartOpen && (
-          <>
-            {/* Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsCartOpen(false)}
-              className="fixed inset-0 bg-black/50 z-40"
-            />
-            {/* Drawer */}
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", stiffness: 300, damping: 35 }}
-              className="fixed bottom-0 inset-x-0 z-50 bg-white dark:bg-[#1a0c05] rounded-t-3xl shadow-2xl max-h-[85vh] flex flex-col"
-              dir={dir}
-            >
-              {/* Handle */}
-              <div className="flex justify-center pt-3 pb-1">
-                <div className="w-10 h-1 rounded-full bg-gray-200 dark:bg-white/20" />
-              </div>
-
-              {/* Header */}
-              <div className="flex items-center justify-between px-5 pb-3 pt-1 border-b border-gray-100 dark:border-white/10">
-                <div className="flex items-center gap-2">
-                  <ShoppingCart className="w-5 h-5 text-[#7D3D0F]" />
-                  <h2 className="font-black text-[#3D1A0A] dark:text-white text-base">
-                    {tc('طلبك', 'Your Order')}
-                  </h2>
-                  <span className="bg-[#7D3D0F] text-white text-[11px] font-black px-2 py-0.5 rounded-full">
-                    {cartItemCount}
-                  </span>
-                </div>
-                <button
-                  onClick={() => setIsCartOpen(false)}
-                  className="w-8 h-8 rounded-xl bg-gray-100 dark:bg-white/10 flex items-center justify-center"
-                  data-testid="button-close-cart"
-                >
-                  <X className="w-4 h-4 text-gray-500 dark:text-white/60" />
-                </button>
-              </div>
-
-              {/* Cart Items */}
-              <div className="flex-1 overflow-y-auto px-5 py-3 space-y-3">
-                {cart.map(entry => {
-                  const name = i18n.language === 'ar' ? entry.nameAr : (entry.nameEn || entry.nameAr);
-                  return (
-                    <div key={entry.key} className="flex items-center gap-3 bg-[#F5F0EA] dark:bg-white/5 rounded-2xl p-3">
-                      {entry.imageUrl ? (
-                        <img src={entry.imageUrl} alt={name} className="w-12 h-12 rounded-xl object-cover flex-shrink-0" />
-                      ) : (
-                        <div className="w-12 h-12 rounded-xl bg-[#7D3D0F]/10 flex items-center justify-center flex-shrink-0">
-                          <Coffee className="w-5 h-5 text-[#7D3D0F]/50" />
-                        </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="font-bold text-[#3D1A0A] dark:text-white text-sm line-clamp-1">{name}</p>
-                        <p className="text-[#7D3D0F] dark:text-[#D4912A] font-black text-sm">
-                          {(entry.price * entry.quantity).toFixed(2)} <SarIcon />
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <button
-                          onClick={() => changeQty(entry.key, -1)}
-                          className="w-7 h-7 rounded-lg bg-white dark:bg-white/10 border border-gray-200 dark:border-white/10 flex items-center justify-center"
-                          data-testid={`button-decrease-${entry.key}`}
-                        >
-                          <Minus className="w-3 h-3 text-gray-600 dark:text-white/60" />
-                        </button>
-                        <span className="w-5 text-center font-black text-sm text-[#3D1A0A] dark:text-white">{entry.quantity}</span>
-                        <button
-                          onClick={() => changeQty(entry.key, 1)}
-                          className="w-7 h-7 rounded-lg bg-white dark:bg-white/10 border border-gray-200 dark:border-white/10 flex items-center justify-center"
-                          data-testid={`button-increase-${entry.key}`}
-                        >
-                          <Plus className="w-3 h-3 text-gray-600 dark:text-white/60" />
-                        </button>
-                        <button
-                          onClick={() => removeFromCart(entry.key)}
-                          className="w-7 h-7 rounded-lg bg-red-50 dark:bg-red-900/20 flex items-center justify-center"
-                          data-testid={`button-remove-${entry.key}`}
-                        >
-                          <Trash2 className="w-3 h-3 text-red-500" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {/* Note Field */}
-                <div className="bg-[#F5F0EA] dark:bg-white/5 rounded-2xl p-4 space-y-2">
-                  <label className="text-sm font-bold text-[#3D1A0A] dark:text-white flex items-center gap-2">
-                    <Send className="w-4 h-4 text-[#D4912A]" />
-                    {tc('ملاحظة للكاشير', 'Note to Cashier')}
-                  </label>
-                  <textarea
-                    value={customerNote}
-                    onChange={e => setCustomerNote(e.target.value)}
-                    placeholder={tc('مثلاً: اسمك، رقم الطاولة، أو أي طلب خاص...', 'e.g. your name, table number, or special request...')}
-                    rows={3}
-                    className="w-full bg-white dark:bg-white/10 border border-[#7D3D0F]/20 rounded-xl px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#7D3D0F]/30 resize-none"
-                    data-testid="textarea-customer-note"
-                  />
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div className="px-5 pb-6 pt-3 border-t border-gray-100 dark:border-white/10 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground font-medium">{tc('الإجمالي', 'Total')}</span>
-                  <span className="text-xl font-black text-[#7D3D0F] dark:text-[#D4912A]">
-                    {cartTotal.toFixed(2)} <SarIcon />
-                  </span>
-                </div>
-                <button
-                  onClick={handleShowOrder}
-                  className="w-full bg-[#7D3D0F] hover:bg-[#6B3310] text-white font-black py-4 rounded-2xl text-sm flex items-center justify-center gap-2 shadow-lg shadow-[#7D3D0F]/30 transition-colors"
-                  data-testid="button-show-order"
-                >
-                  <Eye className="w-4 h-4" />
-                  {tc('عرض الطلب للكاشير', 'Show Order to Cashier')}
-                </button>
-                <p className="text-center text-[11px] text-muted-foreground">
-                  {tc('اعرض منتجاتك أو طلبك للكاشير', 'Show your products or order to the cashier')}
-                </p>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* ── Order Display Screen (show to cashier) ── */}
-      <AnimatePresence>
-        {showOrderDisplay && (
+        {showSearch && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-[#3D1A0A] z-50 flex flex-col"
-            dir={dir}
+            initial={{ y: -20, opacity: 0 }}
+            animate={{ y: 0,   opacity: 1 }}
+            exit={{   y: -20, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 400, damping: 30 }}
+            className="fixed top-14 inset-x-0 z-40 px-4 py-2"
+            style={{ background: "rgba(13,6,3,0.95)", backdropFilter: "blur(20px)" }}
           >
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 pt-10 pb-4">
-              <div className="flex items-center gap-3">
-                <img src={tasaliLogo} alt="تسالي كرومش" className="w-10 h-10 object-contain rounded-xl" />
-                <div>
-                  <p className="text-white font-black text-sm">تسالي كرومش</p>
-                  <p className="text-[#D4912A] text-[10px] font-bold tracking-widest">TASALI QURUMSH</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowOrderDisplay(false)}
-                className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center"
-                data-testid="button-close-display"
-              >
-                <X className="w-4 h-4 text-white" />
-              </button>
-            </div>
-
-            {/* Title */}
-            <div className="text-center px-5 pb-4">
-              <p className="text-[#D4912A] text-xs font-bold tracking-widest uppercase mb-1">
-                {tc('اعرض هذه الشاشة للكاشير', 'Show this screen to the cashier')}
-              </p>
-              <h2 className="text-white text-2xl font-black">{tc('طلبي', 'My Order')}</h2>
-            </div>
-
-            {/* Items list */}
-            <div className="flex-1 overflow-y-auto px-5 space-y-2 pb-4">
-              {cart.map((entry, i) => {
-                const name = i18n.language === 'ar' ? entry.nameAr : (entry.nameEn || entry.nameAr);
-                return (
-                  <div key={entry.key} className="flex items-center gap-3 bg-white/10 rounded-2xl p-3">
-                    {entry.imageUrl ? (
-                      <img src={entry.imageUrl} alt={name} className="w-14 h-14 rounded-xl object-cover flex-shrink-0" />
-                    ) : (
-                      <div className="w-14 h-14 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0">
-                        <Coffee className="w-6 h-6 text-white/40" />
-                      </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white font-black text-base line-clamp-1">{name}</p>
-                      {entry.cartItem.selectedSize && entry.cartItem.selectedSize !== 'default' && (
-                        <p className="text-white/50 text-xs">{entry.cartItem.selectedSize}</p>
-                      )}
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <p className="text-[#D4912A] font-black text-lg">×{entry.quantity}</p>
-                      <p className="text-white/70 text-xs">{(entry.price * entry.quantity).toFixed(2)} <SarIcon /></p>
-                    </div>
-                  </div>
-                );
-              })}
-
-              {/* Note */}
-              {customerNote.trim() && (
-                <div className="bg-[#D4912A]/20 border border-[#D4912A]/40 rounded-2xl p-4">
-                  <p className="text-[#D4912A] text-xs font-bold mb-1">{tc('ملاحظة', 'Note')}</p>
-                  <p className="text-white text-sm font-medium">{customerNote}</p>
-                </div>
-              )}
-            </div>
-
-            {/* Total */}
-            <div className="px-5 pb-10 pt-3 border-t border-white/10 space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-white/60 font-medium text-sm">{tc('الإجمالي', 'Total')}</span>
-                <span className="text-[#D4912A] font-black text-3xl">
-                  {cartTotal.toFixed(2)} <span className="text-lg"><SarIcon /></span>
-                </span>
-              </div>
-              <button
-                onClick={() => {
-                  setShowOrderDisplay(false);
-                  setCart([]);
-                  setCustomerNote("");
+            <div className="relative max-w-lg mx-auto">
+              <Search className={`absolute ${dir === "rtl" ? "right-4" : "left-4"} top-1/2 -translate-y-1/2 w-4 h-4`}
+                style={{ color: `${T.gold}80` }} />
+              <input
+                autoFocus
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder={tc("ابحث عن منتج...", "Search products...")}
+                className={`w-full h-11 ${dir === "rtl" ? "pr-11 pl-4" : "pl-11 pr-4"} rounded-2xl text-sm outline-none`}
+                style={{
+                  background: T.card,
+                  border: `1px solid ${T.cardBorder}`,
+                  color: T.cream,
                 }}
-                className="w-full bg-white/10 hover:bg-white/20 text-white font-bold py-3.5 rounded-2xl text-sm flex items-center justify-center gap-2 transition-colors"
-                data-testid="button-done-display"
-              >
-                <ArrowRight className="w-4 h-4" />
-                {tc('تم — العودة للقائمة', 'Done — Back to Menu')}
-              </button>
+                data-testid="input-search"
+              />
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* ── Item Detail Modal ── */}
-      <AddToCartModal
-        item={selectedItem}
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        variants={selectedItem ? (groupedItems[getGroupingKey(selectedItem)] || [selectedItem]) : []}
-        onAddToCart={handleAddToCart}
-      />
+      {/* ══════════════════════════════════════════════
+          HERO SECTION — cinematic brand
+      ══════════════════════════════════════════════ */}
+      <div ref={heroRef} className="relative pt-14 overflow-hidden" style={{ height: "70vw", maxHeight: 340, minHeight: 240 }}>
+        {/* Background gradient orbs */}
+        <div className="absolute inset-0" style={{
+          background: `radial-gradient(ellipse 80% 80% at 50% 0%, ${T.brown}55 0%, transparent 70%),
+                       radial-gradient(ellipse 50% 60% at 85% 50%, ${T.gold}18 0%, transparent 60%),
+                       radial-gradient(ellipse 50% 60% at 15% 60%, ${T.brownDeep}80 0%, transparent 60%)`,
+        }} />
+
+        {/* Noise texture overlay */}
+        <div className="absolute inset-0 opacity-30"
+          style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.15'/%3E%3C/svg%3E\")" }} />
+
+        {/* Hero content */}
+        <motion.div
+          style={{ opacity: heroOpacity, scale: heroScale }}
+          className="relative z-10 flex flex-col items-center justify-center h-full px-6 text-center"
+        >
+          <motion.div
+            initial={{ scale: 0.7, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+            className="w-20 h-20 md:w-24 md:h-24 rounded-3xl overflow-hidden mb-4 shadow-2xl"
+            style={{ border: `2px solid ${T.gold}50`, boxShadow: `0 0 40px ${T.gold}20, 0 20px 60px ${T.brownDeep}` }}
+          >
+            <img src={tasaliLogo} alt="تسالي كرومش"
+              className="w-full h-full object-cover"
+              style={{ background: T.brownDeep }} />
+          </motion.div>
+
+          <motion.h1
+            initial={{ y: 24, opacity: 0 }}
+            animate={{ y: 0,  opacity: 1 }}
+            transition={{ duration: 0.6, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
+            className="text-3xl md:text-4xl font-black text-white mb-1"
+            style={{ textShadow: `0 4px 24px ${T.brownDeep}` }}
+          >
+            تسالي كرومش
+          </motion.h1>
+
+          <motion.p
+            initial={{ y: 16, opacity: 0 }}
+            animate={{ y: 0,  opacity: 1 }}
+            transition={{ duration: 0.5, delay: 0.25 }}
+            className="text-xs font-black tracking-[0.3em] uppercase mb-3"
+            style={{ color: T.gold }}
+          >
+            TASALI QURUMSH
+          </motion.p>
+
+          <motion.div
+            initial={{ y: 12, opacity: 0 }}
+            animate={{ y: 0,  opacity: 1 }}
+            transition={{ duration: 0.5, delay: 0.35 }}
+            className="flex items-center gap-4 text-xs"
+            style={{ color: `${T.cream}70` }}
+          >
+            <span className="flex items-center gap-1">
+              <MapPin className="w-3 h-3" style={{ color: T.gold }} />
+              {tc("الرياض، السعودية", "Riyadh, Saudi Arabia")}
+            </span>
+            {!storeOpen && (
+              <span className="flex items-center gap-1 text-red-400">
+                <Clock className="w-3 h-3" />
+                {tc("مغلق الآن", "Closed Now")}
+              </span>
+            )}
+          </motion.div>
+        </motion.div>
+
+        {/* Bottom fade */}
+        <div className="absolute bottom-0 inset-x-0 h-16"
+          style={{ background: `linear-gradient(to bottom, transparent, ${T.bg})` }} />
+      </div>
+
+      {/* ══════════════════════════════════════════════
+          CATEGORY TABS — sticky below hero
+      ══════════════════════════════════════════════ */}
+      <div className="sticky z-30" style={{ top: showSearch ? "88px" : "56px" }}>
+        <div className="px-4 py-2.5" style={{ background: `${T.bg}ee`, backdropFilter: "blur(16px)", borderBottom: `1px solid ${T.glassBorder}` }}>
+          <div className="flex gap-2 overflow-x-auto no-scrollbar max-w-2xl mx-auto">
+            {categories.map(cat => {
+              const Icon = cat.icon;
+              const active = selectedCategory === cat.id;
+              return (
+                <motion.button
+                  key={cat.id}
+                  onClick={() => setSelectedCategory(cat.id)}
+                  whileTap={{ scale: 0.93 }}
+                  className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all"
+                  style={{
+                    background: active ? T.gold : T.glass,
+                    border: `1px solid ${active ? T.gold : T.glassBorder}`,
+                    color: active ? "#fff" : `${T.cream}80`,
+                    boxShadow: active ? `0 0 20px ${T.gold}40` : "none",
+                  }}
+                  data-testid={`button-category-${cat.id}`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  {i18n.language === "ar" ? cat.nameAr : cat.nameEn}
+                </motion.button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* ══════════════════════════════════════════════
+          PRODUCTS — creative masonry-style grid
+      ══════════════════════════════════════════════ */}
+      <div className="max-w-2xl mx-auto px-3 pt-4 pb-28 space-y-3">
+
+        {/* Count label */}
+        <div className="flex items-center justify-between px-1">
+          <p className="text-xs font-bold" style={{ color: `${T.cream}40` }}>
+            {filteredItems.length} {tc("منتج", "products")}
+          </p>
+          <div className="h-px flex-1 mx-3" style={{ background: `linear-gradient(to ${dir === "rtl" ? "left" : "right"}, ${T.gold}30, transparent)` }} />
+          <p className="text-xs font-bold" style={{ color: `${T.gold}70` }}>
+            {tc("قائمة الطعام", "Our Menu")}
+          </p>
+        </div>
+
+        {filteredItems.length === 0 ? (
+          <div className="text-center py-20">
+            <Coffee className="w-12 h-12 mx-auto mb-4 opacity-20" style={{ color: T.gold }} />
+            <p className="font-bold" style={{ color: `${T.cream}40` }}>
+              {tc("لا توجد منتجات", "No products found")}
+            </p>
+          </div>
+        ) : (
+          <ProductGrid
+            items={filteredItems}
+            maxSales={maxSales}
+            dir={dir}
+            onSelect={setSelectedItem}
+            lang={i18n.language}
+            tc={tc}
+          />
+        )}
+
+        {/* Footer */}
+        <div className="pt-8 text-center space-y-3">
+          <div className="flex items-center justify-center gap-1 mx-auto" style={{ color: `${T.cream}25` }}>
+            <div className="flex-1 h-px" style={{ background: `linear-gradient(to left, ${T.gold}20, transparent)` }} />
+            <Star className="w-3 h-3 mx-2" style={{ color: T.gold + "50" }} />
+            <div className="flex-1 h-px" style={{ background: `linear-gradient(to right, ${T.gold}20, transparent)` }} />
+          </div>
+          <div className="flex items-center justify-center gap-5 text-xs" style={{ color: `${T.cream}30` }}>
+            <a href="tel:+966566507666" className="flex items-center gap-1 hover:opacity-70 transition-opacity"
+              data-testid="link-footer-call">
+              <Phone className="w-3 h-3" style={{ color: T.gold + "60" }} />
+              <span dir="ltr">+966 56 650 7666</span>
+            </a>
+            <span style={{ color: `${T.cream}15` }}>•</span>
+            <a href="https://maps.app.goo.gl/zhHFfQVjWRxVKEBn6?g_st=ic" target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1 hover:opacity-70 transition-opacity"
+              data-testid="link-footer-maps">
+              <MapPin className="w-3 h-3" style={{ color: T.gold + "60" }} />
+              {tc("الموقع", "Location")}
+            </a>
+          </div>
+          <p className="text-[10px]" style={{ color: `${T.cream}20` }}>
+            {tc("جميع الأسعار شاملة ضريبة القيمة المضافة ١٥٪", "All prices include 15% VAT")}
+          </p>
+          <a href="https://qiroxstudio.online" target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-[10px] hover:opacity-80 transition-opacity"
+            style={{ color: `${T.gold}40` }}
+            data-testid="link-qirox-studio">
+            صنع بواسطة <span className="font-black tracking-widest">QIROX STUDIO</span>
+          </a>
+        </div>
+      </div>
+
+      {/* ══════════════════════════════════════════════
+          FLOATING CALL-TO-ORDER BUTTON
+      ══════════════════════════════════════════════ */}
+      <motion.a
+        href="tel:+966566507666"
+        initial={{ y: 80 }}
+        animate={{ y: 0 }}
+        transition={{ delay: 0.8, type: "spring", stiffness: 260, damping: 25 }}
+        className="fixed bottom-6 inset-x-4 max-w-sm mx-auto z-40 flex items-center justify-center gap-3 py-4 rounded-2xl font-black text-sm text-white shadow-2xl"
+        style={{
+          background: `linear-gradient(135deg, ${T.brown}, ${T.gold})`,
+          boxShadow: `0 8px 32px ${T.gold}30, 0 2px 8px ${T.brownDeep}`,
+        }}
+        data-testid="button-call-to-order"
+      >
+        <Phone className="w-4 h-4" />
+        {tc("اتصل للطلب الآن", "Call to Order Now")}
+      </motion.a>
+
+      {/* ══════════════════════════════════════════════
+          ITEM DETAIL MODAL — full screen immersive
+      ══════════════════════════════════════════════ */}
+      <AnimatePresence>
+        {selectedItem && (
+          <ItemDetailModal
+            item={selectedItem}
+            dir={dir}
+            lang={i18n.language}
+            tc={tc}
+            maxSales={maxSales}
+            onClose={() => setSelectedItem(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
+   PRODUCT GRID — creative alternating layout
+══════════════════════════════════════════════════════════ */
+function ProductGrid({ items, maxSales, dir, onSelect, lang, tc }: {
+  items: CoffeeItem[];
+  maxSales: number;
+  dir: string;
+  lang: string;
+  onSelect: (item: CoffeeItem) => void;
+  tc: (ar: string, en: string) => string;
+}) {
+  return (
+    <div className="space-y-3">
+      {items.map((item, index) => {
+        const isFeatured = index % 7 === 0; // Every 7th item is a hero card
+        const name     = lang === "ar" ? item.nameAr : (item as any).nameEn || item.nameAr;
+        const nameAlt  = lang === "ar" ? (item as any).nameEn : item.nameAr;
+        const price    = typeof item.price === "number" ? item.price : parseFloat(String(item.price) || "0");
+        const sales    = (item as any).salesCount || 0;
+        const isBest   = sales > 0 && maxSales > 0 && sales >= maxSales * 0.6;
+        const isNew    = (item as any).isNewProduct === 1;
+        const avail    = item.isAvailable !== 0;
+        const desc     = (item as any).description || (item as any).descriptionAr || "";
+
+        if (isFeatured) {
+          return (
+            <motion.button
+              key={(item as any).id || index}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: Math.min(index * 0.03, 0.5) }}
+              onClick={() => onSelect(item)}
+              className="w-full text-start relative overflow-hidden rounded-3xl group active:scale-[0.99] transition-transform"
+              style={{
+                background: T.card,
+                border: `1px solid ${T.cardBorder}`,
+                boxShadow: `0 4px 24px rgba(0,0,0,0.4)`,
+                minHeight: 200,
+              }}
+              data-testid={`card-hero-product-${(item as any).id}`}
+            >
+              {/* Background image */}
+              {item.imageUrl && (
+                <div className="absolute inset-0">
+                  <img src={item.imageUrl} alt={name}
+                    className="w-full h-full object-cover opacity-40 group-hover:opacity-55 group-hover:scale-105 transition-all duration-700"
+                    onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
+                  />
+                  <div className="absolute inset-0"
+                    style={{ background: `linear-gradient(to ${dir === "rtl" ? "left" : "right"}, ${T.brownDeep}f0 40%, ${T.brownDeep}50 100%)` }} />
+                </div>
+              )}
+
+              {/* Content */}
+              <div className="relative z-10 p-5 flex flex-col justify-end h-full" style={{ minHeight: 200 }}>
+                {/* Badges */}
+                <div className="flex gap-2 mb-auto">
+                  {isBest && (
+                    <span className="text-[10px] font-black px-2.5 py-1 rounded-full"
+                      style={{ background: T.gold, color: "#fff" }}>
+                      ⭐ {tc("الأكثر طلباً", "Best Seller")}
+                    </span>
+                  )}
+                  {isNew && (
+                    <span className="text-[10px] font-black px-2.5 py-1 rounded-full"
+                      style={{ background: "#16a34a", color: "#fff" }}>
+                      ✨ {tc("جديد", "New")}
+                    </span>
+                  )}
+                  {!avail && (
+                    <span className="text-[10px] font-black px-2.5 py-1 rounded-full"
+                      style={{ background: "rgba(0,0,0,0.6)", color: "rgba(255,255,255,0.6)" }}>
+                      {tc("غير متوفر", "Unavailable")}
+                    </span>
+                  )}
+                </div>
+
+                <div className="mt-10 space-y-1">
+                  <p className="text-xs font-bold tracking-widest uppercase opacity-60" style={{ color: T.gold }}>
+                    {tc("منتج مميز", "Featured")}
+                  </p>
+                  <h2 className="text-2xl font-black text-white leading-snug">{name}</h2>
+                  {nameAlt && <p className="text-sm opacity-50 text-white">{nameAlt}</p>}
+                  {desc && <p className="text-xs opacity-40 text-white line-clamp-2 mt-1">{desc}</p>}
+                  <div className="flex items-baseline gap-1 mt-2">
+                    <span className="text-2xl font-black" style={{ color: T.gold }}>
+                      {isNaN(price) ? "—" : price.toFixed(2)}
+                    </span>
+                    <span className="text-sm opacity-70" style={{ color: T.gold }}>
+                      <SarIcon />
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </motion.button>
+          );
+        }
+
+        // Regular 2-column grid — rendered in pairs
+        return null;
+      })}
+
+      {/* 2-column grid for non-featured items */}
+      {(() => {
+        const regular = items.filter((_, i) => i % 7 !== 0);
+        const pairs: CoffeeItem[][] = [];
+        for (let i = 0; i < regular.length; i += 2) pairs.push(regular.slice(i, i + 2));
+        return pairs.map((pair, pi) => (
+          <div key={pi} className="grid grid-cols-2 gap-3">
+            {pair.map((item, qi) => {
+              const name    = lang === "ar" ? item.nameAr : (item as any).nameEn || item.nameAr;
+              const price   = typeof item.price === "number" ? item.price : parseFloat(String(item.price) || "0");
+              const sales   = (item as any).salesCount || 0;
+              const isBest  = sales > 0 && maxSales > 0 && sales >= maxSales * 0.6;
+              const isNew   = (item as any).isNewProduct === 1;
+              const avail   = item.isAvailable !== 0;
+              return (
+                <motion.button
+                  key={(item as any).id || qi}
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.35, delay: Math.min((pi * 2 + qi) * 0.04, 0.6) }}
+                  onClick={() => onSelect(item)}
+                  className="text-start overflow-hidden rounded-2xl group active:scale-[0.97] transition-transform relative"
+                  style={{ background: T.card, border: `1px solid ${T.cardBorder}` }}
+                  data-testid={`card-product-${(item as any).id}`}
+                >
+                  {/* Image */}
+                  <div className="relative overflow-hidden" style={{ aspectRatio: "3/4" }}>
+                    {item.imageUrl ? (
+                      <img src={item.imageUrl} alt={name}
+                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                        onError={e => {
+                          const img = e.target as HTMLImageElement;
+                          img.style.display = "none";
+                          (img.nextElementSibling as HTMLElement)?.classList.remove("hidden");
+                        }}
+                      />
+                    ) : null}
+                    <div className={`${item.imageUrl ? "hidden" : ""} w-full h-full flex items-center justify-center`}
+                      style={{ background: `linear-gradient(135deg, ${T.brownDeep}, ${T.card})` }}>
+                      <img src={tasaliLogo} alt={name} className="w-12 h-12 object-contain opacity-20" />
+                    </div>
+
+                    {/* Gradient overlay */}
+                    <div className="absolute inset-0"
+                      style={{ background: `linear-gradient(to top, ${T.card} 0%, transparent 50%)` }} />
+
+                    {/* Badges */}
+                    {(isBest || isNew) && (
+                      <div className={`absolute top-2 ${dir === "rtl" ? "right-2" : "left-2"} flex flex-col gap-1`}>
+                        {isBest && (
+                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                            style={{ background: T.gold, color: "#fff" }}>
+                            ⭐ {tc("الأكثر", "Best")}
+                          </span>
+                        )}
+                        {isNew && (
+                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                            style={{ background: "#16a34a", color: "#fff" }}>
+                            ✨ {tc("جديد", "New")}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Unavailable overlay */}
+                    {!avail && (
+                      <div className="absolute inset-0 flex items-center justify-center"
+                        style={{ background: "rgba(0,0,0,0.65)" }}>
+                        <span className="text-[11px] font-bold text-white/70 border border-white/20 px-2 py-1 rounded-lg backdrop-blur">
+                          {tc("غير متوفر", "Unavailable")}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Info */}
+                  <div className="p-3 space-y-1">
+                    <h3 className="font-black text-white text-sm leading-snug line-clamp-2">{name}</h3>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-base font-black" style={{ color: T.gold }}>
+                        {isNaN(price) ? "—" : price.toFixed(2)}
+                      </span>
+                      <span className="text-[11px] opacity-70" style={{ color: T.gold }}><SarIcon /></span>
+                    </div>
+                  </div>
+                </motion.button>
+              );
+            })}
+          </div>
+        ));
+      })()}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
+   ITEM DETAIL MODAL — cinematic full-screen
+══════════════════════════════════════════════════════════ */
+function ItemDetailModal({ item, dir, lang, tc, maxSales, onClose }: {
+  item: CoffeeItem;
+  dir: string;
+  lang: string;
+  tc: (ar: string, en: string) => string;
+  maxSales: number;
+  onClose: () => void;
+}) {
+  const name    = lang === "ar" ? item.nameAr : (item as any).nameEn || item.nameAr;
+  const nameAlt = lang === "ar" ? (item as any).nameEn : item.nameAr;
+  const price   = typeof item.price === "number" ? item.price : parseFloat(String(item.price) || "0");
+  const sales   = (item as any).salesCount || 0;
+  const isBest  = sales > 0 && maxSales > 0 && sales >= maxSales * 0.6;
+  const isNew   = (item as any).isNewProduct === 1;
+  const avail   = item.isAvailable !== 0;
+  const desc    = (item as any).description || (item as any).descriptionAr || (item as any).descriptionEn || "";
+  const category = (item as any).categoryNameAr || (item as any).category || "";
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex flex-col"
+      style={{ background: T.bg }}
+      dir={dir}
+    >
+      {/* Image — top half */}
+      <div className="relative flex-shrink-0" style={{ height: "55vw", maxHeight: 320, minHeight: 220 }}>
+        {item.imageUrl ? (
+          <motion.img
+            src={item.imageUrl}
+            alt={name}
+            initial={{ scale: 1.08 }}
+            animate={{ scale: 1 }}
+            transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+            className="w-full h-full object-cover"
+            onError={e => {
+              (e.target as HTMLImageElement).style.display = "none";
+            }}
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center"
+            style={{ background: `linear-gradient(135deg, ${T.brownDeep}, ${T.card})` }}>
+            <img src={tasaliLogo} alt={name} className="w-24 h-24 object-contain opacity-20" />
+          </div>
+        )}
+
+        {/* Bottom fade */}
+        <div className="absolute inset-x-0 bottom-0 h-24"
+          style={{ background: `linear-gradient(to bottom, transparent, ${T.bg})` }} />
+
+        {/* Top fade */}
+        <div className="absolute inset-x-0 top-0 h-16"
+          style={{ background: `linear-gradient(to top, transparent, rgba(0,0,0,0.5))` }} />
+
+        {/* Close button */}
+        <motion.button
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.2 }}
+          onClick={onClose}
+          className="absolute top-4 flex items-center justify-center w-10 h-10 rounded-2xl backdrop-blur"
+          style={{
+            [dir === "rtl" ? "right" : "left"]: "1rem",
+            background: "rgba(0,0,0,0.6)",
+            border: "1px solid rgba(255,255,255,0.15)",
+          }}
+          data-testid="button-close-item-modal"
+        >
+          <ArrowLeft className={`w-5 h-5 text-white ${dir === "rtl" ? "rotate-180" : ""}`} />
+        </motion.button>
+
+        {/* Unavailable overlay */}
+        {!avail && (
+          <div className="absolute inset-0 flex items-center justify-center"
+            style={{ background: "rgba(0,0,0,0.6)" }}>
+            <span className="text-white font-bold text-lg border border-white/30 px-6 py-3 rounded-2xl backdrop-blur">
+              {tc("غير متوفر حالياً", "Currently Unavailable")}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Content — bottom half */}
+      <motion.div
+        initial={{ y: 40, opacity: 0 }}
+        animate={{ y: 0,  opacity: 1 }}
+        transition={{ duration: 0.5, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
+        className="flex-1 overflow-y-auto px-5 pt-4 pb-32 space-y-4"
+      >
+        {/* Badges */}
+        {(isBest || isNew) && (
+          <div className="flex gap-2">
+            {isBest && (
+              <span className="text-[11px] font-black px-3 py-1 rounded-full"
+                style={{ background: T.gold, color: "#fff" }}>
+                ⭐ {tc("الأكثر طلباً", "Best Seller")}
+              </span>
+            )}
+            {isNew && (
+              <span className="text-[11px] font-black px-3 py-1 rounded-full"
+                style={{ background: "#16a34a", color: "#fff" }}>
+                ✨ {tc("جديد", "New")}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Category chip */}
+        {category && (
+          <p className="text-xs font-bold tracking-widest uppercase" style={{ color: `${T.gold}70` }}>
+            {category}
+          </p>
+        )}
+
+        {/* Name */}
+        <div>
+          <h2 className="text-3xl font-black text-white leading-tight">{name}</h2>
+          {nameAlt && nameAlt !== name && (
+            <p className="text-base mt-1 font-medium" style={{ color: `${T.cream}50` }}>{nameAlt}</p>
+          )}
+        </div>
+
+        {/* Description */}
+        {desc && (
+          <p className="text-sm leading-relaxed" style={{ color: `${T.cream}60` }}>{desc}</p>
+        )}
+
+        {/* Divider */}
+        <div className="h-px" style={{ background: `linear-gradient(to right, ${T.gold}30, transparent)` }} />
+
+        {/* Price block */}
+        <div className="flex items-center justify-between rounded-2xl p-4"
+          style={{ background: T.glass, border: `1px solid ${T.cardBorder}` }}>
+          <div>
+            <p className="text-xs font-bold mb-1" style={{ color: `${T.cream}40` }}>
+              {tc("السعر شامل الضريبة", "Price incl. VAT")}
+            </p>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-4xl font-black" style={{ color: T.gold }}>
+                {isNaN(price) ? "—" : price.toFixed(2)}
+              </span>
+              <span className="text-lg font-bold" style={{ color: `${T.gold}80` }}>
+                <SarIcon />
+              </span>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-[10px] font-bold tracking-widest mb-1" style={{ color: `${T.cream}30` }}>
+              {tc("مشمول", "INCLUDED")}
+            </p>
+            <p className="text-xs font-bold" style={{ color: `${T.cream}50` }}>
+              {tc("ض.ق.م ١٥٪", "VAT 15%")}
+            </p>
+          </div>
+        </div>
+
+        {/* Sales info */}
+        {sales > 0 && (
+          <div className="flex items-center gap-2">
+            <div className="flex -space-x-1.5 rtl:space-x-reverse">
+              {[...Array(Math.min(5, Math.ceil(sales / 10)))].map((_, i) => (
+                <div key={i} className="w-5 h-5 rounded-full border-2 flex items-center justify-center text-[8px]"
+                  style={{ background: T.brownDeep, borderColor: T.gold, color: T.gold }}>
+                  ★
+                </div>
+              ))}
+            </div>
+            <p className="text-xs font-bold" style={{ color: `${T.cream}40` }}>
+              {tc(`طُلب ${sales} مرة`, `Ordered ${sales} times`)}
+            </p>
+          </div>
+        )}
+      </motion.div>
+
+      {/* Bottom action — call to order */}
+      <div className="fixed bottom-0 inset-x-0 p-4"
+        style={{ background: `linear-gradient(to top, ${T.bg} 70%, transparent)` }}>
+        <motion.a
+          href="tel:+966566507666"
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0,  opacity: 1 }}
+          transition={{ delay: 0.4 }}
+          className="flex items-center justify-center gap-3 w-full py-4 rounded-2xl font-black text-white text-sm shadow-2xl"
+          style={{
+            background: `linear-gradient(135deg, ${T.brown}, ${T.gold})`,
+            boxShadow: `0 8px 32px ${T.gold}30`,
+            maxWidth: 480,
+            margin: "0 auto",
+          }}
+          data-testid="button-call-to-order-modal"
+        >
+          <Phone className="w-4 h-4" />
+          {tc("اتصل للطلب الآن", "Call to Order Now")}
+        </motion.a>
+      </div>
+    </motion.div>
   );
 }
