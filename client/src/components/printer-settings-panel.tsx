@@ -1656,7 +1656,7 @@ export default function PrinterSettingsPanel() {
           <div className="flex flex-col gap-2">
             <div>
               <Label className="text-sm font-medium">{tc("رابط الموقع العام (لباركود التتبع)", "Public site URL (for tracking QR)")}</Label>
-              <p className="text-xs text-muted-foreground mt-0.5">{tc("الرابط الذي يستخدمه العملاء (مثل https://blackrose.com.sa). إذا تركته فارغاً، سيستخدم نفس عنوان المتصفح.", "Public URL customers use (e.g. https://blackrose.com.sa). If empty, uses the current browser URL.")}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{tc("الرابط الذي يستخدمه العملاء (مثل https://tasaliqurmash.com.sa). إذا تركته فارغاً، سيستخدم نفس عنوان المتصفح.", "Public URL customers use (e.g. https://tasaliqurmash.com.sa). If empty, uses the current browser URL.")}</p>
             </div>
             <Input
               type="url"

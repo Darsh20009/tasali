@@ -545,7 +545,7 @@ function generateInvoiceHTML(invoiceNumber: string, data: any): string {
     <body>
       <div class="container">
         <div class="header">
-          <h1>BLACK ROSE CAFE</h1>
+          <h1>TASALI QURUMSH</h1>
           <p>فاتورة ضريبية</p>
         </div>
         
@@ -582,8 +582,8 @@ function generateInvoiceHTML(invoiceNumber: string, data: any): string {
         </div>
 
         <div class="footer">
-          <p>شكراً لتعاملك معنا | تم إصدار هذه الفاتورة من نظام BLACK ROSE CAFE</p>
-          <p>© 2025 BLACK ROSE CAFE - جميع الحقوق محفوظة</p>
+          <p>شكراً لتعاملك معنا | تم إصدار هذه الفاتورة من نظام TASALI QURUMSH</p>
+          <p>© 2025 TASALI QURUMSH - جميع الحقوق محفوظة</p>
         </div>
       </div>
     </body>
@@ -732,7 +732,7 @@ function generateOrderNotificationSVG(
   <circle cx="880" cy="70" r="180" fill="#ffffff" fill-opacity="0.02"/>
   <circle cx="100" cy="460" r="130" fill="#ffffff" fill-opacity="0.02"/>
   <circle cx="500" cy="-40" r="240" fill="#7FD4A8" fill-opacity="0.03"/>
-  <text x="48" y="56" font-family="Arial,sans-serif" font-size="26" fill="#7FD4A8" font-weight="bold" letter-spacing="2">BLACK ROSE CAFE</text>
+  <text x="48" y="56" font-family="Arial,sans-serif" font-size="26" fill="#7FD4A8" font-weight="bold" letter-spacing="2">TASALI QURUMSH</text>
   ${orderTypeBadgeEl}
   <line x1="48" y1="72" x2="952" y2="72" stroke="#ffffff" stroke-opacity="0.07" stroke-width="1"/>
   <text x="500" y="220" text-anchor="middle" font-family="Segoe UI Emoji,Apple Color Emoji,Arial" font-size="100">${cfg.icon}</text>
@@ -1525,8 +1525,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!config) {
         config = await BusinessConfigModel.create({
           tenantId,
-          tradeNameAr: "بلاك روز",
-          tradeNameEn: "Qirox Cafe",
+          tradeNameAr: "تسالي كرومش",
+          tradeNameEn: "TASALI QURUMSH",
           activityType: "both",
           isFoodEnabled: true,
           isDrinksEnabled: true,
@@ -2793,7 +2793,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       if (!pg || pg.qahwaCardEnabled !== false) {
-        allMethods.push({ id: 'qahwa-card', nameAr: 'بطاقة بلاك روز', nameEn: 'Black Rose Card', details: 'ادفع ببطاقة الولاء', icon: 'fas fa-gift' });
+        allMethods.push({ id: 'qahwa-card', nameAr: 'بطاقة تسالي', nameEn: 'Tasali Card', details: 'ادفع ببطاقة الولاء', icon: 'fas fa-gift' });
       }
 
       // STC Pay — only show if explicitly enabled
@@ -6340,7 +6340,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!customerId) {
           return res.status(400).json({ 
             valid: false,
-            error: "يجب تسجيل الدخول لاستخدام خصم بطاقة بلاك روز"
+            error: "يجب تسجيل الدخول لاستخدام خصم بطاقة تسالي"
           });
         }
         
@@ -9486,7 +9486,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const { sendOrderNotificationEmail } = await import("./mail-service");
               await sendOrderNotificationEmail(
                 customerEmail,
-                customerName || 'عميل BLACK ROSE CAFE',
+                customerName || 'عميل تسالي كرومش',
                 updatedOrder.orderNumber,
                 status,
                 parseFloat(updatedOrder.totalAmount.toString()),
@@ -18008,8 +18008,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         lines: req.body.lines,
         notes: req.body.notes,
         issuedBy,
-        sellerName: req.body.sellerName || "BLACK ROSE CAFE",
-        sellerVatNumber: req.body.sellerVatNumber || "311234567890003",
+        sellerName: req.body.sellerName || "TASALI QURUMSH",
+        sellerVatNumber: req.body.sellerVatNumber || "",
       });
       res.json({ success: true, invoice: serializeDoc(invoice) });
     } catch (error: any) {
@@ -19081,7 +19081,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           vatAmount,
           description: `مبيعات طلب #${orderNum}`,
           status: o.status === 'cancelled' ? 'ملغي' : 'مؤكد',
-          paymentMethod: method === 'cash' ? 'نقدي' : (method === 'card' || method === 'mada') ? 'شبكة' : 'بطاقة بلاك روز',
+          paymentMethod: method === 'cash' ? 'نقدي' : (method === 'card' || method === 'mada') ? 'شبكة' : 'بطاقة تسالي',
           customerName: (o.customerInfo as any)?.name || '',
           branchId: (o as any).branchId || '',
         });
@@ -19118,7 +19118,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const BOM = '\uFEFF';
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-      res.setHeader('Content-Disposition', `attachment; filename="blackrose-accounting-${period}.csv"`);
+      res.setHeader('Content-Disposition', `attachment; filename="tasali-accounting-${period}.csv"`);
       res.send(BOM + csvRows.join('\n'));
     } catch (error) {
       console.error("[ACCOUNTING EXPORT] Error:", error);
@@ -19792,7 +19792,7 @@ ${topItems.map((item, i) => `  ${i + 1}. ${item[0]}: ${item[1].count} طلب (${
         businessContext = "لم تتوفر بيانات المبيعات الآن.";
       }
 
-      const systemPrompt = `أنت مساعد ذكاء اصطناعي متخصص لإدارة المقاهي والمطاعم، تعمل لصالح نظام BLACK ROSE CAFE.
+      const systemPrompt = `أنت مساعد ذكاء اصطناعي متخصص لإدارة المطاعم والمحلات التجارية، تعمل لصالح نظام TASALI QURUMSH.
 أنت خبير في:
 - تحليل المبيعات والأرباح
 - تحسين قائمة الطعام والتسعير
@@ -20198,13 +20198,13 @@ ${existingIngredients ? `المكونات الحالية: ${existingIngredients}
         headers: qiroxStudioHeaders(),
       });
       if (!response.ok) {
-        return res.status(response.status).json({ error: `BLACK ROSE Studio API error: ${response.statusText}` });
+        return res.status(response.status).json({ error: `TASALI Studio API error: ${response.statusText}` });
       }
       const data = await response.json();
       res.json(data);
     } catch (error: any) {
       console.error(`QIROX Studio proxy error (${endpoint}):`, error.message);
-      res.status(500).json({ error: "فشل الاتصال بـ BLACK ROSE Studio API" });
+      res.status(500).json({ error: "فشل الاتصال بـ TASALI Studio API" });
     }
   };
 

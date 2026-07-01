@@ -427,7 +427,7 @@ export default function PaymentMethods({
                                 }}
                               >
                                 <Zap className="w-4 h-4 ml-2" />
-                                {tc("ادفع ببطاقة تسالي (كوبي)", "Pay with Black Rose Card (Copy)")}
+                                {tc("ادفع ببطاقة تسالي (كوبي)", "Pay with TASALI Card (Copy)")}
                               </Button>
                                {foundCard && (
                               <Button 

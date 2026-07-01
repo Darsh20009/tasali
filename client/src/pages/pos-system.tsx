@@ -2849,7 +2849,7 @@ export default function PosSystem() {
               </div>
               {usePoints && pointsDiscount > 0 && (
                 <div className="flex justify-between text-[10px] sm:text-sm text-amber-600">
-                  <span className="font-bold">{i18n.language === 'ar' ? 'خصم بطاقة تسالي' : 'Black Rose Card'}</span>
+                  <span className="font-bold">{i18n.language === 'ar' ? 'خصم بطاقة تسالي' : 'Tasali Card'}</span>
                   <span className="font-bold">- {pointsDiscount.toFixed(2)} {t('pos.currency')}</span>
                 </div>
               )}
@@ -3430,7 +3430,7 @@ export default function PosSystem() {
               </div>
               {usePoints && pointsDiscount > 0 && (
                 <div className="flex justify-between text-sm text-amber-600">
-                  <span className="font-bold">{i18n.language === 'ar' ? 'خصم بطاقة تسالي' : 'Black Rose Card Discount'}</span>
+                  <span className="font-bold">{i18n.language === 'ar' ? 'خصم بطاقة تسالي' : 'Tasali Card Discount'}</span>
                   <span className="font-bold">- {pointsDiscount.toFixed(2)} {t('pos.currency')}</span>
                 </div>
               )}

@@ -439,7 +439,7 @@ export default function LoyaltyCardComponent({ card, showActions = true, compact
             className="gap-2"
             data-testid="button-apple-wallet"
             onClick={() => {
-              const url = `https://blackrose.com.sa/api/loyalty/cards/${card.id}/apple-wallet-pass`;
+              const url = `https://tasaliqurmash.com.sa/api/loyalty/cards/${card.id}/apple-wallet-pass`;
               window.open(url, '_blank');
             }}
           >

@@ -279,7 +279,6 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
         {/* ── 3. Business info ── */}
         <div style={{ textAlign: "center", fontSize: "12px", lineHeight: "1.9", marginBottom: "8px" }}>
           <div style={{ fontWeight: 900, fontSize: "15px" }}>Tasali Qurumsh</div>
-          <div style={{ fontSize: "11px", color: "#444" }}>حي المروج، طريق الأمير مقرن</div>
           {brand.taxNumber && <div style={{ direction: "ltr", fontSize: "11px", color: "#444" }}>الرقم الضريبي: {brand.taxNumber}</div>}
           <div style={{ fontSize: "11px", color: "#444" }}>101000004295 :رقم الفاتورة</div>
           <div style={{ direction: "ltr", fontSize: "11px", color: "#444" }}>{timeStr} · {dateStr}</div>

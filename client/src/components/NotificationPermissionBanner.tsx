@@ -94,7 +94,7 @@ export function NotificationPermissionBanner({
           </div>
           <div className="px-6 pt-3 pb-6">
             <div className="flex items-center gap-3 mb-4">
-              <img src={blackroseLogo} alt="بلاك روز" className="w-14 h-14 rounded-2xl shadow-md" />
+              <img src={blackroseLogo} alt="تسالي كرومش" className="w-14 h-14 rounded-2xl shadow-md" />
               <div>
                 <h2 className="text-lg font-black text-gray-900">{tc("فعّل الإشعارات", "Enable Notifications")}</h2>
                 <p className="text-xs text-gray-500 mt-0.5">{tc("أضف التطبيق لشاشتك الرئيسية أولاً", "Add the app to your Home Screen first")}</p>
@@ -159,7 +159,7 @@ export function NotificationPermissionBanner({
             <div className="relative mb-3">
               <img
                 src={blackroseLogo}
-                alt="بلاك روز"
+                alt="تسالي كرومش"
                 className="w-20 h-20 rounded-3xl shadow-xl border border-white/10"
               />
               <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-primary rounded-full flex items-center justify-center shadow-lg border-2 border-[#111827]">

@@ -587,13 +587,13 @@ export async function printKitchenOrder(data: KitchenOrderData): Promise<void> {
   openPrintWindow(html, `طلب المطبخ - ${data.orderNumber}`, { paperWidth: '80mm', autoPrint: true, autoClose: true, showPrintButton: false });
 }
 
-const VAT_NUMBER = "312718675800003";
+const VAT_NUMBER = "";
 const COMPANY_NAME = "TASALI QURUMSH";
 const COMPANY_NAME_EN = "TASALI QURUMSH";
-const COMPANY_CR = "7025559423";
-const COMPANY_WEBSITE = "blackrose.com.sa";
-const DEFAULT_BRANCH = "فرع المروج، ينبع";
-const DEFAULT_ADDRESS = "ينبع، المملكة العربية السعودية";
+const COMPANY_CR = "";
+const COMPANY_WEBSITE = "tasaliqurmash.com.sa";
+const DEFAULT_BRANCH = "الفرع الرئيسي";
+const DEFAULT_ADDRESS = "المملكة العربية السعودية";
 
 function generateZATCAQRCode(data: {
   sellerName: string;
@@ -746,7 +746,7 @@ async function _buildFastCustomerEscPos(
     splitPayment: data.splitPayment,
     paymentMethod: payLabel,
     ...(data.cashReceived ? { cashReceived: data.cashReceived } : {}),
-    logoDataUrl: '/black-rose-logo.png',
+    logoDataUrl: '/images/logo-bw.png',
     trackingQrDataUrl: trackingQr || undefined,
     zatcaQrDataUrl: zatcaQr || undefined,
     paperWidth,
@@ -1112,8 +1112,7 @@ body{font-family:Tahoma,Arial,'Segoe UI',sans-serif;direction:rtl;background:#e0
   <!-- ③ اسم المنشأة + بيانات -->
   <div style="text-align:center;font-size:12px;line-height:1.9;padding:4px 10px 6px;">
     <div style="font-weight:900;font-size:16px;letter-spacing:1px;">${COMPANY_NAME}</div>
-    <div style="font-size:11px;color:#555;">ينبع، المملكة العربية السعودية</div>
-    <div style="direction:ltr;font-size:11px;color:#555;">${data.vatNumber || VAT_NUMBER}</div>
+    ${data.vatNumber ? `<div style="direction:ltr;font-size:11px;color:#555;">${data.vatNumber}</div>` : ''}
     <div style="direction:ltr;font-size:11px;">${fmtDate} · ${fmtTime}</div>
   </div>
 

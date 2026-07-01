@@ -185,36 +185,6 @@ async function connectDatabase() {
     } catch (err) {
       console.error("BRCAFE10 seed error:", err);
     }
-    // Seed discount code TECH10 — كلية التقنية للبنات بينبع (10% off, POS use)
-    // Hidden from customers by default — admin can toggle visibility from admin settings.
-    try {
-      const { DiscountCodeModel } = await import("@shared/schema");
-      await DiscountCodeModel.findOneAndUpdate(
-        { code: "TECH10" },
-        {
-          $setOnInsert: {
-            code: "TECH10",
-            discountPercentage: 10,
-            reason: "كلية التقنية للبنات بينبع",
-            employeeId: "system",
-            isActive: 1,
-            usageCount: 0,
-            visibleToCustomers: false,
-            createdAt: new Date(),
-          },
-        },
-        { upsert: true, new: true }
-      );
-      // One-time migration: hide previously auto-visible seeded code without
-      // overriding any subsequent manual change (marker prevents re-applying).
-      await DiscountCodeModel.updateOne(
-        { code: "TECH10", _seedHiddenV1: { $exists: false } },
-        { $set: { visibleToCustomers: false, _seedHiddenV1: true } }
-      );
-      console.log("✅ Discount code TECH10 (كلية التقنية للبنات بينبع — 10% off) is ready (hidden by default)");
-    } catch (err) {
-      console.error("TECH10 seed error:", err);
-    }
   } catch (error) {
     isDbConnected = false;
     console.error("❌ MongoDB connection error:", error);

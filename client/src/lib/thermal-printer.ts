@@ -73,7 +73,7 @@ export interface PrinterSettings {
   // Download: /print-relay.js  — run with: node print-relay.js
   relayAgentUrl?: string; // e.g. "http://192.168.8.10:8089"
   /** الرابط العام للمتجر (يُستخدم لباركود تتبع الطلب)
-   *  مثال: https://blackrose.com.sa
+   *  مثال: https://tasaliqurmash.com.sa
    *  إذا تُرك فارغاً يستخدم window.location.origin */
   publicBaseUrl?: string;
 }

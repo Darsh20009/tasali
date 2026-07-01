@@ -69,7 +69,7 @@ export const generatePDF = async (
   cartItems: CartItem[],
   paymentMethod: PaymentMethod
 ): Promise<Blob> => {
-  const websiteUrl = 'https://www.blackrose.com.sa';
+  const websiteUrl = 'https://www.tasaliqurmash.com.sa';
   const qrCodeDataURL = await QRCode.toDataURL(websiteUrl, {
     width: 120,
     margin: 2,
