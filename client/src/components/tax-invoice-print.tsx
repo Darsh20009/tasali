@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useState } from "react";
 import QRCode from "qrcode";
 import JsBarcode from "jsbarcode";
-const tasaliLogo = "/images/logo-bw.png";
+import { getInvoiceLogoDataUrl } from "@/lib/invoice-logo";
 import SarIcon from "@/components/sar-icon";
 import { brand } from "@/lib/brand";
 import { VAT_RATE } from "@/lib/constants";
@@ -115,6 +115,11 @@ export const TaxInvoicePrint = forwardRef<HTMLDivElement, TaxInvoiceProps>(
     const [qrCodeUrl, setQrCodeUrl] = useState<string>("");
     const [barcodeUrl, setBarcodeUrl] = useState<string>("");
     const [trackingQrUrl, setTrackingQrUrl] = useState<string>("");
+    const [tasaliLogo, setTasaliLogo] = useState<string>("/images/logo-bw.png");
+
+    useEffect(() => {
+      getInvoiceLogoDataUrl().then(setTasaliLogo);
+    }, []);
 
     const totalAmount = parseNumber(total);
     

@@ -6,6 +6,7 @@ import { useRef, useState, useEffect } from "react";
 import QRCode from "qrcode";
 import { fmtOrderNum } from "@/lib/print-utils";
 import { useTranslate } from "@/lib/useTranslate";
+import { getInvoiceLogoDataUrl } from "@/lib/invoice-logo";
 
 interface ReceiptInvoiceProps {
   order: Order;
@@ -32,6 +33,11 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
   const invoiceRef = useRef<HTMLDivElement>(null);
   const [trackingQrUrl, setTrackingQrUrl] = useState<string>(precomputedTrackingQr || "");
   const [zatcaQrUrl, setZatcaQrUrl] = useState<string>(precomputedZatcaQr || "");
+  const [logoUrl, setLogoUrl] = useState<string>("/images/logo-bw.png");
+
+  useEffect(() => {
+    getInvoiceLogoDataUrl().then(setLogoUrl);
+  }, []);
 
   const getItemsArray = (): any[] => {
     try {
@@ -263,7 +269,7 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
         {/* ── 2. Logo ── */}
         <div style={{ padding: "6px 0 10px", marginBottom: "4px" }}>
           <img
-            src="/images/logo-bw.png"
+            src={logoUrl}
             alt="Tasali Qurumsh"
             crossOrigin="anonymous"
             style={{ width: "200px", height: "auto", display: "block", margin: "0 auto" }}
