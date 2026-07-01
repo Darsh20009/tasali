@@ -687,7 +687,7 @@ export async function buildReceiptCanvas(opts: ReceiptBitmapOpts): Promise<HTMLC
 
   // ── Build drawing queue (y-position auto-managed) ────────────────────────
   type DrawOp =
-    | { type: 'img'; img: HTMLImageElement; size: number; }
+    | { type: 'img'; img: HTMLImageElement; size: number; isLogo?: boolean; }
     | { type: 'text'; text: string; align: 'center' | 'left' | 'right'; fs: number; bold: boolean; color?: string; }
     | { type: 'row'; label: string; value: string; fs: number; boldLabel?: boolean; boldValue?: boolean; color?: string; }
     | { type: 'line'; thick?: boolean; dashed?: boolean; }
@@ -707,15 +707,15 @@ export async function buildReceiptCanvas(opts: ReceiptBitmapOpts): Promise<HTMLC
     ops.push({ type: 'text', text, align, fs, bold, color });
   const addRow   = (label: string, value: string, fs = FS, boldLabel = false, boldValue = false, color?: string) =>
     ops.push({ type: 'row', label, value, fs, boldLabel, boldValue, color });
-  const addImg   = (img: HTMLImageElement | null, size: number) => {
-    if (img && img.naturalWidth > 0) ops.push({ type: 'img', img, size });
+  const addImg   = (img: HTMLImageElement | null, size: number, isLogo = false) => {
+    if (img && img.naturalWidth > 0) ops.push({ type: 'img', img, size, isLogo });
   };
 
   // ── RECEIPT LAYOUT — 2 blank lines at the top of every invoice ────────────
   addGap(Math.round(FS * 3.2));
 
   // Logo — enlarged, centred. Logo image already contains the shop name.
-  addImg(logoImg, Math.round(DW * 0.55));
+  addImg(logoImg, Math.round(DW * 0.55), true);
   addGap(8);
 
   // Branch / tagline / VAT — no repeated shop name (it's in the logo)
@@ -873,7 +873,13 @@ export async function buildReceiptCanvas(opts: ReceiptBitmapOpts): Promise<HTMLC
     } else if (op.type === 'img') {
       const size = Math.min(op.size, CONTENT_W);
       const x = Math.floor((DW - size) / 2);
-      ctx.drawImage(op.img, x, y, size, size);
+      if (op.isLogo) {
+        ctx.filter = 'grayscale(1) contrast(999) brightness(0.05)';
+        ctx.drawImage(op.img, x, y, size, size);
+        ctx.filter = 'none';
+      } else {
+        ctx.drawImage(op.img, x, y, size, size);
+      }
       y += size + 4;
     }
   }
