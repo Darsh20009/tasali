@@ -647,7 +647,8 @@ export class DBStorage implements IStorage {
   }
 
   async getEmployees(tenantId?: string): Promise<Employee[]> {
-    const query = tenantId ? { tenantId } : {};
+    const query: any = tenantId ? { tenantId } : {};
+    query.username = { $ne: 'qirox' };
     const employees = await EmployeeModel.find(query).lean();
     return employees.map((emp: any) => ({
       ...emp,

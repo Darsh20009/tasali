@@ -203,7 +203,7 @@ export async function sendOrderNotificationEmail(
         .ftr{border-top:1px solid #e0e0e0;padding-top:15px;font-size:12px;color:#888;text-align:center;margin-top:20px;}
       </style></head>
       <body><div class="wrap"><div class="box">
-        <div class="hdr"><img src="https://raw.githubusercontent.com/Darsh20009/blackrose-cafe/main/client/public/logo.png" alt="BLACK ROSE" style="width:120px;height:auto;margin-bottom:8px;" /><h1 style="color:#BE1845;font-size:22px;margin:0;">BLACK ROSE CAFE</h1><p style="color:#666;font-size:13px;">تجربة القهوة الفاخرة</p></div>
+        <div class="hdr"><img src="https://tasaliqromsh.store/logo.png" alt="تسالي كرومش" style="width:120px;height:auto;margin-bottom:8px;" /><h1 style="color:#BE1845;font-size:22px;margin:0;">تسالي كرومش</h1><p style="color:#666;font-size:13px;">تجربة التسالي المميزة</p></div>
         <p style="font-size:16px;color:#333;">مرحباً ${customerName}!</p>
         <div class="status">
           <div style="font-size:12px;margin-bottom:10px;">حالة الطلب</div>
