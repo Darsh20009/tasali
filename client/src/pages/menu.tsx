@@ -439,24 +439,6 @@ export default function MenuPage() {
         </div>
       </div>
 
-      {/* ══════════════════════════════════════════════
-          FLOATING CALL-TO-ORDER BUTTON
-      ══════════════════════════════════════════════ */}
-      <motion.a
-        href="tel:+966566507666"
-        initial={{ y: 80 }}
-        animate={{ y: 0 }}
-        transition={{ delay: 0.8, type: "spring", stiffness: 260, damping: 25 }}
-        className="fixed bottom-6 inset-x-4 max-w-sm mx-auto z-40 flex items-center justify-center gap-3 py-4 rounded-2xl font-black text-sm text-white shadow-2xl"
-        style={{
-          background: `linear-gradient(135deg, ${T.brown}, ${T.gold})`,
-          boxShadow: `0 8px 32px ${T.gold}30, 0 2px 8px ${T.brownDeep}`,
-        }}
-        data-testid="button-call-to-order"
-      >
-        <Phone className="w-4 h-4" />
-        {tc("اتصل للطلب الآن", "Call to Order Now")}
-      </motion.a>
 
       {/* ══════════════════════════════════════════════
           ITEM DETAIL MODAL — full screen immersive
