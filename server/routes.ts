@@ -2801,19 +2801,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         allMethods.push({ id: 'stc-pay', nameAr: 'STC Pay', nameEn: 'STC Pay', details: 'الدفع عبر محفظة STC', icon: 'fas fa-mobile-alt' });
       }
 
-      if (pg?.bankTransferEnabled) {
-        allMethods.push({
-          id: 'mada',
-          nameAr: 'تحويل بنكي',
-          nameEn: 'Bank Transfer',
-          details: pg.bankIban ? `IBAN: ${pg.bankIban}` : 'تحويل مباشر',
-          icon: 'fas fa-university',
-          requiresReceipt: true,
-          bankIban: pg.bankIban || '',
-          bankName: pg.bankName || '',
-          bankAccountHolder: pg.bankAccountHolder || '',
-        });
-      }
 
       if (pg?.provider === 'neoleap') {
         const hasCredentials = !!(pg.neoleap?.clientId && pg.neoleap?.clientSecret);
@@ -9512,10 +9499,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         { id: 'qahwa-card', nameAr: 'بطاقة كوبي', nameEn: 'Qahwa Card', details: 'استخدم المشروبات المجانية من بطاقتك', icon: 'fas fa-gift', requiresReceipt: false },
         { id: 'cash', nameAr: 'الدفع نقداً', nameEn: 'Cash Payment', details: 'ادفع عند الاستلام', icon: 'fas fa-money-bill-wave', requiresReceipt: false },
         { id: 'pos-network', nameAr: 'شبكة (POS)', nameEn: 'Network (POS)', details: 'الدفع عبر جهاز نقاط البيع', icon: 'fas fa-credit-card', requiresReceipt: false },
-        { id: 'alinma', nameAr: 'Alinma Pay', nameEn: 'Alinma Pay', details: '0532441566', icon: 'fas fa-credit-card', requiresReceipt: true },
-        { id: 'ur', nameAr: 'Ur Pay', nameEn: 'Ur Pay', details: '0532441566', icon: 'fas fa-university', requiresReceipt: true },
-        { id: 'barq', nameAr: 'Barq', nameEn: 'Barq', details: '0532441566', icon: 'fas fa-bolt', requiresReceipt: true },
-        { id: 'rajhi', nameAr: 'بنك الراجحي', nameEn: 'Al Rajhi Bank', details: 'SA78 8000 0539 6080 1942 4738', icon: 'fas fa-building-columns', requiresReceipt: true },
       ];
 
       res.json(paymentMethods);
