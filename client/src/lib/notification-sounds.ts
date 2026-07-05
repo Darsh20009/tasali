@@ -518,3 +518,33 @@ export async function playNotificationSequence(
     if (delayMs > 0) await new Promise(r => setTimeout(r, delayMs));
   }
 }
+
+// ─── Channel-based sound API (used by POS) ────────────────────────────────────
+
+export type SoundChannel = 'table' | 'online' | 'manual' | 'car' | 'default';
+
+interface ChannelConfig {
+  soundType: NotificationSoundType;
+  enabled: boolean;
+}
+
+const CHANNEL_SOUND_MAP: Record<SoundChannel, NotificationSoundType> = {
+  table:   'cashierOrder',
+  online:  'onlineOrderVoice',
+  manual:  'newOrder',
+  car:     'newOrder',
+  default: 'newOrder',
+};
+
+export function getChannelConfig(channel: SoundChannel): ChannelConfig {
+  return {
+    soundType: CHANNEL_SOUND_MAP[channel] ?? 'newOrder',
+    enabled:   getSoundEnabled('pos'),
+  };
+}
+
+export async function playChannelSound(channel: SoundChannel): Promise<void> {
+  if (!getSoundEnabled('pos')) return;
+  const type = CHANNEL_SOUND_MAP[channel] ?? 'newOrder';
+  await playNotificationSound(type);
+}

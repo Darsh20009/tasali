@@ -13,6 +13,18 @@ function fmtOrderNum(n: string | number): string {
   return `#${digits.padStart(4, '0')}`;
 }
 
+/**
+ * Hard-cap any hardware/driver promise (USB/BLE) so a stuck device.open(),
+ * gatt.connect(), or interface claim can NEVER freeze the UI indefinitely.
+ * Rejects with the given Arabic message if the promise doesn't settle in time.
+ */
+function _withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(message)), timeoutMs)),
+  ]);
+}
+
 const CMD = {
   INIT:          [ESC, 0x40],
   ALIGN_LEFT:    [ESC, 0x61, 0x00],
@@ -72,6 +84,8 @@ export interface PrinterSettings {
   // The relay agent is a small Node.js server running on the local network.
   // Download: /print-relay.js  — run with: node print-relay.js
   relayAgentUrl?: string; // e.g. "http://192.168.8.10:8089"
+  /** ترميز العربية: utf8 للطابعات الحديثة (Xprinter/Epson) | cp864 لطابعات ProPOS/CP864 القديمة */
+  arabicEncoding?: 'utf8' | 'cp864';
   /** الرابط العام للمتجر (يُستخدم لباركود تتبع الطلب)
    *  مثال: https://tasaliqurmash.com.sa
    *  إذا تُرك فارغاً يستخدم window.location.origin */
@@ -226,7 +240,7 @@ export async function reconnectSavedUSBPrinter(): Promise<USBDevice | null> {
       _usbLastError = 'الطابعة غير موجودة — تأكد من توصيل كابل USB وتشغيل الطابعة';
       return null;
     }
-    await _openDevice(device); // May throw if interface cannot be claimed
+    await _withTimeout(_openDevice(device), 6000, 'انتهت مهلة الاتصال بالطابعة USB — تحقق من توصيل الكابل'); // May throw if interface cannot be claimed
     _usbDevice = device;
     return device;
   } catch (e: any) {
@@ -242,52 +256,74 @@ let _claimedInterface: number | null = null;
 
 async function _openDevice(device: USBDevice): Promise<void> {
   if (!device.opened) await device.open();
-  if (device.configuration === null) await device.selectConfiguration(1);
 
-  // Try to claim each interface — stop at the first success.
-  // "already claimed" by us is treated as success (device already open from this session).
+  // Try to claim an interface across ALL configurations (not just config 1).
+  // Some printers expose their print interface on config 2 or 3.
+  const configs: number[] = [];
+  const deviceAny = device as any;
+  if (deviceAny.configurations && deviceAny.configurations.length > 0) {
+    deviceAny.configurations.forEach((c: any) => configs.push(c.configurationValue));
+  } else {
+    configs.push(1);
+  }
+  // Put the currently active config first so we try it without switching
+  if (deviceAny.configuration?.configurationValue) {
+    const cur = deviceAny.configuration.configurationValue;
+    const idx = configs.indexOf(cur);
+    if (idx > 0) { configs.splice(idx, 1); configs.unshift(cur); }
+  }
+
   _claimedInterface = null;
-  const interfaces = device.configuration?.interfaces ?? [];
 
-  for (const iface of interfaces) {
+  for (const cfgValue of configs) {
+    // Switch configuration only if not already on this one
     try {
-      await device.claimInterface(iface.interfaceNumber);
-      _claimedInterface = iface.interfaceNumber;
-      break; // Claimed successfully
-    } catch (e: any) {
-      const msg = (e?.message || '').toLowerCase();
-      if (msg.includes('already claimed') || msg.includes('already been claimed')) {
-        // Interface was already claimed in this browser session — treat as success
-        _claimedInterface = iface.interfaceNumber;
-        break;
+      if (deviceAny.configuration === null || (deviceAny.configuration as any)?.configurationValue !== cfgValue) {
+        await device.selectConfiguration(cfgValue);
       }
-      // SecurityError / OS driver conflict — continue trying other interfaces
+    } catch {
+      continue; // Can't select this config — skip
     }
-  }
 
-  // If still null: try to find any claimed interface by testing transferOut feasibility
-  // (some browsers don't report interfaces as claimed even when they are)
-  if (_claimedInterface === null) {
+    const interfaces = device.configuration?.interfaces ?? [];
+
+    // Try to claim each interface in this configuration
     for (const iface of interfaces) {
-      if (iface.claimed) {
+      try {
+        await device.claimInterface(iface.interfaceNumber);
         _claimedInterface = iface.interfaceNumber;
         break;
+      } catch (e: any) {
+        const msg = (e?.message || '').toLowerCase();
+        if (msg.includes('already claimed') || msg.includes('already been claimed')) {
+          _claimedInterface = iface.interfaceNumber;
+          break;
+        }
+        // SecurityError / OS driver conflict — continue trying other interfaces
       }
     }
+
+    // Also accept any interface already flagged as claimed
+    if (_claimedInterface === null) {
+      for (const iface of interfaces) {
+        if (iface.claimed) {
+          _claimedInterface = iface.interfaceNumber;
+          break;
+        }
+      }
+    }
+
+    if (_claimedInterface !== null) break; // Found a working config
   }
 
   if (_claimedInterface === null) {
-    // On Windows: OS driver holds the interface → user must install Zadig/WinUSB
-    // On Android: OS may hold interface but transferOut can still work on some devices
-    // → DON'T throw on Android (navigator.userAgent contains "Android")
-    // → DO throw on Windows (non-Android desktop)
+    // On Android: OS may hold interface but transferOut can still work → don't throw
     const isAndroid = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent);
     if (!isAndroid) {
       throw new Error(
         'لا يمكن الاستئثار بالطابعة USB — على Windows استخدم Zadig لتثبيت درايفر WinUSB، أو استخدم وضع الشبكة (LAN) بدلاً من USB'
       );
     }
-    // Android fallback: attempt to use interface 0 (standard printer class)
     console.warn('[Printer] Could not claim interface on Android — attempting fallback to interface 0');
     _claimedInterface = 0;
   }
@@ -321,30 +357,70 @@ async function _sendToUSB(data: Uint8Array): Promise<boolean> {
     }
   }
 
+  // Helper: try transferOut on a specific endpoint, returns true on success
+  const tryTransfer = async (epNum: number): Promise<boolean> => {
+    try {
+      await _withTimeout(
+        _usbDevice!.transferOut(epNum, data as unknown as BufferSource),
+        5000,
+        'انتهت مهلة إرسال البيانات إلى طابعة USB',
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   try {
-    // Only look at the claimed interface, not all interfaces
-    for (const iface of _usbDevice.configuration!.interfaces) {
+    const allIfaces = _usbDevice.configuration!.interfaces;
+
+    // Pass 1: bulk-out on claimed interface
+    for (const iface of allIfaces) {
       if (_claimedInterface !== null && iface.interfaceNumber !== _claimedInterface) continue;
       for (const alt of iface.alternates) {
         for (const ep of alt.endpoints) {
           if (ep.direction === 'out' && ep.type === 'bulk') {
-            await _usbDevice.transferOut(ep.endpointNumber, data);
-            return true;
+            if (await tryTransfer(ep.endpointNumber)) return true;
           }
         }
       }
     }
-    // No bulk-out endpoint found in claimed interface — try all (older devices with alternate settings)
-    for (const iface of _usbDevice.configuration!.interfaces) {
+
+    // Pass 2: bulk-out on ANY interface (alternate settings, older devices)
+    for (const iface of allIfaces) {
       for (const alt of iface.alternates) {
         for (const ep of alt.endpoints) {
           if (ep.direction === 'out' && ep.type === 'bulk') {
-            await _usbDevice.transferOut(ep.endpointNumber, data);
-            return true;
+            if (await tryTransfer(ep.endpointNumber)) return true;
           }
         }
       }
     }
+
+    // Pass 3: interrupt-out on claimed interface (cheaper thermal printers)
+    for (const iface of allIfaces) {
+      if (_claimedInterface !== null && iface.interfaceNumber !== _claimedInterface) continue;
+      for (const alt of iface.alternates) {
+        for (const ep of alt.endpoints) {
+          if (ep.direction === 'out' && ep.type === 'interrupt') {
+            if (await tryTransfer(ep.endpointNumber)) return true;
+          }
+        }
+      }
+    }
+
+    // Pass 4: interrupt-out on ANY interface
+    for (const iface of allIfaces) {
+      for (const alt of iface.alternates) {
+        for (const ep of alt.endpoints) {
+          if (ep.direction === 'out' && ep.type === 'interrupt') {
+            if (await tryTransfer(ep.endpointNumber)) return true;
+          }
+        }
+      }
+    }
+
+    console.warn('[Printer] No usable OUT endpoint found on USB device');
     return false;
   } catch (err) {
     console.error('[Printer] USB transfer error:', err);
@@ -364,6 +440,77 @@ function bytes(...cmds: number[][]): Uint8Array {
 function textBytes(text: string): number[] {
   // Use TextEncoder for UTF-8 — most modern thermal printers support it
   return Array.from(new TextEncoder().encode(text));
+}
+
+// ── CP864 Arabic encoding table ──────────────────────────────────────────────
+// Maps Unicode Arabic characters to CP864 byte values (IBM Code Page 864)
+// Used for ProPOS, older Xprinter, and other printers that don't support UTF-8
+const CP864_MAP: Record<number, number> = {
+  // Arabic letters (Unicode 0x0621–0x064A → CP864 bytes)
+  0x0621: 0xC1, // ء
+  0x0622: 0xC2, // آ
+  0x0623: 0xC3, // أ
+  0x0624: 0xC4, // ؤ
+  0x0625: 0xC5, // إ
+  0x0626: 0xC6, // ئ
+  0x0627: 0xC7, // ا
+  0x0628: 0xC8, // ب
+  0x0629: 0xC9, // ة
+  0x062A: 0xCA, // ت
+  0x062B: 0xCB, // ث
+  0x062C: 0xCC, // ج
+  0x062D: 0xCD, // ح
+  0x062E: 0xCE, // خ
+  0x062F: 0xCF, // د
+  0x0630: 0xD0, // ذ
+  0x0631: 0xD1, // ر
+  0x0632: 0xD2, // ز
+  0x0633: 0xD3, // س
+  0x0634: 0xD4, // ش
+  0x0635: 0xD5, // ص
+  0x0636: 0xD6, // ض
+  0x0637: 0xD7, // ط
+  0x0638: 0xD8, // ظ
+  0x0639: 0xD9, // ع
+  0x063A: 0xDA, // غ
+  0x0641: 0xE1, // ف
+  0x0642: 0xE2, // ق
+  0x0643: 0xE3, // ك
+  0x0644: 0xE4, // ل
+  0x0645: 0xE5, // م
+  0x0646: 0xE6, // ن
+  0x0647: 0xE7, // ه
+  0x0648: 0xE8, // و
+  0x0649: 0xE9, // ى
+  0x064A: 0xEA, // ي
+  // Arabic-Indic digits (٠١٢٣٤٥٦٧٨٩)
+  0x0660: 0xB0, 0x0661: 0xB1, 0x0662: 0xB2, 0x0663: 0xB3,
+  0x0664: 0xB4, 0x0665: 0xB5, 0x0666: 0xB6, 0x0667: 0xB7,
+  0x0668: 0xB8, 0x0669: 0xB9,
+  // Tatweel / diacritics → skip (unsupported in CP864)
+  0x0640: 0x5F, // tatweel → underscore fallback
+  // Common punctuation
+  0x060C: 0xAC, // ، Arabic comma
+  0x061B: 0xBB, // ؛ Arabic semicolon
+  0x061F: 0xBF, // ؟ Arabic question mark
+};
+
+/**
+ * Encode a string to CP864 bytes for Arabic-capable thermal printers (ProPOS, etc.)
+ * ASCII characters pass through unchanged; Arabic characters are mapped via CP864_MAP.
+ * Unknown characters are replaced with '?'.
+ */
+function textBytesCP864(text: string): number[] {
+  const result: number[] = [];
+  for (const ch of text) {
+    const cp = ch.codePointAt(0)!;
+    if (cp < 0x80) {
+      result.push(cp); // ASCII passthrough
+    } else {
+      result.push(CP864_MAP[cp] ?? 0x3F); // Mapped or '?'
+    }
+  }
+  return result;
 }
 
 function line(text: string): number[] {
@@ -439,6 +586,8 @@ export interface EscPosReceiptData {
   paperWidth: '58mm' | '80mm';
   feedLines?: number;
   skipCut?: boolean; // if true, skip feed+cut at end (so caller can append more data)
+  /** ترميز العربية — utf8 (افتراضي) أو cp864 لطابعات ProPOS/Xprinter القديمة */
+  arabicEncoding?: 'utf8' | 'cp864';
 }
 
 export function buildEscPosReceipt(data: EscPosReceiptData): Uint8Array {
@@ -448,13 +597,24 @@ export function buildEscPosReceipt(data: EscPosReceiptData): Uint8Array {
   const w = data.paperWidth === '58mm' ? 32 : 48;
   const buf: number[] = [];
 
+  // Encoding helper — use CP864 or UTF-8 depending on setting
+  const isCP864 = data.arabicEncoding === 'cp864';
+  const enc = (text: string) => isCP864 ? textBytesCP864(text) : textBytes(text);
+  const ln  = (text: string) => [...enc(text), 0x0a];
+
   // ── Init printer ──────────────────────────────────────────────────────────
   buf.push(...CMD.INIT);
-  // Enable UTF-8 code page (0x1A = page 26) — supported by Xprinter NW series & modern Epson clones
-  // This allows Arabic Unicode characters to print correctly instead of showing garbage symbols
-  buf.push(...CMD.CHARSET_UTF8);
-  // Also set Arabic international charset via ESC R 40 (for printers that use this instead)
-  buf.push(ESC, 0x52, 0x28);
+  if (isCP864) {
+    // CP864 mode: select code page 0x1B (27) = Arabic CP864
+    buf.push(...CMD.CHARSET_PC864);
+    // ESC R 13 = Arabic international character set
+    buf.push(ESC, 0x52, 0x0D);
+  } else {
+    // UTF-8 mode: code page 0x1A (26) — modern Xprinter/Epson
+    buf.push(...CMD.CHARSET_UTF8);
+    // ESC R 40 = Arabic international charset (older firmware fallback)
+    buf.push(ESC, 0x52, 0x28);
+  }
 
   // ── 2 blank lines at start of every invoice ───────────────────────────────
   buf.push(0x0a, 0x0a);
@@ -462,17 +622,17 @@ export function buildEscPosReceipt(data: EscPosReceiptData): Uint8Array {
   // ── Shop header (centered) ────────────────────────────────────────────────
   buf.push(...CMD.ALIGN_CENTER);
   buf.push(...CMD.BOLD_ON, ...CMD.DOUBLE_SIZE);
-  buf.push(...textBytes(data.shopName), 0x0a);
+  buf.push(...enc(data.shopName), 0x0a);
   buf.push(...CMD.NORMAL_SIZE, ...CMD.BOLD_OFF);
 
-  if (data.branchName) buf.push(...centerLine(data.branchName, w));
-  if (data.address)    buf.push(...centerLine(data.address, w));
-  buf.push(...CMD.ALIGN_CENTER, ...textBytes(`VAT: ${data.vatNumber}`), 0x0a);
+  if (data.branchName) buf.push(...CMD.ALIGN_CENTER, ...enc(data.branchName), 0x0a);
+  if (data.address)    buf.push(...CMD.ALIGN_CENTER, ...enc(data.address), 0x0a);
+  buf.push(...CMD.ALIGN_CENTER, ...enc(`VAT: ${data.vatNumber}`), 0x0a);
   buf.push(0x0a, ...dottedLine(w), 0x0a);
 
   // ── Invoice label ─────────────────────────────────────────────────────────
   buf.push(...CMD.ALIGN_CENTER, ...CMD.BOLD_ON, ...CMD.DOUBLE_SIZE);
-  buf.push(...textBytes('فاتورة ضريبية مبسطة'), 0x0a);
+  buf.push(...enc('فاتورة ضريبية مبسطة'), 0x0a);
   buf.push(...CMD.NORMAL_SIZE, ...CMD.BOLD_OFF);
 
   // ── Spacing between invoice label and order number (3 blank lines) ───────
@@ -480,7 +640,7 @@ export function buildEscPosReceipt(data: EscPosReceiptData): Uint8Array {
 
   // ── Order number (large, centered) ───────────────────────────────────────
   buf.push(...CMD.DOUBLE_SIZE, ...CMD.BOLD_ON, ...CMD.ALIGN_CENTER);
-  buf.push(...textBytes(fmtOrderNum(data.orderNumber)), 0x0a);
+  buf.push(...enc(fmtOrderNum(data.orderNumber)), 0x0a);
   buf.push(...CMD.NORMAL_SIZE, ...CMD.BOLD_OFF);
   buf.push(0x0a);
 
@@ -488,25 +648,25 @@ export function buildEscPosReceipt(data: EscPosReceiptData): Uint8Array {
 
   // ── Info block ────────────────────────────────────────────────────────────
   buf.push(...CMD.ALIGN_LEFT);
-  buf.push(...line(`التاريخ : ${data.date}`));
-  buf.push(...line(`الكاشير : ${data.cashierName}`));
+  buf.push(...ln(`التاريخ : ${data.date}`));
+  buf.push(...ln(`الكاشير : ${data.cashierName}`));
   if (data.customerName && data.customerName !== 'عميل نقدي') {
-    buf.push(...line(`العميل  : ${data.customerName}`));
+    buf.push(...ln(`العميل  : ${data.customerName}`));
   }
-  if (data.tableNumber) buf.push(...line(`الطاولة : ${data.tableNumber}`));
-  if (data.orderType)   buf.push(...line(`النوع   : ${data.orderType}`));
+  if (data.tableNumber) buf.push(...ln(`الطاولة : ${data.tableNumber}`));
+  if (data.orderType)   buf.push(...ln(`النوع   : ${data.orderType}`));
   buf.push(0x0a, ...thinLine(w), 0x0a);
 
   // ── Items ─────────────────────────────────────────────────────────────────
   for (const item of data.items) {
     const itemTotal = (item.qty * item.price).toFixed(2);
     buf.push(...CMD.BOLD_ON);
-    buf.push(...CMD.ALIGN_LEFT, ...textBytes(item.name), 0x0a);
+    buf.push(...CMD.ALIGN_LEFT, ...enc(item.name), 0x0a);
     buf.push(...CMD.BOLD_OFF);
-    buf.push(...padRow(`  ${item.qty} x ${item.price.toFixed(2)}`, `${itemTotal} ر.س`, w));
+    buf.push(...CMD.ALIGN_LEFT, ...enc(`  ${item.qty} x ${item.price.toFixed(2)}`), ...enc(`   ${itemTotal} r.s`), 0x0a);
     if (item.addons?.length) {
       for (const addon of item.addons) {
-        buf.push(...line(`    + ${addon}`));
+        buf.push(...ln(`    + ${addon}`));
       }
     }
   }
@@ -514,15 +674,15 @@ export function buildEscPosReceipt(data: EscPosReceiptData): Uint8Array {
   buf.push(0x0a, ...dottedLine(w), 0x0a);
 
   // ── Totals ────────────────────────────────────────────────────────────────
-  buf.push(...padRow('المجموع قبل الضريبة :', `${data.subtotal.toFixed(2)} ر.س`, w));
-  buf.push(...padRow('ضريبة القيمة 15%    :', `${data.vat.toFixed(2)} ر.س`, w));
+  buf.push(...ln(`المجموع : ${data.subtotal.toFixed(2)} r.s`));
+  buf.push(...ln(`ضريبة 15% : ${data.vat.toFixed(2)} r.s`));
   if (data.discount && data.discount > 0) {
-    buf.push(...padRow('الخصم               :', `-${data.discount.toFixed(2)} ر.س`, w));
+    buf.push(...ln(`الخصم : -${data.discount.toFixed(2)} r.s`));
   }
 
   buf.push(0x0a, ...dottedLine(w), 0x0a);
   buf.push(...CMD.BOLD_ON, ...CMD.DOUBLE_SIZE, ...CMD.ALIGN_CENTER);
-  buf.push(...textBytes(`الاجمالي : ${data.total.toFixed(2)} ر.س`), 0x0a);
+  buf.push(...enc(`الاجمالي : ${data.total.toFixed(2)} r.s`), 0x0a);
   buf.push(...CMD.NORMAL_SIZE, ...CMD.BOLD_OFF);
   buf.push(0x0a, ...dottedLine(w), 0x0a);
 
@@ -540,23 +700,23 @@ export function buildEscPosReceipt(data: EscPosReceiptData): Uint8Array {
     if (m === 'loyalty' || m === 'qahwa-card' || m === 'qirox-card') return 'بطاقة ولاء';
     return data.paymentMethod;
   })();
-  buf.push(...line(`طريقة الدفع : ${_pmLabel}`));
+  buf.push(...ln(`طريقة الدفع : ${_pmLabel}`));
   if (data.splitPayment) {
-    if (data.splitPayment.cash > 0) buf.push(...line(`  💵 نقدي  : ${data.splitPayment.cash.toFixed(2)} ر.س`));
-    if (data.splitPayment.card > 0) buf.push(...line(`  💳 شبكة  : ${data.splitPayment.card.toFixed(2)} ر.س`));
+    if (data.splitPayment.cash > 0) buf.push(...ln(`  نقدي  : ${data.splitPayment.cash.toFixed(2)} r.s`));
+    if (data.splitPayment.card > 0) buf.push(...ln(`  شبكة  : ${data.splitPayment.card.toFixed(2)} r.s`));
   }
   if ((data as any).cashReceived && (data as any).cashReceived > 0 && !data.splitPayment) {
-    buf.push(...line(`  المستلم : ${((data as any).cashReceived as number).toFixed(2)} ر.س`));
-    buf.push(...line(`  الباقي  : ${Math.max(0, (data as any).cashReceived - data.total).toFixed(2)} ر.س`));
+    buf.push(...ln(`  المستلم : ${((data as any).cashReceived as number).toFixed(2)} r.s`));
+    buf.push(...ln(`  الباقي  : ${Math.max(0, (data as any).cashReceived - data.total).toFixed(2)} r.s`));
   }
 
   // ── Footer ────────────────────────────────────────────────────────────────
   buf.push(...CMD.ALIGN_CENTER);
   buf.push(...CMD.BOLD_ON);
-  buf.push(...textBytes('** شكراً لزيارتكم **'), 0x0a);
+  buf.push(...enc('** شكراً لزيارتكم **'), 0x0a);
   buf.push(...CMD.BOLD_OFF);
-  buf.push(...textBytes('الاسعار شاملة ضريبة القيمة المضافة'), 0x0a);
-  buf.push(...textBytes('TASALI QURUMSH'), 0x0a);
+  buf.push(...enc('الاسعار شاملة ضريبة القيمة المضافة'), 0x0a);
+  buf.push(...enc('تسالي كرومش'), 0x0a);
 
   if (data.skipCut) {
     // Caller will append more data (e.g. QR raster) before cutting
@@ -687,7 +847,7 @@ export async function buildReceiptCanvas(opts: ReceiptBitmapOpts): Promise<HTMLC
 
   // ── Build drawing queue (y-position auto-managed) ────────────────────────
   type DrawOp =
-    | { type: 'img'; img: HTMLImageElement; size: number; isLogo?: boolean; }
+    | { type: 'img'; img: HTMLImageElement; size: number; }
     | { type: 'text'; text: string; align: 'center' | 'left' | 'right'; fs: number; bold: boolean; color?: string; }
     | { type: 'row'; label: string; value: string; fs: number; boldLabel?: boolean; boldValue?: boolean; color?: string; }
     | { type: 'line'; thick?: boolean; dashed?: boolean; }
@@ -707,15 +867,15 @@ export async function buildReceiptCanvas(opts: ReceiptBitmapOpts): Promise<HTMLC
     ops.push({ type: 'text', text, align, fs, bold, color });
   const addRow   = (label: string, value: string, fs = FS, boldLabel = false, boldValue = false, color?: string) =>
     ops.push({ type: 'row', label, value, fs, boldLabel, boldValue, color });
-  const addImg   = (img: HTMLImageElement | null, size: number, isLogo = false) => {
-    if (img && img.naturalWidth > 0) ops.push({ type: 'img', img, size, isLogo });
+  const addImg   = (img: HTMLImageElement | null, size: number) => {
+    if (img && img.naturalWidth > 0) ops.push({ type: 'img', img, size });
   };
 
   // ── RECEIPT LAYOUT — 2 blank lines at the top of every invoice ────────────
   addGap(Math.round(FS * 3.2));
 
-  // Logo — enlarged, centred. Logo image already contains the shop name.
-  addImg(logoImg, Math.round(DW * 0.55), true);
+  // Logo — centred. 35% of paper width.
+  addImg(logoImg, Math.round(DW * 0.35));
   addGap(8);
 
   // Branch / tagline / VAT — no repeated shop name (it's in the logo)
@@ -873,13 +1033,7 @@ export async function buildReceiptCanvas(opts: ReceiptBitmapOpts): Promise<HTMLC
     } else if (op.type === 'img') {
       const size = Math.min(op.size, CONTENT_W);
       const x = Math.floor((DW - size) / 2);
-      if (op.isLogo) {
-        ctx.filter = 'grayscale(1) contrast(20)';
-        ctx.drawImage(op.img, x, y, size, size);
-        ctx.filter = 'none';
-      } else {
-        ctx.drawImage(op.img, x, y, size, size);
-      }
+      ctx.drawImage(op.img, x, y, size, size);
       y += size + 4;
     }
   }
@@ -1268,7 +1422,7 @@ export async function buildShiftReportCanvas(opts: ShiftReportOpts): Promise<HTM
 
   // ── FOOTER ────────────────────────────────────────────────────────────────
   drawDash();
-  drawCenter(`تسالي كرومش — ${new Date().toLocaleString('ar-SA')}`, Math.round(FS * 0.8), false, '#666');
+  drawCenter(`QIROX STUDIO — ${new Date().toLocaleString('ar-SA')}`, Math.round(FS * 0.8), false, '#666');
 
   y += 40; // feed before cut
 
@@ -1286,6 +1440,191 @@ export async function buildShiftReportCanvas(opts: ShiftReportOpts): Promise<HTM
  */
 export async function buildShiftReportEscPos(opts: ShiftReportOpts): Promise<Uint8Array> {
   const canvas = await buildShiftReportCanvas(opts);
+  const DW = canvas.width;
+  const finalH = canvas.height;
+  const ctx = canvas.getContext('2d')!;
+
+  const imgData = ctx.getImageData(0, 0, DW, finalH);
+  const bpl = Math.ceil(DW / 8);
+  const raster: number[] = [];
+
+  raster.push(0x1b, 0x40);
+  raster.push(0x1d, 0x76, 0x30, 0x00);
+  raster.push(bpl & 0xff, (bpl >> 8) & 0xff);
+  raster.push(finalH & 0xff, (finalH >> 8) & 0xff);
+
+  for (let row = 0; row < finalH; row++) {
+    for (let bx = 0; bx < bpl; bx++) {
+      let byte = 0;
+      for (let bit = 0; bit < 8; bit++) {
+        const px = bx * 8 + bit;
+        if (px < DW) {
+          const i = (row * DW + px) * 4;
+          const lum = 0.299 * imgData.data[i] + 0.587 * imgData.data[i + 1] + 0.114 * imgData.data[i + 2];
+          if (lum < 128) byte |= 1 << (7 - bit);
+        }
+      }
+      raster.push(byte);
+    }
+  }
+
+  raster.push(0x1b, 0x64, 4);
+  raster.push(0x1d, 0x56, 0x41, 0x03);
+
+  return new Uint8Array(raster);
+}
+
+// ── Generic Report (non-order) Canvas ──────────────────────────────────────
+export interface GenericReportRow {
+  label: string;
+  value: string;
+  bold?: boolean;
+}
+
+export interface GenericReportSection {
+  title: string;
+  rows: GenericReportRow[];
+}
+
+export interface GenericReportOpts {
+  shopName: string;
+  reportTitle: string;
+  periodLabel?: string;
+  dateLabel?: string;
+  kpis?: GenericReportRow[];
+  sections?: GenericReportSection[];
+  footer?: string;
+  paperWidth: '58mm' | '80mm';
+}
+
+/**
+ * Renders a generic operational/statistical report (product reports, analytics,
+ * daily summaries, etc — anything that is NOT an accounting/ERP financial
+ * statement) to a Canvas 2D bitmap with native Arabic shaping, so it can be
+ * sent straight to a thermal printer like the rest of the system.
+ */
+export async function buildGenericReportCanvas(opts: GenericReportOpts): Promise<HTMLCanvasElement> {
+  const DW = opts.paperWidth === '58mm' ? 384 : 576;
+  const PAD = Math.round(DW * 0.04);
+  const FS = opts.paperWidth === '58mm' ? 22 : 28;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = DW;
+  canvas.height = 6000;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, DW, 6000);
+
+  let y = 16;
+  const lh = (fs: number) => Math.ceil(fs * 1.65);
+
+  const drawCenter = (text: string, fs: number, bold = false, color = '#000') => {
+    ctx.font = `${bold ? '700' : '400'} ${fs}px Tahoma, Arial, sans-serif`;
+    ctx.fillStyle = color;
+    ctx.direction = 'rtl';
+    ctx.textAlign = 'center';
+    ctx.fillText(text, DW / 2, y);
+    y += lh(fs);
+  };
+
+  const drawRow = (label: string, value: string, fs: number, boldVal = false) => {
+    ctx.direction = 'rtl';
+    ctx.fillStyle = '#000';
+    ctx.font = `400 ${fs}px Tahoma, Arial, sans-serif`;
+    ctx.textAlign = 'right';
+    ctx.fillText(label, DW - PAD, y);
+    ctx.font = `${boldVal ? '700' : '400'} ${fs}px Tahoma, Arial, sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.fillText(value, PAD, y);
+    y += lh(fs);
+  };
+
+  const drawDash = () => {
+    y += 16;
+    ctx.save();
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = '#aaa';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(PAD, y);
+    ctx.lineTo(DW - PAD, y);
+    ctx.stroke();
+    ctx.restore();
+    y += 16;
+  };
+
+  const drawSolid = () => {
+    y += 16;
+    ctx.save();
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(PAD, y);
+    ctx.lineTo(DW - PAD, y);
+    ctx.stroke();
+    ctx.restore();
+    y += 16;
+  };
+
+  const drawSectionTitle = (text: string) => {
+    ctx.font = `700 ${Math.round(FS * 0.95)}px Tahoma, Arial, sans-serif`;
+    ctx.fillStyle = '#2D9B6E';
+    ctx.direction = 'rtl';
+    ctx.textAlign = 'right';
+    ctx.fillText(text, DW - PAD, y);
+    y += lh(Math.round(FS * 0.95)) + 2;
+  };
+
+  // ── HEADER ──
+  drawCenter(opts.shopName, Math.round(FS * 1.4), true);
+  drawCenter(opts.reportTitle, Math.round(FS * 0.95), false, '#444');
+  if (opts.dateLabel) drawCenter(opts.dateLabel, Math.round(FS * 0.85), false, '#555');
+
+  drawSolid();
+
+  if (opts.periodLabel) {
+    drawRow('الفترة:', opts.periodLabel, FS);
+    drawDash();
+  }
+
+  // ── KPIs ──
+  if (opts.kpis && opts.kpis.length > 0) {
+    for (const kpi of opts.kpis) {
+      drawRow(kpi.label, kpi.value, kpi.bold === false ? FS : Math.round(FS * 1.02), kpi.bold !== false);
+    }
+    drawDash();
+  }
+
+  // ── SECTIONS ──
+  if (opts.sections && opts.sections.length > 0) {
+    opts.sections.forEach((section, idx) => {
+      drawSectionTitle(section.title);
+      for (const row of section.rows) {
+        drawRow(row.label, row.value, Math.round(FS * 0.9), !!row.bold);
+      }
+      if (idx < opts.sections!.length - 1) y += 6;
+    });
+  }
+
+  // ── FOOTER ──
+  drawDash();
+  drawCenter(opts.footer || `QIROX STUDIO — ${new Date().toLocaleString('ar-SA')}`, Math.round(FS * 0.8), false, '#666');
+
+  y += 40; // feed before cut
+
+  const finalH = Math.min(y + 10, 6000);
+  const trimmed = document.createElement('canvas');
+  trimmed.width = DW;
+  trimmed.height = finalH;
+  trimmed.getContext('2d')!.drawImage(canvas, 0, 0);
+  return trimmed;
+}
+
+/**
+ * Convert generic report canvas to ESC/POS raster bytes with feed + full cut.
+ */
+export async function buildGenericReportEscPos(opts: GenericReportOpts): Promise<Uint8Array> {
+  const canvas = await buildGenericReportCanvas(opts);
   const DW = canvas.width;
   const finalH = canvas.height;
   const ctx = canvas.getContext('2d')!;
@@ -1601,7 +1940,7 @@ async function _loadQZScript(): Promise<any> {
       const poll = setInterval(() => {
         if ((window as any).qz) { clearInterval(poll); resolve((window as any).qz); }
       }, 100);
-      setTimeout(() => { clearInterval(poll); reject(new Error('QZ timeout')); }, 10000);
+      setTimeout(() => { clearInterval(poll); reject(new Error('QZ timeout')); }, 3000);
       return;
     }
     const s = document.createElement('script');
@@ -1615,14 +1954,14 @@ async function _loadQZScript(): Promise<any> {
   return _qzLoadPromise;
 }
 
-async function _connectQZ(timeoutMs = 4000): Promise<any> {
+async function _connectQZ(timeoutMs = 3000): Promise<any> {
   const qz = await _loadQZScript();
   if (_qzConnected && qz.websocket.isActive()) return qz;
   qz.security.setCertificatePromise((res: (v: any) => void) => res(''));
   qz.security.setSignaturePromise((_: string, res: (v: any) => void) => res(''));
   await Promise.race([
     qz.websocket.connect({ retries: 1, delay: 1 }),
-    new Promise<never>((_, r) => setTimeout(() => r(new Error('timeout')), timeoutMs)),
+    new Promise<never>((_, r) => setTimeout(() => r(new Error('timeout')), Math.min(timeoutMs, 3000))),
   ]);
   _qzConnected = true;
   return qz;
@@ -1633,7 +1972,7 @@ export async function isQZTrayAvailable(): Promise<boolean> {
   try {
     const qz = await Promise.race([
       _loadQZScript(),
-      new Promise<never>((_, r) => setTimeout(() => r(new Error('timeout')), 4000)),
+      new Promise<never>((_, r) => setTimeout(() => r(new Error('timeout')), 3000)),
     ]);
     if (qz.websocket.isActive()) return true;
     await _connectQZ(3000);
@@ -1701,9 +2040,9 @@ export async function networkPrint(escData: Uint8Array, ip: string, port: number
   // 3. Server-side TCP — for public/accessible IPs (local server deployments)
   try {
     const base64Data = btoa(Array.from(escData, b => String.fromCharCode(b)).join(''));
-    // Dynamic timeouts: scale with payload size (no hard limit on receipt length)
-    const printTimeout = Math.max(10_000, Math.ceil(escData.length / 8_000) * 1_000 + 5_000);
-    const fetchTimeout = printTimeout + 5_000;
+    // Hard cap: 3 s max — fail fast so the UI never freezes
+    const printTimeout = 3_000;
+    const fetchTimeout = 3_000;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), fetchTimeout);
     try {
@@ -1761,8 +2100,8 @@ export async function relayAgentPrint(
     const b64      = btoa(Array.from(escData, b => String.fromCharCode(b)).join(''));
     const endpoint = options.direct ? `${base}/print/direct` : `${base}/print`;
 
-    // Dynamic timeout: 15s base + 1s per 8KB of data — supports massive receipts (2000+ items)
-    const dynamicTimeoutMs = Math.max(15_000, Math.ceil(escData.length / 8_000) * 1_000 + 10_000);
+    // Hard cap: 3 s max — fail fast so the UI never freezes
+    const dynamicTimeoutMs = 3_000;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), dynamicTimeoutMs);
 
@@ -1810,7 +2149,7 @@ export async function testRelayAgent(relayUrl: string, printerIp?: string, print
 
     // 1. Ping the relay agent itself
     const controller = new AbortController();
-    setTimeout(() => controller.abort(), 5000);
+    setTimeout(() => controller.abort(), 3000);
     const resp = await fetch(`${base}/status`, { signal: controller.signal });
     if (!resp.ok) throw new Error(`الوكيل أجاب بخطأ ${resp.status}`);
     const info = await resp.json();
@@ -1818,7 +2157,7 @@ export async function testRelayAgent(relayUrl: string, printerIp?: string, print
     // 2. If printer IP provided, also test printer reachability through the relay
     if (printerIp) {
       const c2 = new AbortController();
-      setTimeout(() => c2.abort(), 6000);
+      setTimeout(() => c2.abort(), 3000);
       const r2 = await fetch(`${base}/test`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2039,8 +2378,8 @@ export async function connectBluetoothPrinter(): Promise<string> {
 
   if (!device.gatt) throw new Error('GATT غير متوفر لهذا الجهاز');
 
-  const server = await device.gatt.connect();
-  const characteristic = await _findWriteCharacteristic(server);
+  const server = await _withTimeout(device.gatt.connect(), 5000, 'انتهت مهلة الاتصال بطابعة البلوتوث');
+  const characteristic = await _withTimeout(_findWriteCharacteristic(server), 5000, 'انتهت مهلة البحث عن قناة الطباعة');
   if (!characteristic) throw new Error('لم يُعثر على طابعة BLE متوافقة — تأكد من دعم الطابعة لـ ESC/POS');
 
   _btDevice = device;
@@ -2158,17 +2497,21 @@ export function getBluetoothState(): { connected: boolean; deviceName: string | 
  * 5. Falls back to browser print dialog
  */
 /**
- * Cloud Print Queue mode — posts the job to the QIROX server.
+ * Cloud Print Queue mode — posts the job to the print relay server.
  * A local print-agent.js running near the printer picks up the job and prints.
  */
 export async function queuePrint(escData: Uint8Array, printerIp: string, printerPort = 9100): Promise<PrintResult> {
   try {
     const b64 = btoa(Array.from(escData, b => String.fromCharCode(b)).join(''));
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8_000);
     const resp = await fetch('/api/print-queue', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ data: b64, printerIp, printerPort }),
+      signal:  controller.signal,
     });
+    clearTimeout(timer);
     const result = await resp.json();
     if (!resp.ok || !result.ok) {
       return { success: false, mode: 'error', error: result.error || 'فشل إرسال طلب الطباعة' };

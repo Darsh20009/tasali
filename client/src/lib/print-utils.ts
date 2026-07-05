@@ -1,5 +1,6 @@
 import QRCode from "qrcode";
 import { VAT_RATE } from "@/lib/constants";
+import brand from "@/lib/brand";
 
 // ── ZATCA QR pre-generation cache ────────────────────────────────────────────
 // Key: `zatca:${orderNumber}:${total}` → SVG string
@@ -156,25 +157,132 @@ function _armPrintWatchdog() {
   if (_printWatchdog) clearTimeout(_printWatchdog);
   _printWatchdog = setTimeout(() => {
     if (_isPrinting) {
-      console.warn('[Print] Watchdog: print job stuck >20s — resetting queue');
+      console.warn('[Print] Watchdog: print job stuck >8s — resetting queue');
       _isPrinting = false;
       _printWatchdog = null;
       if (_printQueue.length > 0) setTimeout(_drainPrintQueue, 300);
     }
-  }, 20000);
+  }, 8000);
 }
 
 function _clearPrintWatchdog() {
   if (_printWatchdog) { clearTimeout(_printWatchdog); _printWatchdog = null; }
 }
 
+// Detect Android to apply Android-specific print fixes
+const _isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+/** Export for components that need to skip iframe creation on Android */
+export const isAndroidDevice = _isAndroid;
+
 // Arabic-compatible font stack — works without network (system fonts)
 const PRINT_FONT_STACK = "'Segoe UI', Tahoma, Arial, 'Helvetica Neue', sans-serif";
 
+// ── Android-specific: print by injecting content into the main window ──────
+// On Android WebView/Chrome, ANY hidden iframe (even position:fixed;top:-9999px)
+// causes the browser to recalculate the page viewport based on the iframe's
+// layout width. This shrinks the entire UI to match the narrow paper width.
+// The ONLY reliable fix is to not create an iframe at all on Android.
+// Instead we inject the print content directly into the parent document and
+// call window.print() from there, using @media print CSS to isolate it.
+const _ANDROID_OVERLAY_ID = '__tasali_android_print_layer';
+const _ANDROID_STYLE_ID   = '__tasali_android_print_style';
+
+function _printAndroid(fullHtml: string): Promise<void> {
+  // Clean up any stale overlay from a previous failed print
+  document.getElementById(_ANDROID_OVERLAY_ID)?.remove();
+  document.getElementById(_ANDROID_STYLE_ID)?.remove();
+
+  // ── 1. Extract @page rules (must live at top-level, outside @media print) ──
+  const pageRuleMatches = fullHtml.match(/@page\s*\{[^}]*\}/g) || [];
+  const pageRules = pageRuleMatches.join('\n');
+
+  // ── 2. Extract all <style> content ──────────────────────────────────────────
+  const styleChunks: string[] = [];
+  const htmlNoPage = fullHtml.replace(/@page\s*\{[^}]*\}/g, '');
+  htmlNoPage.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (_m, css: string) => {
+    // strip nested @page again just in case, keep everything else
+    styleChunks.push(css.replace(/@page\s*\{[^}]*\}/g, ''));
+    return '';
+  });
+
+  // ── 3. Extract <body> content ───────────────────────────────────────────────
+  const bodyAttr = (fullHtml.match(/<body([^>]*)>/i) || ['', ''])[1];
+  const bodyContent = (fullHtml.match(/<body[^>]*>([\s\S]*?)<\/body>/i) || ['', ''])[1];
+
+  // ── 4. Inject a hidden overlay div with the print content ───────────────────
+  const overlay = document.createElement('div');
+  overlay.id = _ANDROID_OVERLAY_ID;
+  // dir/lang from body tag if present
+  if (/dir=["']?rtl/i.test(bodyAttr)) overlay.setAttribute('dir', 'rtl');
+  if (/lang=["']?ar/i.test(bodyAttr)) overlay.setAttribute('lang', 'ar');
+  overlay.innerHTML = bodyContent;
+  // Invisible on screen; revealed only by @media print below
+  overlay.style.cssText = 'display:none!important;position:absolute;top:0;left:0;z-index:-9999;';
+  document.body.appendChild(overlay);
+
+  // ── 5. Inject @media print styles that isolate the overlay ─────────────────
+  const styleEl = document.createElement('style');
+  styleEl.id = _ANDROID_STYLE_ID;
+  styleEl.textContent = `
+    /* @page outside @media so paper size applies to the print job */
+    ${pageRules}
+
+    @media print {
+      /* hide every direct child of body except our overlay */
+      body > *:not(#${_ANDROID_OVERLAY_ID}) {
+        display: none !important;
+        visibility: hidden !important;
+      }
+      /* show the overlay as if it were the body */
+      #${_ANDROID_OVERLAY_ID} {
+        display: block !important;
+        visibility: visible !important;
+        position: static !important;
+        top: auto !important;
+        left: auto !important;
+        z-index: auto !important;
+      }
+      /* apply the original body-level styles to the overlay */
+      ${styleChunks.join('\n')}
+    }
+  `;
+  document.head.appendChild(styleEl);
+
+  return new Promise<void>(resolve => {
+    let done = false;
+    const cleanup = () => {
+      if (done) return;
+      done = true;
+      document.getElementById(_ANDROID_OVERLAY_ID)?.remove();
+      document.getElementById(_ANDROID_STYLE_ID)?.remove();
+      resolve();
+    };
+    // afterprint fires on some Android builds — grab it if it fires
+    window.addEventListener('afterprint', cleanup, { once: true });
+
+    // Give the browser one paint cycle before calling print()
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        try { window.print(); } catch { cleanup(); return; }
+        // ── KEY FIX ─────────────────────────────────────────────────────────
+        // On many Android builds (including EZPOS) afterprint never fires, so
+        // waiting for it causes a 10-second hard freeze between print jobs.
+        // Instead: resolve 500 ms after window.print() returns, regardless of
+        // afterprint. If window.print() was synchronous (blocking), it has
+        // already completed by the time we reach this line.
+        setTimeout(cleanup, 500);
+      }, 0);
+    });
+  });
+}
+
 function _buildFullDoc(html: string, paperWidth: string): string {
+  // The iframe document gets its own viewport meta so Android treats it
+  // as a device-width document and does NOT resize the parent page's viewport.
   return `<!DOCTYPE html><html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <style>
     @page { size: ${paperWidth} auto; margin: 0; }
     * { box-sizing: border-box; }
@@ -188,17 +296,33 @@ function _buildFullDoc(html: string, paperWidth: string): string {
 }
 
 /**
- * Direct HTML iframe print — fast, accurate, no image conversion.
+ * Direct HTML print — fast, accurate, no image conversion.
  * Uses browser's native rendering engine — Arabic text renders perfectly.
+ *
+ * Android strategy (NO iframe):
+ *   On Android WebView/Chrome any hidden iframe — even one at top:-9999px —
+ *   triggers a viewport recalculation that shrinks the parent page to the
+ *   iframe's content width (~220–302 px). There is no CSS workaround.
+ *   Solution: inject print content directly into the main document as a hidden
+ *   div, reveal it only with @media print, and call window.print() from the
+ *   parent. Zero iframes → zero viewport disturbance.
+ *
+ * Desktop/iOS strategy (iframe):
+ *   Still uses a hidden iframe so desktop printing is completely isolated.
  */
 async function _printDirectAsync(html: string, paperWidth: string, isFullDoc: boolean): Promise<void> {
   const fullHtml = isFullDoc ? html : _buildFullDoc(html, paperWidth);
 
+  // ── Android: use no-iframe approach ─────────────────────────────────────────
+  if (_isAndroid) {
+    return _printAndroid(fullHtml);
+  }
+
+  // ── Desktop / iOS: hidden iframe approach ───────────────────────────────────
   const iframe = document.createElement('iframe');
   iframe.setAttribute('aria-hidden', 'true');
-  // Give it a realistic width so layout matches paper — hidden off-screen
   const renderWidth = paperWidth === '58mm' ? 220 : 302;
-  iframe.style.cssText = `position:fixed;top:-9999px;left:-9999px;width:${renderWidth}px;height:1px;border:none;visibility:hidden;pointer-events:none;`;
+  iframe.style.cssText = `position:fixed;top:-9999px;left:-9999px;width:${renderWidth}px;height:1px;border:none;opacity:0;pointer-events:none;overflow:hidden;`;
   document.body.appendChild(iframe);
 
   const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
@@ -221,8 +345,6 @@ async function _printDirectAsync(html: string, paperWidth: string, isFullDoc: bo
     return;
   }
 
-  // No image waiting — receipts are image-free (SVG inline, text logo)
-  // Brief layout settle only
   await new Promise(r => setTimeout(r, 20));
 
   return new Promise<void>(resolve => {
@@ -230,16 +352,13 @@ async function _printDirectAsync(html: string, paperWidth: string, isFullDoc: bo
     const finish = () => {
       if (done) return;
       done = true;
-      setTimeout(() => {
-        try { iframe.remove(); } catch {}
-        resolve();
-      }, 200);
+      setTimeout(() => { try { iframe.remove(); } catch {} resolve(); }, 200);
     };
-
     iframeWin.addEventListener('afterprint', finish, { once: true });
-    setTimeout(finish, 10000); // safety fallback
-
-    try { iframeWin.focus(); iframeWin.print(); } catch { finish(); }
+    setTimeout(finish, 2000);
+    requestAnimationFrame(() => {
+      setTimeout(() => { try { iframeWin.print(); } catch { finish(); } }, 0);
+    });
   });
 }
 
@@ -276,48 +395,27 @@ function _printInPopup(win: Window | null, html: string, delayMs: number): void 
     // cross-origin or other write error — silently ignore
   }
   setTimeout(() => {
-    try { win.focus(); win.print(); } catch {}
-    // Close the popup after printing (or after 8 s if afterprint never fires)
+    try { win.print(); } catch {}
+    // Close the popup after printing (or after 3 s if afterprint never fires)
     const close = () => { try { if (!win.closed) win.close(); } catch {} };
     win.addEventListener('afterprint', close, { once: true });
-    setTimeout(close, 8000);
+    setTimeout(close, 3000);
   }, delayMs);
 }
 
 function openPrintWindow(html: string, _title: string, config: PrintConfig = {}): Window | null {
-  const { paperWidth = '80mm', autoPrint = true, showPrintButton = true } = config;
+  const { paperWidth = '80mm' } = config;
 
-  if (autoPrint) {
-    // Determine if the provided HTML is a full document or a fragment
-    const isFullDoc = /<html[\s>]/i.test(html);
-    _printQueue.push({ html, paperWidth, isFullDoc });
-    _drainPrintQueue();
-    return null;
-  }
-
-  // autoPrint = false → open a popup window with a print button
-  const dynamicStyles = `<style>
-    @media print { @page { size: ${paperWidth} auto; margin: 0; } body { margin: 0; } .no-print { display: none !important; } }
-  </style>`;
-  let modifiedHtml = html.replace('</head>', `${dynamicStyles}</head>`);
-
-  const printButtonHtml = showPrintButton ? `
-    <div class="no-print" style="text-align:center;margin-top:20px;padding:20px;">
-      <button onclick="window.print()" style="padding:12px 32px;font-size:16px;background:#b45309;color:#fff;border:none;border-radius:8px;cursor:pointer;margin-left:10px;">طباعة</button>
-      <button onclick="window.close()" style="padding:12px 32px;font-size:16px;background:#6b7280;color:#fff;border:none;border-radius:8px;cursor:pointer;">إغلاق</button>
-    </div>` : '';
-
-  if (showPrintButton && !modifiedHtml.includes('<div class="no-print"')) {
-    modifiedHtml = modifiedHtml.replace('</body>', `${printButtonHtml}</body>`);
-  }
-
-  const printWindow = window.open('', '_blank', 'width=450,height=700,scrollbars=yes,resizable=yes');
-  if (printWindow) {
-    printWindow.document.write(modifiedHtml);
-    printWindow.document.close();
-    printWindow.document.title = _title;
-  }
-  return printWindow;
+  // MANDATORY on every platform: printing must always happen in the
+  // background via the print queue. A popup-window print path (with a
+  // "طباعة" button) used to exist for autoPrint=false callers, but a popup
+  // is exactly the kind of "something opens around the screen" behavior
+  // that must never happen on a POS/kiosk device — so this now always
+  // takes the background queue path regardless of the autoPrint flag.
+  const isFullDoc = /<html[\s>]/i.test(html);
+  _printQueue.push({ html, paperWidth, isFullDoc });
+  _drainPrintQueue();
+  return null;
 }
 
 // Export for direct use from manual print buttons (user gesture context)
@@ -332,26 +430,42 @@ export function printHtmlInPage(html: string, paperWidth: string = '80mm'): void
  * Shared helper for shift reports and refund receipts.
  */
 function _printCanvasImage(imgSrc: string, paperWidth: '58mm' | '80mm' = '80mm'): void {
+  const fullHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"><style>
+    @page { size: ${paperWidth} auto; margin: 0; }
+    html,body { margin:0; padding:0; background:#fff; }
+    img { width: ${paperWidth}; display: block; margin: 0; padding: 0; }
+  </style></head><body><img src="${imgSrc}" /></body></html>`;
+
+  // On Android: use the no-iframe path to avoid viewport shrinkage.
+  // We need to wait for the image inside the overlay to load first.
+  if (_isAndroid) {
+    _printAndroid(fullHtml).catch(() => {});
+    return;
+  }
+
+  // Desktop / iOS: hidden iframe
   const printFrame = document.createElement('iframe');
   printFrame.setAttribute('aria-hidden', 'true');
-  printFrame.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none;opacity:0;pointer-events:none;';
+  printFrame.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:302px;height:1px;border:none;opacity:0;pointer-events:none;';
   document.body.appendChild(printFrame);
   const pdoc = printFrame.contentDocument || printFrame.contentWindow?.document;
   if (!pdoc) { try { printFrame.remove(); } catch {} return; }
   pdoc.open();
-  pdoc.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
-    @page { size: ${paperWidth} auto; margin: 0; }
-    html,body { margin:0; padding:0; background:#fff; }
-    img { width: ${paperWidth}; display: block; margin: 0; padding: 0; }
-  </style></head><body><img src="${imgSrc}" /></body></html>`);
+  pdoc.write(fullHtml);
   pdoc.close();
   const img = pdoc.querySelector('img') as HTMLImageElement | null;
   let done = false;
-  const finish = () => { if (done) return; done = true; setTimeout(() => { try { printFrame.remove(); } catch {} }, 200); };
+  const finish = () => {
+    if (done) return;
+    done = true;
+    setTimeout(() => { try { printFrame.remove(); } catch {} }, 200);
+  };
   const doPrint = () => {
-    try { printFrame.contentWindow?.focus(); printFrame.contentWindow?.print(); } catch {}
     printFrame.contentWindow?.addEventListener('afterprint', finish, { once: true });
     setTimeout(finish, 5000);
+    requestAnimationFrame(() => {
+      setTimeout(() => { try { printFrame.contentWindow?.print(); } catch { finish(); } }, 0);
+    });
   };
   if (img && !img.complete) {
     img.onload = () => setTimeout(doPrint, 100);
@@ -385,7 +499,7 @@ export async function printShiftThermal(p: {
   openedAt?: string;
   closedAt?: string;
   reportTitle?: string;
-}, bizName = 'TASALI QURUMSH'): Promise<void> {
+}, bizName = 'تسالي كرومش'): Promise<void> {
   const { loadPrinterSettings, buildShiftReportEscPos, buildShiftReportCanvas, thermalPrint } = await import('./thermal-printer');
   const ps = loadPrinterSettings();
 
@@ -496,6 +610,7 @@ export async function printEmployeeCard(data: EmployeePrintData): Promise<void> 
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <title>بطاقة الموظف - ${data.employeeName}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -517,7 +632,7 @@ export async function printEmployeeCard(data: EmployeePrintData): Promise<void> 
 <body>
   <div class="card">
     <div class="header">
-      <div class="company-name">TASALI QURUMSH</div>
+      <div class="company-name">تسالي كرومش</div>
       <div class="employee-title">بطاقة تعريف الموظف</div>
     </div>
     <div class="employee-name">${data.employeeName}</div>
@@ -553,6 +668,7 @@ export async function printKitchenOrder(data: KitchenOrderData): Promise<void> {
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <title>طلب المطبخ - ${data.orderNumber}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -587,13 +703,13 @@ export async function printKitchenOrder(data: KitchenOrderData): Promise<void> {
   openPrintWindow(html, `طلب المطبخ - ${data.orderNumber}`, { paperWidth: '80mm', autoPrint: true, autoClose: true, showPrintButton: false });
 }
 
-const VAT_NUMBER = "";
-const COMPANY_NAME = "TASALI QURUMSH";
-const COMPANY_NAME_EN = "TASALI QURUMSH";
-const COMPANY_CR = "";
-const COMPANY_WEBSITE = "tasaliqurmash.com.sa";
-const DEFAULT_BRANCH = "الفرع الرئيسي";
-const DEFAULT_ADDRESS = "المملكة العربية السعودية";
+const VAT_NUMBER = brand.taxNumber || "";
+const COMPANY_NAME = brand.shortNameAr;
+const COMPANY_NAME_EN = brand.nameEn;
+const COMPANY_CR = brand.commercialRegister;
+const COMPANY_WEBSITE = brand.website;
+const DEFAULT_BRANCH = "";
+const DEFAULT_ADDRESS = "";
 
 function generateZATCAQRCode(data: {
   sellerName: string;
@@ -722,7 +838,7 @@ async function _buildFastCustomerEscPos(
   return buildReceiptBitmapEscPos({
     shopName: COMPANY_NAME,
     vatNumber: data.vatNumber || VAT_NUMBER,
-    branchName: data.branchName || DEFAULT_BRANCH,
+    branchName: data.branchName || undefined,
     orderNumber: data.orderNumber,
     orderDate: `${fmtDate} · ${fmtTime}`,
     cashierName: data.employeeName || '—',
@@ -746,7 +862,7 @@ async function _buildFastCustomerEscPos(
     splitPayment: data.splitPayment,
     paymentMethod: payLabel,
     ...(data.cashReceived ? { cashReceived: data.cashReceived } : {}),
-    logoDataUrl: '/images/logo-bw.png',
+    logoDataUrl: '/logo.png',
     trackingQrDataUrl: trackingQr || undefined,
     zatcaQrDataUrl: zatcaQr || undefined,
     paperWidth,
@@ -790,6 +906,10 @@ export async function printReceiptSection(
       const receiptProfiles = getProfilesForRole('receipt');
       const kitchenProfiles = getProfilesForRole('kitchen');
 
+      // Track whether thermal printing actually succeeded so we can fall
+      // back to browser printing if it fails silently (success: false without throw).
+      let thermalSucceeded = false;
+
       // ── Customer copy — Canvas 2D bitmap (instant, same engine as kitchen tickets) ──
       if (section === 'customer' || section === 'both') {
         const escData = await _buildFastCustomerEscPos(data, orderTypeThermal, ps.paperWidth as '58mm' | '80mm', ps.feedLines ?? 4);
@@ -798,8 +918,10 @@ export async function printReceiptSection(
           for (const profile of receiptProfiles) {
             await thermalPrintWithProfile(escData, profile);
           }
+          thermalSucceeded = true;
         } else {
-          await thermalPrint(escData, '', ps.paperWidth);
+          const r = await thermalPrint(escData, '', ps.paperWidth);
+          if (r.success) thermalSucceeded = true;
         }
       }
 
@@ -828,18 +950,23 @@ export async function printReceiptSection(
           for (const profile of kitchenProfiles) {
             await thermalPrintWithProfile(kitchenEsc, profile);
           }
+          thermalSucceeded = true;
         } else {
-          await thermalPrint(kitchenEsc, '', ps.paperWidth);
+          const r = await thermalPrint(kitchenEsc, '', ps.paperWidth);
+          if (r.success) thermalSucceeded = true;
         }
       }
 
-      return; // thermal done ✓
+      // Only skip browser fallback when thermal actually worked
+      if (thermalSucceeded) return;
     }
   } catch (e) {
     console.warn('[printReceiptSection] Thermal error, falling back to browser:', e);
   }
 
   // ── Browser HTML fallback ─────────────────────────────────────────────────
+  // printReceiptSection is only called from user-initiated button presses,
+  // never from auto-print. Browser print is acceptable here (user accepted it).
   if (section === 'customer' || section === 'both') {
     const customerHtml = await buildReceiptPreviewHtml(data);
     _printQueue.push({ html: customerHtml, paperWidth: '80mm', isFullDoc: true });
@@ -858,97 +985,17 @@ export async function printReceiptSection(
 export async function openReceiptPreviewWindow(data: TaxInvoiceData): Promise<void> {
   const customerHtml = await buildReceiptPreviewHtml(data);
   const kitchenHtml = buildEmployeeReceiptPreviewHtml(data);
-  const orderNumDisplay = fmtOrderNum(data.orderNumber);
 
-  const win = window.open('', '_blank', 'width=900,height=900,scrollbars=yes,resizable=yes');
-  if (!win) {
-    // Popup blocked — fall back to printing both
-    await printReceiptSection(data, 'both');
-    return;
-  }
-  // HTML-escape the order number for safe interpolation in the static shell.
-  const safeOrderNum = String(orderNumDisplay).replace(/[&<>"']/g, c => (
-    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string
-  ));
-
-  // Static shell — contains ZERO untrusted data. Receipt HTML is injected
-  // into iframe `srcdoc` from the opener side (no inline script needed).
-  const wrapperHtml = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8">
-<title>معاينة فواتير الطلب #${safeOrderNum}</title>
-<style>
-  *{box-sizing:border-box;margin:0;padding:0;}
-  body{font-family:'Cairo',Tahoma,Arial,sans-serif;background:#e8e8e8;padding:18px;text-align:center;color:#222;}
-  .topbar{margin-bottom:18px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;align-items:center;}
-  h2{font-size:18px;font-weight:900;margin-left:auto;margin-right:auto;color:#111;}
-  .btn{padding:11px 22px;font-size:13px;border:none;border-radius:10px;cursor:pointer;font-weight:800;display:inline-flex;align-items:center;gap:6px;box-shadow:0 2px 6px rgba(0,0,0,.1);}
-  .btn-cust{background:#1e40af;color:#fff;}
-  .btn-kit{background:#b45309;color:#fff;}
-  .btn-both{background:#111;color:#fff;}
-  .btn-close{background:#6b7280;color:#fff;}
-  .frames{display:flex;gap:24px;flex-wrap:wrap;justify-content:center;align-items:flex-start;}
-  .col{display:flex;flex-direction:column;align-items:center;gap:10px;}
-  .label{font-size:13px;font-weight:800;color:#222;background:#fff;padding:6px 18px;border-radius:20px;border:2px solid #ccc;}
-  iframe{border:none;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.18);background:#fff;}
-  @media print{
-    body{background:#fff;padding:0;}
-    .topbar,.label{display:none!important;}
-    .frames{display:block;}
-    .col{display:block;page-break-after:always;}
-    .col:last-child{page-break-after:auto;}
-    iframe{box-shadow:none;border-radius:0;width:80mm!important;height:auto!important;}
-    @page{size:80mm auto;margin:0;}
-  }
-</style></head><body>
-<div class="topbar">
-  <h2>📄 معاينة فواتير الطلب #${safeOrderNum}</h2>
-  <button class="btn btn-cust" id="btn-cust">🖨️ طباعة فاتورة العميل</button>
-  <button class="btn btn-kit"  id="btn-kit">🍳 طباعة المطبخ</button>
-  <button class="btn btn-both" id="btn-both">🖨️ طباعة الكل</button>
-  <button class="btn btn-close" id="btn-close">✕ إغلاق</button>
-</div>
-<div class="frames">
-  <div class="col">
-    <div class="label">📄 نسخة العميل</div>
-    <iframe id="cust" width="340" height="760" sandbox="allow-same-origin allow-modals"></iframe>
-  </div>
-  <div class="col">
-    <div class="label">🍳 نسخة المطبخ</div>
-    <iframe id="kit"  width="340" height="760" sandbox="allow-same-origin allow-modals"></iframe>
-  </div>
-</div>
-</body></html>`;
-
-  win.document.open();
-  win.document.write(wrapperHtml);
-  win.document.close();
-
-  // Inject receipt HTML safely via srcdoc (no script-context interpolation),
-  // and wire buttons from this side — no untrusted text touches inline JS.
-  const wireUp = () => {
-    try {
-      const doc = win.document;
-      const custEl = doc.getElementById('cust') as HTMLIFrameElement | null;
-      const kitEl  = doc.getElementById('kit')  as HTMLIFrameElement | null;
-      if (custEl) custEl.srcdoc = customerHtml;
-      if (kitEl)  kitEl.srcdoc  = kitchenHtml;
-      doc.getElementById('btn-cust')?.addEventListener('click', () => {
-        try { custEl?.contentWindow?.focus(); custEl?.contentWindow?.print(); } catch {}
-      });
-      doc.getElementById('btn-kit')?.addEventListener('click', () => {
-        try { kitEl?.contentWindow?.focus(); kitEl?.contentWindow?.print(); } catch {}
-      });
-      doc.getElementById('btn-both')?.addEventListener('click', () => {
-        try { win.focus(); win.print(); } catch {}
-      });
-      doc.getElementById('btn-close')?.addEventListener('click', () => {
-        try { win.close(); } catch {}
-      });
-    } catch (e) {
-      console.warn('[openReceiptPreviewWindow] wireUp error:', e);
-    }
-  };
-  // Run after document.write settles
-  setTimeout(wireUp, 30);
+  // ── MANDATORY on every platform: NEVER open a popup window / visible iframe ──
+  // Any popup or on-screen iframe (Android WebView especially, but also
+  // desktop/iOS edge cases) can trigger the viewport-shrink bug or a
+  // blocked/blank window. Printing must always happen fully in the
+  // background — no new window ever opens around the POS screen. Both
+  // receipts print directly via the same no-iframe path used everywhere else.
+  await _printDirectAsync(customerHtml, '80mm', true);
+  await new Promise(r => setTimeout(r, 300));
+  await _printDirectAsync(kitchenHtml, '80mm', true);
+  return;
 }
 
 export async function printBulkEmployeeInvoices(orders: any[]): Promise<void> {
@@ -957,6 +1004,7 @@ export async function printBulkEmployeeInvoices(orders: any[]): Promise<void> {
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <style>
     body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; direction: rtl; }
     .invoice-page { width: 80mm; padding: 10px; border-bottom: 2px dashed #000; page-break-after: always; }
@@ -1091,118 +1139,143 @@ export async function buildReceiptPreviewHtml(data: TaxInvoiceData): Promise<str
     </div>` : '';
   })() : '';
 
+  // Payment method label in Arabic
+  const pmLabel =
+    data.paymentMethod === 'cash'   ? 'نقدي' :
+    data.paymentMethod === 'card'   ? 'شبكة' :
+    data.paymentMethod === 'split'  ? 'مقسّم' :
+    data.paymentMethod === 'qahwa-card' ? 'بطاقة تسالي' :
+    (data.paymentMethod || 'نقدي');
+
+  const pmIcon =
+    data.paymentMethod === 'cash'   ? '💵' :
+    data.paymentMethod === 'card'   ? '💳' :
+    data.paymentMethod === 'split'  ? '⇄' :
+    data.paymentMethod === 'qahwa-card' ? '🎴' : '💵';
+
+  const loyaltyHtml = (data as any).loyaltyPoints ? `
+  <div style="margin:0 8px 6px;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:6px 10px;text-align:center;font-size:11px;color:#166534;font-weight:700;">
+    ⭐ +${(data as any).loyaltyPoints} نقطة أضيفت لرصيدك
+  </div>` : '';
+
+  // ── رأس تسالي كرومش ──
+  const tasaliHeaderHtml = `
+    <div style="text-align:center;padding:6px 0 10px;">
+      <div style="font-size:28px;font-weight:700;color:#000;letter-spacing:6px;text-transform:uppercase;line-height:1;">TASALI</div>
+      <div style="font-size:17px;font-weight:700;color:#000;letter-spacing:4px;line-height:1.3;direction:rtl;margin-top:2px;">كـرومـش</div>
+      <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin:5px 0 2px;">
+        <span style="flex:1;height:1px;background:#000;max-width:45px;display:block;"></span>
+        <span style="font-size:10px;color:#000;letter-spacing:3px;">QURUMSH</span>
+        <span style="flex:1;height:1px;background:#000;max-width:45px;display:block;"></span>
+      </div>
+    </div>`;
+
   return `<!DOCTYPE html><html dir="rtl"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
-body{font-family:Tahoma,Arial,'Segoe UI',sans-serif;direction:rtl;background:#e0ddd8;display:flex;justify-content:center;align-items:flex-start;padding:20px 10px;min-height:100vh;}
-.paper{background:#fff;width:300px;box-shadow:0 4px 24px rgba(0,0,0,.22);font-size:13px;color:#111;line-height:1.5;padding-bottom:16px;}
+body{font-family:'Cairo',Tahoma,Arial,sans-serif;direction:rtl;background:#d6d6d6;display:flex;justify-content:center;align-items:flex-start;padding:24px 10px;min-height:100vh;color:#000;}
+.paper{background:#fff;width:302px;padding:12px 12px 10px;box-shadow:0 2px 8px rgba(0,0,0,.18),0 8px 32px rgba(0,0,0,.12);}
+.label{background:#000;color:#fff;padding:2px 8px;border-radius:4px;font-size:13px;font-weight:bold;margin-bottom:8px;display:inline-block;}
+.header{text-align:center;border-bottom:1px solid #000;padding-bottom:10px;margin-bottom:10px;}
+.website{font-size:13px;font-weight:bold;color:#b45309;margin-bottom:4px;}
+.head-line{font-size:11.5px;margin:2px 0;}
+.order-line{font-size:13px;font-weight:bold;margin-top:4px;}
+.info-block{margin-bottom:10px;font-size:12px;border-bottom:1px dashed #ccc;padding-bottom:6px;}
+.info-block div{padding:1px 0;}
+.item-row{display:flex;justify-content:space-between;align-items:flex-start;padding:4px 0;border-bottom:1px dashed #eee;font-size:12.5px;}
+.item-name{flex:1;text-align:right;font-weight:600;}
+.item-extra{font-size:10.5px;color:#666;margin-top:2px;font-weight:400;}
+.item-disc{font-size:10.5px;color:#16a34a;margin-top:2px;}
+.item-price{width:60px;text-align:left;flex-shrink:0;direction:ltr;}
+.totals{margin-top:10px;}
+.row{display:flex;justify-content:space-between;margin:4px 0;font-size:12.5px;}
+.row span:last-child{direction:ltr;}
+.total{font-weight:bold;font-size:16px;border-top:2px solid #000;padding-top:6px;margin-top:8px;}
+.split-row{font-size:11px;color:#555;margin:2px 0;}
+.change-box{background:#f0fdf4;border:1px solid #86efac;border-radius:6px;margin:8px 0 2px;padding:6px 10px;}
+.change-row{display:flex;justify-content:space-between;font-size:11.5px;color:#166534;}
+.change-row span:last-child{direction:ltr;font-weight:700;}
+.car-box{margin:8px 0 4px;background:#fef9c3;border:1px solid #fbbf24;border-radius:6px;padding:6px 10px;font-size:11.5px;font-weight:700;text-align:center;}
+.notes-box{margin:8px 0 4px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:6px 10px;font-size:11.5px;line-height:1.7;}
+.loyalty-box{margin:8px 0 4px;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:6px 10px;text-align:center;font-size:11px;color:#166534;font-weight:700;}
+.qr-container{text-align:center;margin-top:10px;}
+.footer{text-align:center;margin-top:12px;font-size:11px;color:#666;}
 @media print{
   @page{size:80mm auto;margin:0;}
-  body{background:#fff!important;padding:0!important;}
+  body{background:#fff!important;padding:0!important;display:block!important;}
   .paper{width:80mm!important;box-shadow:none!important;}
 }
 </style></head><body><div class="paper">
 
-  <!-- ① مسافة علوية -->
-  <div style="height:16px;"></div>
-
-  <!-- ② رقم الطلب -->
-  <div style="text-align:center;font-weight:900;font-size:26px;letter-spacing:3px;padding:6px 0 2px;">#${orderNumDisplay}</div>
-
-  <!-- ③ اسم المنشأة + بيانات -->
-  <div style="text-align:center;font-size:12px;line-height:1.9;padding:4px 10px 6px;">
-    <div style="font-weight:900;font-size:16px;letter-spacing:1px;">${COMPANY_NAME}</div>
-    ${data.vatNumber ? `<div style="direction:ltr;font-size:11px;color:#555;">${data.vatNumber}</div>` : ''}
-    <div style="direction:ltr;font-size:11px;">${fmtDate} · ${fmtTime}</div>
+  <!-- ══ رأس الفاتورة ══ -->
+  <div class="header">
+    <div class="label">إيصال العميل (فاتورة ضريبية)</div>
+    ${tasaliHeaderHtml}
+    <div class="website">${brand.website}</div>
+    <div class="head-line">الرقم الضريبي: ${data.vatNumber || VAT_NUMBER}</div>
+    <div class="order-line">رقم الطلب: #${orderNumDisplay}</div>
+    <div class="head-line" style="direction:ltr;">${fmtDate} ${fmtTime}</div>
   </div>
 
-  ${solidLine}
-
-  <!-- ④ نوع الطلب -->
-  <div style="text-align:center;font-size:13px;font-weight:700;padding:6px 0;">
-    ${orderTypeLabel || 'طلب'}${data.tableNumber ? ` — طاولة ${data.tableNumber}` : ''}
+  <!-- ══ بيانات الطلب ══ -->
+  <div class="info-block">
+    <div>${orderTypeLabel ? `نوع الطلب: ${orderTypeLabel}` : ''}</div>
+    ${data.tableNumber ? `<div>طاولة: ${data.tableNumber}</div>` : ''}
+    ${data.employeeName ? `<div>الموظف: ${data.employeeName}</div>` : ''}
   </div>
 
-  ${solidLine}
+  <!-- ══ الأصناف ══ -->
+  ${data.items.map(item => {
+    const up = getItemUnitPrice(item);
+    const itemDisc = parseNumber(item.itemDiscount);
+    const lineTotal = item.quantity * up - itemDisc;
+    const addons = getItemAddons(item).map((a: any) => a.nameAr).join('، ');
+    const sz = getItemSelectedSize(item);
+    const extra = [sz ? `الحجم: ${sz}` : '', addons ? `+ ${addons}` : ''].filter(Boolean).join(' · ');
+    return `<div class="item-row">
+      <div class="item-name">
+        ${item.coffeeItem.nameAr} &times;${item.quantity}
+        ${extra ? `<div class="item-extra">${extra}</div>` : ''}
+        ${itemDisc > 0 ? `<div class="item-disc">خصم -﷼${itemDisc.toFixed(2)}</div>` : ''}
+      </div>
+      <div class="item-price">${lineTotal.toFixed(2)}</div>
+    </div>`;
+  }).join('')}
 
-  <!-- ⑤ عنوان الأصناف -->
-  <div style="display:flex;justify-content:space-between;font-size:11px;color:#666;font-weight:700;padding:5px 10px 3px;">
-    <span>السعر</span><span>الصنف</span>
-  </div>
-  ${dashLine}
-
-  <!-- ⑥ المنتجات -->
-  ${itemsHtml}
-
-  <!-- ⑦ عدد المنتجات -->
-  <div style="text-align:center;font-size:12px;color:#444;padding:6px 0 4px;">عدد المنتجات: ${totalQty}</div>
-  ${solidLine}
-
-  <!-- ⑧ الحساب -->
-  <div style="padding:6px 10px 4px;">
-    <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;color:#555;">
-      <span style="direction:ltr;">﷼ ${subtotalBeforeVat.toFixed(2)}</span>
-      <span>المجموع قبل الضريبة</span>
-    </div>
-    <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;color:#555;">
-      <span style="direction:ltr;">﷼ ${vat.toFixed(2)}</span>
-      <span>ضريبة القيمة المضافة 15%</span>
-    </div>
-    ${disc > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;color:#16a34a;">
-      <span style="direction:ltr;">-﷼ ${disc.toFixed(2)}</span><span>الخصم</span>
-    </div>` : ''}
-    <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:900;padding:7px 0 4px;border-top:2px solid #111;margin-top:6px;">
-      <span style="direction:ltr;">﷼ ${totalAmount.toFixed(2)}</span>
-      <span>الإجمالي</span>
-    </div>
-    <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;">
-      <span style="font-weight:700;">${data.paymentMethod}</span>
-      <span style="color:#555;">طريقة الدفع</span>
-    </div>
+  <!-- ══ الحساب ══ -->
+  <div class="totals">
+    <div class="row"><span>المجموع (غير شامل الضريبة):</span><span>${subtotalBeforeVat.toFixed(2)} ر.س</span></div>
+    <div class="row"><span>ضريبة القيمة المضافة (15%):</span><span>${vat.toFixed(2)} ر.س</span></div>
+    ${disc > 0 ? `<div class="row" style="color:#16a34a;"><span>الخصم:</span><span>-${disc.toFixed(2)} ر.س</span></div>` : ''}
+    <div class="row total"><span>الإجمالي شامل الضريبة:</span><span>${totalAmount.toFixed(2)} ر.س</span></div>
+    <div class="row" style="margin-top:5px;font-size:11px;"><span>طريقة الدفع:</span><span>${pmIcon} ${pmLabel}</span></div>
     ${data.splitPayment ? `
-    <div style="border-top:1px dashed #ccc;margin:4px 0 2px;"></div>
-    ${data.splitPayment.cash > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600;padding:2px 0;">
-      <span style="direction:ltr;">﷼ ${data.splitPayment.cash.toFixed(2)}</span><span>💵 نقدي</span>
-    </div>` : ''}
-    ${data.splitPayment.card > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600;padding:2px 0;">
-      <span style="direction:ltr;">﷼ ${data.splitPayment.card.toFixed(2)}</span><span>💳 شبكة</span>
-    </div>` : ''}
-    <div style="border-top:1px dashed #ccc;margin:2px 0;"></div>` : ''}
+    <div class="split-row row">${data.splitPayment.cash > 0 ? `<span>نقدي: ${data.splitPayment.cash.toFixed(2)}</span>` : '<span></span>'}${data.splitPayment.card > 0 ? `<span>شبكة: ${data.splitPayment.card.toFixed(2)}</span>` : ''}</div>` : ''}
     ${(data.cashReceived && data.cashReceived > 0 && !data.splitPayment) ? `
-    <div style="border-top:1px dashed #ccc;margin:4px 0 2px;"></div>
-    <div style="display:flex;justify-content:space-between;font-size:12px;color:#555;padding:2px 0;">
-      <span style="direction:ltr;font-weight:600;">﷼ ${data.cashReceived.toFixed(2)}</span><span>المبلغ المستلم</span>
-    </div>
-    <div style="display:flex;justify-content:space-between;font-size:12px;color:#16a34a;padding:2px 0;font-weight:700;">
-      <span style="direction:ltr;">﷼ ${Math.max(0, data.cashReceived - totalAmount).toFixed(2)}</span><span>↩ الباقي للعميل</span>
-    </div>
-    <div style="border-top:1px dashed #ccc;margin:2px 0;"></div>` : ''}
+    <div class="change-box">
+      <div class="change-row"><span>المبلغ المستلم:</span><span>${data.cashReceived.toFixed(2)} ر.س</span></div>
+      <div class="change-row" style="font-weight:900;font-size:13px;margin-top:2px;"><span>الباقي للعميل:</span><span>${Math.max(0, data.cashReceived - totalAmount).toFixed(2)} ر.س</span></div>
+    </div>` : ''}
   </div>
 
-  ${solidLine}
-
-  <!-- بيانات السيارة (إن وُجدت) -->
+  <!-- ══ بيانات السيارة ══ -->
   ${carInfoHtml}
 
-  <!-- ملاحظات العميل -->
-  ${(data as any).notes ? `
-  <div style="margin:6px 10px 0;background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;padding:8px 12px;font-size:12px;line-height:1.7;">
-    <span style="font-weight:700;color:#92400e;">ملاحظات: </span><span>${(data as any).notes}</span>
-  </div>` : ''}
+  <!-- ══ ملاحظات ══ -->
+  ${(data as any).notes ? `<div class="notes-box"><strong>ملاحظات:</strong> ${(data as any).notes}</div>` : ''}
 
-  <!-- الكاشير + شعار -->
-  <div style="padding:8px 10px 4px;text-align:center;">
-    ${data.employeeName ? `<div style="font-size:12px;color:#555;">تمت خدمتك من قبل: <strong>${data.employeeName}</strong></div>` : ''}
-    <div style="font-size:12px;font-weight:800;padding:4px 0;">"قهوة تُقال .. وورد يُهدى"</div>
+  <!-- ══ كود QR ZATCA ══ -->
+  ${zatcaQrSvg ? `<div class="qr-container">${zatcaQrSvg}<div style="font-size:10px;margin-top:4px;">امسح للتحقق من الفاتورة</div></div>` : ''}
+
+  <!-- ══ نقاط الولاء ══ -->
+  ${(data as any).loyaltyPoints ? `<div class="loyalty-box">⭐ +${(data as any).loyaltyPoints} نقطة أضيفت لرصيدك</div>` : ''}
+
+  <!-- ══ التذييل ══ -->
+  <div class="footer">
+    <div style="font-weight:bold;margin-bottom:4px;">${brand.website}</div>
+    شكراً لزيارتكم!
   </div>
-
-  ${dashLine}
-
-  <!-- Powered by -->
-  <div style="text-align:center;font-size:11px;color:#aaa;padding:4px 0 6px;">
-    Powered by <strong style="color:#2D9B6E;">QIROX STUDIO</strong>
-  </div>
-
 
 </div></body></html>`;
 }
@@ -1221,89 +1294,70 @@ export function buildEmployeeReceiptPreviewHtml(data: TaxInvoiceData): string {
       : orderTypeStr === 'car_pickup' || orderTypeStr === 'car-pickup' ? 'استلام بالسيارة'
       : orderTypeStr;
 
-  const orderTypeBg =
-    orderTypeStr === 'car_pickup' || orderTypeStr === 'car-pickup' ? '#dc2626' :
-    orderTypeStr === 'delivery' ? '#2563eb' :
-    orderTypeStr === 'dine_in' || orderTypeStr === 'dine-in' ? '#7c3aed' : '#111';
-
-  const itemsHtml = data.items.map((item, idx) => {
-    const addons = getItemAddons(item).map((a: any) => a.nameAr).join('، ');
+  const itemsHtml = data.items.map((item) => {
+    const addons = getItemAddons(item).map((a: any) => a.nameAr).join(' &bull; ');
     const sz2 = getItemSelectedSize(item);
     return `
-      <div style="padding:16px 0 12px 0;${idx > 0 ? 'border-top:2px dashed #bbb;margin-top:4px;' : ''}">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;">
-          <div style="font-size:20px;font-weight:800;line-height:1.6;flex:1;">${item.coffeeItem.nameAr}</div>
-          <div style="font-size:28px;font-weight:900;background:#111;color:#fff;padding:4px 14px;border-radius:8px;flex-shrink:0;">×${item.quantity}</div>
+      <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #eee;align-items:flex-start;">
+        <div style="flex:1;padding-left:8px;">
+          <div style="font-size:17px;font-weight:600;">${item.coffeeItem.nameAr}</div>
+          ${sz2 ? `<div style="font-size:13px;color:#2563eb;margin-top:3px;">الحجم: ${sz2}</div>` : ''}
+          ${addons ? `<div style="font-size:13px;color:#555;margin-top:3px;">+ ${addons}</div>` : ''}
         </div>
-        ${sz2 ? `<div style="font-size:16px;color:#2563eb;margin-top:8px;margin-bottom:6px;padding-right:6px;line-height:1.8;">▸ الحجم: ${sz2}</div>` : ''}
-        ${addons ? `<div style="font-size:16px;color:#444;margin-top:8px;padding-right:6px;line-height:1.8;">▸ إضافات: ${addons}</div>` : ''}
+        <div style="font-size:26px;font-weight:bold;border:2px solid #000;padding:2px 10px;border-radius:4px;flex-shrink:0;">x${item.quantity}</div>
       </div>`;
   }).join('');
 
+  const carType  = (data as any).carInfo?.carType  || '';
+  const carColor = (data as any).carInfo?.carColor || (data as any).carColor || '';
+  const carPlate = (data as any).carInfo?.plateNumber || (data as any).plateNumber || '';
+  const carParts = [carColor, carType, carPlate ? `لوحة: ${carPlate}` : ''].filter(Boolean);
+
   return `<!DOCTYPE html><html dir="rtl"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <style>
-*{margin:0;padding:0;box-sizing:border-box;border:0!important;}
-hr{display:none!important;}
-body{font-family:'Cairo',Tahoma,Arial,sans-serif;direction:rtl;background:#e8e6e0;display:flex;justify-content:center;align-items:flex-start;padding:24px 10px;min-height:100vh;}
-.paper{background:#fff;width:320px;box-shadow:0 4px 20px rgba(0,0,0,.2);}
-.tape{height:14px;background:repeating-linear-gradient(90deg,#fff 0,#fff 12px,#e8e6e0 12px,#e8e6e0 24px);}
-.body{padding:18px 16px;}
-.c{text-align:center;}
-.gap{height:10px;}
-.row{display:flex;justify-content:space-between;padding:10px 0;font-size:16px;border-bottom:1px solid #eee;line-height:1.8;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Cairo',Tahoma,Arial,sans-serif;direction:rtl;background:#d6d6d6;display:flex;justify-content:center;align-items:flex-start;padding:24px 10px;min-height:100vh;color:#000;}
+.paper{background:#fff;width:302px;padding:12px 12px 10px;box-shadow:0 2px 8px rgba(0,0,0,.18),0 8px 32px rgba(0,0,0,.12);}
+.label{color:#fff;padding:2px 8px;border-radius:4px;font-size:13px;font-weight:bold;margin-bottom:8px;display:inline-block;}
+.header{text-align:center;border-bottom:1px solid #000;padding-bottom:10px;margin-bottom:10px;}
+.order-num{font-size:28px;font-weight:bold;margin:8px 0;}
+.table-badge{font-size:16px;font-weight:bold;color:#b45309;border:2px solid #b45309;padding:3px 8px;margin-top:5px;display:inline-block;}
+.emp-line{font-size:11px;color:#555;margin-top:6px;}
+.car-box{margin:10px 0;background:#fef9c3;border:1px solid #fbbf24;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:700;text-align:center;}
+.notes-box{margin-top:12px;background:#fef3c7;border:2px solid #f59e0b;border-radius:8px;padding:10px 12px;font-size:13px;line-height:1.7;}
+.footer-note{text-align:center;margin-top:12px;font-weight:bold;font-size:12px;border-top:1px dashed #000;padding-top:8px;}
 @media print{
   @page{size:80mm auto;margin:0;}
-  *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;border:0!important;}
-  hr{display:none!important;}
-  body{display:block!important;background:#fff!important;padding:0!important;min-height:0!important;}
-  .paper{width:76mm!important;max-width:76mm!important;margin:0!important;box-shadow:none!important;}
-  .tape{display:none!important;}
-  .body{padding:6px 4px 12px!important;}
+  body{background:#fff!important;padding:0!important;display:block!important;}
+  .paper{width:80mm!important;box-shadow:none!important;}
 }
 </style></head><body><div class="paper">
-<div class="tape"></div>
-<div class="body">
 
-  <!-- 2 blank lines at start of every invoice -->
-  <div style="height:36px;"></div>
+  <!-- ══ رأس الفاتورة ══ -->
+  <div class="header">
+    <div class="label" style="background:#444;">إيصال الموظف (التحضير)</div>
+    <div class="order-num">#${orderNumDisplay}</div>
+    ${orderTypeLabel ? `<div style="font-size:13px;font-weight:700;color:#333;">${orderTypeLabel}</div>` : ''}
+    ${data.tableNumber && !(orderTypeStr === 'dine_in' || orderTypeStr === 'dine-in') ? `<div class="table-badge">طاولة: ${data.tableNumber}</div>` : ''}
+    <div class="emp-line">الموظف: ${data.employeeName || '—'} &nbsp;|&nbsp; ${fmtTime} — ${fmtDate}</div>
+  </div>
 
-  <!-- Header -->
-  <div class="c" style="font-size:20px;font-weight:900;padding-bottom:8px;border-bottom:3px double #000;">📋 نسخة الموظف / المطبخ</div>
-  <div class="gap"></div>
-  <div class="c" style="font-size:54px;font-weight:900;letter-spacing:4px;margin:6px 0;">#${orderNumDisplay}</div>
+  <!-- ══ الأصناف ══ -->
+  <div class="items">${itemsHtml}</div>
 
-  <!-- Order type badge -->
-  ${orderTypeLabel ? `<div class="c" style="margin:6px 0;"><span style="display:inline-block;background:${orderTypeBg};color:#fff;font-size:16px;font-weight:700;padding:5px 18px;border-radius:20px;">${orderTypeLabel}</span></div>` : ''}
+  <!-- ══ بيانات السيارة ══ -->
+  ${carParts.length ? `<div class="car-box">🚗 ${carParts.join(' | ')}</div>` : ''}
 
-  <div style="height:18px;"></div>
-  <div style="border-top:2px solid #000;width:100%;height:0;"></div>
-  <div style="height:18px;"></div>
-
-  <!-- Info rows -->
-  <div class="row"><span style="color:#666;">الوقت:</span><span style="font-weight:700;">${fmtTime} — ${fmtDate}</span></div>
-  ${data.employeeName ? `<div class="row"><span style="color:#666;">الكاشير:</span><span style="font-weight:700;">${data.employeeName}</span></div>` : ''}
-  ${data.tableNumber && !(orderTypeStr === 'dine_in' || orderTypeStr === 'dine-in') ? `<div class="row"><span style="color:#666;">الطاولة:</span><span style="font-weight:900;font-size:18px;">رقم ${data.tableNumber}</span></div>` : ''}
-
-  <div style="height:18px;"></div>
-  <div style="border-top:2px solid #000;width:100%;height:0;"></div>
-  <div style="height:18px;"></div>
-
-  <!-- Items -->
-  <div style="font-size:15px;font-weight:700;color:#666;margin-bottom:4px;">الأصناف (${data.items.length} صنف):</div>
-  ${itemsHtml}
-
-  <!-- ملاحظات الطلب -->
+  <!-- ══ ملاحظات ══ -->
   ${(data as any).notes ? `
-  <div style="height:18px;"></div>
-  <div style="border-top:2px solid #000;width:100%;height:0;"></div>
-  <div style="height:14px;"></div>
-  <div style="background:#fef3c7;border:2px solid #f59e0b;border-radius:8px;padding:12px 14px;font-size:16px;line-height:1.8;">
-    <div style="font-weight:900;color:#92400e;font-size:15px;margin-bottom:4px;">⚠ ملاحظات العميل:</div>
+  <div class="notes-box">
+    <div style="font-weight:900;color:#92400e;margin-bottom:4px;">⚠ ملاحظات العميل:</div>
     <div style="font-weight:700;">${(data as any).notes}</div>
   </div>` : ''}
 
-</div>
-<div class="tape"></div>
+  <div class="footer-note">يرجى التحقق من الأصناف قبل التسليم</div>
+
 </div></body></html>`;
 }
 
@@ -1419,6 +1473,16 @@ export async function printTaxInvoice(data: TaxInvoiceData, config: PrintConfig 
       }
     } catch (e) {
       console.warn('[PrintTaxInvoice] Thermal print error:', e);
+      // Always surface a toast — silently swallowing this left auto-print
+      // failures completely invisible to the cashier on some platforms.
+      window.dispatchEvent(new CustomEvent('qirox:print-error', {
+        detail: { error: (e as any)?.message || 'فشل الاتصال بالطابعة — تحقق من إعدادات الطابعة الحرارية', mode: 'thermal' }
+      }));
+      // On Android, window.print() blocks the entire UI thread — NEVER use it
+      // as a fallback.
+      if (_isAndroid) {
+        return;
+      }
     }
   }
 
@@ -1428,85 +1492,46 @@ export async function printTaxInvoice(data: TaxInvoiceData, config: PrintConfig 
   const customerHtml = await buildReceiptPreviewHtml(data);
   const employeeHtml = buildEmployeeReceiptPreviewHtml(data);
 
-  // ── Helper: print one HTML document via a hidden iframe ───────────────────
+  // ── Helper: print one HTML document ───────────────────────────────────────
   const printOneHtml = (html: string): Promise<void> => _printDirectAsync(html, '80mm', true);
 
   if (shouldAutoPrint) {
+    // ── Android guard ────────────────────────────────────────────────────────
+    // window.print() on Android WebView blocks the JS thread synchronously,
+    // freezing the entire POS UI for the duration of the print job.
+    // All Android printing MUST go through the thermal ESC/POS path above.
+    // If we reach here on Android it means thermal failed or is not configured —
+    // dispatch an error instead of freezing the screen.
+    if (_isAndroid) {
+      window.dispatchEvent(new CustomEvent('qirox:print-error', {
+        detail: { error: 'يرجى ضبط الطابعة الحرارية في إعدادات الطباعة', mode: 'browser' }
+      }));
+      return;
+    }
+
     const { loadPrinterSettings } = await import('./thermal-printer');
     const ps = loadPrinterSettings();
     const customerCopies = Math.max(1, Math.min(5, ps.customerCopies || 1));
     const kitchenCopies  = ps.autoKitchenCopy ? Math.max(1, Math.min(5, ps.kitchenCopies || 1)) : 0;
 
-    // Print customer copies as HTML — fast, accurate, no image conversion
+    // Desktop / iOS: print sequentially
     for (let i = 0; i < customerCopies; i++) {
       if (i > 0) await new Promise(r => setTimeout(r, 150));
       await printOneHtml(customerHtml);
     }
-    // Print kitchen copies as HTML (different design for kitchen staff)
     for (let i = 0; i < kitchenCopies; i++) {
       await new Promise(r => setTimeout(r, 150));
       await printOneHtml(employeeHtml);
     }
   } else {
-    // Manual preview window — shows both receipts side by side
-    const win = window.open('', '_blank', 'width=820,height=860,scrollbars=yes,resizable=yes');
-    if (win) {
-      win.document.open();
-      win.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8">
-<title>فواتير الطلب - ${displayInvoiceNumber}</title>
-<style>
-  *{box-sizing:border-box;margin:0;padding:0;}
-  body{font-family:Tahoma,Arial,sans-serif;background:#e8e8e8;padding:16px;text-align:center;}
-  .toolbar{margin-bottom:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}
-  .btn{padding:10px 22px;font-size:14px;border:none;border-radius:8px;cursor:pointer;font-weight:700;}
-  .btn-print{background:#1a1a1a;color:#fff;}
-  .btn-cust{background:#1e40af;color:#fff;}
-  .btn-emp{background:#b45309;color:#fff;}
-  .btn-close{background:#6b7280;color:#fff;}
-  .frames{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;align-items:flex-start;}
-  .col{display:flex;flex-direction:column;align-items:center;}
-  h3{font-size:12px;font-weight:700;color:#333;margin-bottom:8px;background:#fff;padding:4px 14px;border-radius:20px;border:1px solid #ccc;}
-  iframe{border:none;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.15);}
-  @media print{
-    body{background:#fff;padding:0;}
-    .toolbar,.no-print,h3{display:none!important;}
-    .frames{display:block;}
-    .col{display:block;page-break-after:always;}
-    .col:last-child{page-break-after:auto;}
-    iframe{box-shadow:none;border-radius:0;width:80mm!important;}
-    @page{size:80mm auto;margin:0;}
-  }
-</style></head><body>
-  <div class="toolbar no-print">
-    <button class="btn btn-print" onclick="window.print()">طباعة النسختين</button>
-    <button class="btn btn-cust" onclick="printOne('cust')">فاتورة العميل فقط</button>
-    <button class="btn btn-emp" onclick="printOne('emp')">نسخة الموظف فقط</button>
-    <button class="btn btn-close" onclick="window.close()">اغلاق</button>
-  </div>
-  <div class="frames">
-    <div class="col" id="col-cust">
-      <h3>فاتورة العميل</h3>
-      <iframe id="fr-cust" width="320" height="700" srcdoc="${customerHtml.replace(/"/g, '&quot;').replace(/'/g, '&#39;')}"></iframe>
-    </div>
-    <div class="col" id="col-emp">
-      <h3>نسخة الموظف</h3>
-      <iframe id="fr-emp" width="320" height="700" srcdoc="${employeeHtml.replace(/"/g, '&quot;').replace(/'/g, '&#39;')}"></iframe>
-    </div>
-  </div>
-  <script>
-    function printOne(which){
-      var hideId=which==='cust'?'col-emp':'col-cust';
-      var el=document.getElementById(hideId);
-      var prev=el.style.display;
-      el.style.display='none';
-      window.print();
-      setTimeout(function(){el.style.display=prev;},500);
-    }
-  </script>
-</body></html>`);
-      win.document.close();
-    }
-    return;
+    // MANDATORY on every platform (Android, desktop, iOS): never open a
+    // popup window or visible iframe for a manual preview/print action —
+    // a popup can be blank/blocked, or trigger the viewport-shrink bug on
+    // Android WebView. Both receipts print directly in the background;
+    // no new window is ever allowed to appear around the POS screen.
+    await printOneHtml(customerHtml);
+    await new Promise(r => setTimeout(r, 300));
+    await printOneHtml(employeeHtml);
   }
 }
 
@@ -1530,6 +1555,7 @@ export async function printCustomerPickupReceipt(data: TaxInvoiceData & { delive
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <title>إيصال استلام - ${data.orderNumber}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -1608,7 +1634,7 @@ export async function printCustomerPickupReceipt(data: TaxInvoiceData & { delive
     <div class="footer">
       <p style="font-weight: 600;">شكراً لزيارتكم</p>
       <p>نتمنى لكم تجربة ممتعة</p>
-      <p style="margin-top: 8px;">@TASALI QURUMSH</p>
+      <p style="margin-top: 8px;">@tasaliqurmash</p>
     </div>
   </div>
 </body>
@@ -1628,6 +1654,7 @@ export async function printCashierReceipt(data: TaxInvoiceData & { deliveryType?
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <title>نسخة الكاشير - ${data.orderNumber}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -1752,6 +1779,7 @@ export async function printAllReceipts(data: TaxInvoiceData & { deliveryType?: s
         paymentMethod: data.paymentMethod,
         paperWidth: printerSettings.paperWidth,
         feedLines: printerSettings.feedLines,
+        arabicEncoding: printerSettings.arabicEncoding,
       });
 
       // pass empty fallbackHtml so browser fallback does nothing here —
@@ -1815,6 +1843,7 @@ export async function printSimpleReceipt(data: TaxInvoiceData): Promise<void> {
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <title>إيصال - ${data.orderNumber}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -1956,7 +1985,7 @@ export async function printSimpleReceipt(data: TaxInvoiceData): Promise<void> {
       <p>شكراً لزيارتكم</p>
       <p style="font-size: 12px; color: #666;">نتمنى لكم تجربة ممتعة</p>
       <p style="margin-top: 12px; font-size: 12px;">تابعونا على وسائل التواصل الاجتماعي</p>
-      <p style="font-family: monospace;">@TASALI QURUMSH</p>
+      <p style="font-family: monospace;">@tasaliqurmash</p>
     </div>
   </div>
 

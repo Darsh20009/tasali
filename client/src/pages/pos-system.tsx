@@ -2,9 +2,13 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
 import { useTranslate } from "@/lib/useTranslate";
+import { MobileBottomNav } from "@/components/MobileBottomNav";
+import { ShadowHtml } from "@/components/shadow-html";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useRealtimeEvent, useRealtimeStatus, useRealtimeSend } from "@/hooks/useRealtimeEngine";
-import { getSoundEnabled, setSoundEnabled as saveSoundEnabled, testSound, playNotificationSound } from "@/lib/notification-sounds";
+import { getRealtimeEngine } from "@/lib/realtime-engine";
+import { getSoundEnabled, setSoundEnabled as saveSoundEnabled, testSound, playNotificationSound, playChannelSound, getChannelConfig } from "@/lib/notification-sounds";
 import { AudioUnlockBanner } from "@/components/audio-unlock-banner";
 import { 
   Coffee, ShoppingBag, Trash2, Plus, Minus, Search, 
@@ -17,7 +21,7 @@ import {
   Lock, Bell, BellOff, MonitorSmartphone, ScanLine,
   PauseCircle, Receipt, Settings, User, Wallet, RotateCcw,
   Percent, DollarSign, FolderOpen, Hash, Merge, Users, Scissors, Car,
-  Home, MoreHorizontal, Monitor, Smartphone
+  Home, MoreHorizontal
 } from "lucide-react";
 import {
   type CartSnapshot, type HeldCart as HeldCartType, type LineItemDiscount, type OrderDiscount,
@@ -39,6 +43,7 @@ import { useNotifications } from "@/hooks/use-notifications";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { queueOfflineOrder, syncOfflineOrders, countPendingOrders } from "@/lib/offline-queue";
 import type { CoffeeItem, Order, Table, Employee } from "@shared/schema";
+import tasaliLogo from "@assets/logo.png";
 import { 
   printTaxInvoice, 
   buildReceiptPreviewHtml,
@@ -48,8 +53,10 @@ import {
   printReceiptSection,
   openReceiptPreviewWindow,
   prewarmZatcaQr,
+  isAndroidDevice,
+  printHtmlInPage,
 } from "@/lib/print-utils";
-import { preRenderReceiptPng } from "@/lib/receipt-png-cache";
+import { enableKioskLock } from "@/lib/kiosk-lock";
 import { QuickSidebar } from "@/components/quick-sidebar";
 import QrPayModal from "@/components/qr-pay-modal";
 import { QrCode } from "lucide-react";
@@ -59,7 +66,8 @@ import { LoadingState } from "@/components/ui/loading-state";
 import { EmptyState } from "@/components/ui/empty-state";
 import DrinkCustomizationDialog, { type DrinkCustomization } from "@/components/drink-customization-dialog";
 import PrinterSettingsPanel from "@/components/printer-settings-panel";
-import { loadPrinterSettings } from "@/lib/thermal-printer";
+import { SoundSettingsPanel } from "@/components/sound-settings-panel";
+import { loadPrinterSettings, savePrinterSettings } from "@/lib/thermal-printer";
 import RefundDialog from "@/components/refund-dialog";
 import { PosShiftBar } from "@/components/pos-shift-bar";
 
@@ -96,21 +104,39 @@ export default function PosSystem() {
       return data ? JSON.parse(data) as Employee : null;
     } catch { return null; }
   }, []);
+
+  // ── Branch selector for admin/owner ──────────────────────────────────────
+  const isAdminOwner = employee?.role === 'admin' || employee?.role === 'owner';
+  const [posBranchId, setPosBranchId] = useState<string | null>(
+    () => isAdminOwner ? (sessionStorage.getItem('pos_branch_id') || null) : null
+  );
+  // Active branch: admin/owner uses selected, others use their assigned branch
+  const activeBranchId = isAdminOwner ? posBranchId : (employee?.branchId || null);
+  const [showBranchSelector, setShowBranchSelector] = useState(false);
+
+  const { data: allBranches = [] } = useQuery<any[]>({
+    queryKey: ['/api/branches'],
+    enabled: isAdminOwner,
+    staleTime: 5 * 60 * 1000,
+  });
+
   const { toast } = useToast();
   const { requestPermission: requestPushPermission } = useNotifications({
     userType: 'employee',
     userId: employee?.id?.toString(),
-    branchId: employee?.branchId?.toString(),
+    branchId: activeBranchId?.toString(),
     autoSubscribe: true,
   });
   
   const [selectedCategory, setSelectedCategory] = useState("all");
+  const [selectedDepartment, setSelectedDepartment] = useState<'all' | 'drinks' | 'food'>('all');
   const [searchQuery, setSearchQuery] = useState("");
   const [orderItems, setOrderItems] = useState<any[]>([]);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [orderType, setOrderType] = useState<OrderType>("dine_in");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [splitCashAmount, setSplitCashAmount] = useState("");
+  const [showCashPanel, setShowCashPanel] = useState(false);
   const [personPayments, setPersonPayments] = useState<PersonPayment[]>([
     { id: '1', method: 'cash', amount: '' },
   ]);
@@ -123,7 +149,7 @@ export default function PosSystem() {
   const [customerPoints, setCustomerPoints] = useState(0);
   const [usePoints, setUsePoints] = useState(false);
   const [splitViewMode, setSplitViewMode] = useState(false);
-  const [mobilePanelView, setMobilePanelView] = useState<'products' | 'checkout'>('products');
+  const [mobilePanelView, setMobilePanelView] = useState<'products' | 'cart'>('products');
   const [soundEnabled, setSoundEnabled] = useState(() => getSoundEnabled('pos'));
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [syncing, setSyncing] = useState(false);
@@ -134,6 +160,8 @@ export default function PosSystem() {
   const [carPreparationAlerts, setCarPreparationAlerts] = useState<any[]>([]);
   const [showCarOrdersPanel, setShowCarOrdersPanel] = useState(false);
   const [showReceiptDialog, setShowReceiptDialog] = useState(false);
+  const [showQuickPrintBar, setShowQuickPrintBar] = useState(false);
+  const [quickPrintCountdown, setQuickPrintCountdown] = useState(0);
   const [qrPayOpen, setQrPayOpen] = useState(false);
   const [qrPayOrder, setQrPayOrder] = useState<{ id: string; orderNumber: string; amount: number } | null>(null);
   const [creatingQrPay, setCreatingQrPay] = useState(false);
@@ -151,13 +179,16 @@ export default function PosSystem() {
   const [showOpenBillsDialog, setShowOpenBillsDialog] = useState(false);
   const [selectedTableForBill, setSelectedTableForBill] = useState<any>(null);
   const [billPaymentMethod, setBillPaymentMethod] = useState<PaymentMethod>("cash");
+  const [notifications, setNotifications] = useState<{ id: string; time: string; text: string; read: boolean }[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
   const [showPOSSettings, setShowPOSSettings] = useState(false);
   const [showPrinterSettings, setShowPrinterSettings] = useState(false);
+  const [showSoundSettings, setShowSoundSettings] = useState(false);
   const [printerMode] = useState(() => loadPrinterSettings().mode);
-  const [autoPrint, setAutoPrint] = useState(() => {
-    const stored = localStorage.getItem("pos-auto-print");
-    return stored === null ? true : stored === "true"; // default ON
-  });
+  // Single source of truth: printer settings ("qirox-printer-settings").
+  // The legacy "pos-auto-print" key is no longer read to avoid it going stale
+  // and silently overriding whatever the user just set in Printer Settings.
+  const [autoPrint, setAutoPrint] = useState(() => loadPrinterSettings().autoPrint);
   const [showVatLabel, setShowVatLabel] = useState(() => localStorage.getItem("pos-show-vat-label") === "true");
   const [posCustomizationItem, setPosCustomizationItem] = useState<{ item: CoffeeItem; group: CoffeeItem[]; initialCustomization?: DrinkCustomization } | null>(null);
   const [showOrderReview, setShowOrderReview] = useState(false);
@@ -167,35 +198,11 @@ export default function PosSystem() {
   const [carPlateInput, setCarPlateInput] = useState("");
   const [posZoom, setPosZoom] = useState<number>(() => {
     const saved = localStorage.getItem("pos-zoom");
-    return saved ? Number(saved) : 80;
+    return saved ? Number(saved) : 100;
   });
   const [showRefundDialog, setShowRefundDialog] = useState(false);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
-
-  // ── Device layout mode: 'auto' uses window width, 'desktop'/'mobile' forces layout ──
-  const [posLayoutMode, setPosLayoutMode] = useState<'auto' | 'desktop' | 'mobile'>(() => {
-    return (localStorage.getItem('pos-layout-mode') as 'auto' | 'desktop' | 'mobile') || 'auto';
-  });
-  const [windowWidth, setWindowWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 1024);
-
-  // ── isMobile: true when mobile tab-based layout should be shown ──────────
-  const isMobile = posLayoutMode === 'mobile' || (posLayoutMode === 'auto' && windowWidth < 768);
-
-  const cyclePosLayoutMode = () => {
-    setPosLayoutMode(prev => {
-      const next = prev === 'auto' ? 'desktop' : prev === 'desktop' ? 'mobile' : 'auto';
-      localStorage.setItem('pos-layout-mode', next);
-      return next;
-    });
-  };
-
-  const layoutModeLabel = posLayoutMode === 'desktop'
-    ? tc('وضع الحاسوب', 'Desktop mode')
-    : posLayoutMode === 'mobile'
-      ? tc('وضع الجوال', 'Mobile mode')
-      : tc('وضع تلقائي', 'Auto mode');
-  const LayoutModeIcon = posLayoutMode === 'desktop' ? Monitor : posLayoutMode === 'mobile' ? Smartphone : MonitorSmartphone;
 
   // ── Stable callback refs (prevents TDZ in keyboard useEffect) ────────────
   const newCartTabRef     = useRef<() => void>(() => {});
@@ -238,13 +245,42 @@ export default function PosSystem() {
   const { connected: wsConnected } = useRealtimeStatus();
   const { send: rtSend } = useRealtimeSend();
 
+  // Register this terminal as "pos" with its branchId so the server can filter broadcasts per branch
+  useEffect(() => {
+    const payload = {
+      clientType: 'pos',
+      branchId: activeBranchId || undefined,
+      employeeId: employee?.id || undefined,
+    };
+    getRealtimeEngine(payload);
+  }, [activeBranchId, employee?.id]);
+
   useRealtimeEvent("new_order", (order: any) => {
     queryClient.invalidateQueries({ queryKey: ["/api/orders/live"] });
     const isOnlineWebOrder = order?.channel === 'online' || order?.channel === 'web';
     const isPosOrder = order?.channel === 'pos';
-    if (isOnlineWebOrder) {
+    const isTableOrder = order?.orderType === 'dine_in' || order?.orderType === 'dine-in';
+    const isCarPickup = order?.orderType === 'car_pickup' || order?.orderType === 'car-pickup' || order?.carPickup === true;
+
+    // أضف الإشعار لقائمة الإشعارات
+    setNotifications(prev => [{
+      id: order?._id || Date.now().toString(),
+      time: new Date().toLocaleTimeString('ar', { hour: '2-digit', minute: '2-digit' }),
+      text: isTableOrder
+        ? `🪑 طلب طاولة جديد — طاولة ${order?.tableNumber || ''} (${order?.customerName || 'عميل'})`
+        : isCarPickup
+        ? `🚗 طلب سيارة — ${order?.customerName || 'عميل'} — ${Number(order?.totalAmount || 0).toFixed(2)} ر.س`
+        : `🛒 طلب جديد — ${order?.customerName || 'عميل'} — ${Number(order?.totalAmount || 0).toFixed(2)} ر.س`,
+      read: false,
+    }, ...prev.slice(0, 19)]);
+
+    if (isOnlineWebOrder || isTableOrder || isCarPickup) {
       setNewOrdersCount(prev => prev + 1);
-      if (soundEnabled) playNotificationSound('onlineOrderVoice', 1.0);
+      if (isTableOrder) {
+        playChannelSound('table');
+      } else {
+        playChannelSound('online');
+      }
       toast({
         title: t('pos.new_order_toast'),
         description: t('pos.new_order_toast_desc', {
@@ -285,13 +321,15 @@ export default function PosSystem() {
           date: order.createdAt || new Date().toISOString(),
         };
         setTimeout(() => {
-          try { printTaxInvoice(printData, { autoPrint: true }); } catch (e) {
-            console.warn('[POS] Online order auto-print failed silently:', e);
-          }
+          printTaxInvoice(printData, { autoPrint: true }).catch((e) => {
+            console.warn('[POS] Online order auto-print failed:', e);
+          });
         }, 500);
       }
-    } else if (!isPosOrder && soundEnabled) {
-      playNotificationSound('newOrder', 0.6);
+    } else {
+      // POS-channel orders: play a short confirmation beep so the cashier
+      // knows the order registered successfully (even when they created it).
+      playChannelSound('manual');
     }
   });
 
@@ -305,7 +343,13 @@ export default function PosSystem() {
       if (prev.some(a => a._id === order._id)) return prev;
       return [order, ...prev];
     });
-    if (soundEnabled) playNotificationSound('onlineOrderVoice', 1.0);
+    setNotifications(prev => [{
+      id: order?._id || Date.now().toString(),
+      time: new Date().toLocaleTimeString('ar', { hour: '2-digit', minute: '2-digit' }),
+      text: `🚗 سيارة قادمة — ${order.customerName || 'عميل'} | ${order.carColor || ''} ${order.carType || ''} | يصل خلال ${order.diffMin ?? '≤10'} دقيقة`,
+      read: false,
+    }, ...prev.slice(0, 19)]);
+    playChannelSound('car');
     toast({
       title: `🚗 طلب سيارة — وصول خلال ${order.diffMin ?? '≤10'} دقيقة!`,
       description: `${order.customerName || 'عميل'} | ${order.carColor || ''} ${order.carType || ''} | لوحة: ${order.plateNumber || '—'}`,
@@ -347,6 +391,15 @@ export default function PosSystem() {
     localStorage.setItem("pos-terminal-connected", String(posTerminalConnected));
   }, [posTerminalConnected]);
 
+  // Kiosk lock: keeps the POS in fullscreen and re-asserts it whenever an OS
+  // gesture (e.g. Android's edge-swipe "recent apps" preview) briefly kicks
+  // the page out — this is what causes the screen to appear to "shrink into
+  // a corner" for a moment and then snap back; it is a system-level gesture,
+  // not a POS rendering bug, so it cannot be fixed by changing page layout.
+  useEffect(() => {
+    return enableKioskLock();
+  }, []);
+
   // Close category dropdown when clicking outside
   useEffect(() => {
     if (!showCategoryDropdown) return;
@@ -358,13 +411,6 @@ export default function PosSystem() {
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [showCategoryDropdown]);
-
-  // Track window width for layout mode
-  useEffect(() => {
-    const handler = () => setWindowWidth(window.innerWidth);
-    window.addEventListener('resize', handler);
-    return () => window.removeEventListener('resize', handler);
-  }, []);
 
   // Offline queue: load count on mount, sync when back online
   useEffect(() => {
@@ -394,7 +440,18 @@ export default function PosSystem() {
     };
   }, []);
 
-  useEffect(() => { localStorage.setItem("pos-auto-print", String(autoPrint)); }, [autoPrint]);
+  useEffect(() => {
+    savePrinterSettings({ autoPrint });
+  }, [autoPrint]);
+
+  // Re-sync from printer settings whenever the Printer Settings dialog closes,
+  // so a change made there (e.g. toggling "طباعة تلقائية") is reflected here
+  // immediately instead of only after a full page refresh.
+  useEffect(() => {
+    if (!showPrinterSettings) {
+      setAutoPrint(loadPrinterSettings().autoPrint);
+    }
+  }, [showPrinterSettings]);
 
   // Show toast when thermal printing fails (USB/BT/Network error dispatched by print-utils)
   useEffect(() => {
@@ -418,13 +475,26 @@ export default function PosSystem() {
   useEffect(() => { localStorage.setItem("pos-zoom", String(posZoom)); }, [posZoom]);
   useEffect(() => { if (orderItems.length === 0 && showOrderReview) setShowOrderReview(false); }, [orderItems.length, showOrderReview]);
 
+  // Auto-close quick print bar after 10 seconds
+  useEffect(() => {
+    if (!showQuickPrintBar) { setQuickPrintCountdown(0); return; }
+    setQuickPrintCountdown(10);
+    const interval = setInterval(() => {
+      setQuickPrintCountdown(prev => {
+        if (prev <= 1) { clearInterval(interval); setShowQuickPrintBar(false); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [showQuickPrintBar]);
+
   // Auto-close receipt dialog after 12 seconds with countdown
   useEffect(() => {
     if (!showReceiptDialog) { setReceiptCountdown(0); return; }
     setReceiptCountdown(12);
     const interval = setInterval(() => {
       setReceiptCountdown(prev => {
-        if (prev <= 0) { clearInterval(interval); return 0; }       // manually paused
+        if (prev <= 0) { clearInterval(interval); return 0; }
         if (prev <= 1) { clearInterval(interval); setShowReceiptDialog(false); return 0; }
         return prev - 1;
       });
@@ -434,7 +504,7 @@ export default function PosSystem() {
 
   // Auto-generate new-design receipt HTML whenever an order completes
   useEffect(() => {
-    if (!lastOrder || !showReceiptDialog) return;
+    if (!lastOrder || (!showReceiptDialog && !showQuickPrintBar)) return;
     setReceiptPreviewHtml('');
     const previewData = {
       orderNumber: lastOrder.orderNumber,
@@ -668,19 +738,40 @@ export default function PosSystem() {
     staleTime: 10 * 60 * 1000,
   });
 
-  const { data: tables = [], refetch: refetchTables } = useQuery<any[]>({
-    queryKey: ["/api/tables/status", employee?.branchId],
+  const { data: currentBranch } = useQuery<any>({
+    queryKey: ['/api/branches', activeBranchId],
     queryFn: async () => {
-      const res = await fetch(`/api/tables/status?branchId=${employee?.branchId}`);
+      if (!activeBranchId) return null;
+      const res = await fetch(`/api/branches/${activeBranchId}`);
+      if (!res.ok) return null;
       return res.json();
     },
-    enabled: !!employee?.branchId,
+    enabled: !!activeBranchId,
+    staleTime: 10 * 60 * 1000,
+  });
+
+  const { data: allPaymentMethods = [] } = useQuery<any[]>({
+    queryKey: ['/api/payment-methods'],
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const [showMorePayments, setShowMorePayments] = useState(false);
+
+  const { data: tables = [], refetch: refetchTables } = useQuery<any[]>({
+    queryKey: ["/api/tables/status", activeBranchId],
+    queryFn: async () => {
+      const res = await fetch(`/api/tables/status?branchId=${activeBranchId}`);
+      return res.json();
+    },
+    enabled: !!activeBranchId,
     staleTime: 60000,
   });
 
   const updateOrderStatusMutation = useMutation({
-    mutationFn: async ({ orderId, status }: { orderId: string; status: string }) => {
-      return await apiRequest("PATCH", `/api/orders/${orderId}/status`, { status });
+    mutationFn: async ({ orderId, status, estimatedPrepTimeInMinutes }: { orderId: string; status: string; estimatedPrepTimeInMinutes?: number }) => {
+      const body: any = { status };
+      if (estimatedPrepTimeInMinutes !== undefined) body.estimatedPrepTimeInMinutes = estimatedPrepTimeInMinutes;
+      return await apiRequest("PATCH", `/api/orders/${orderId}/status`, body);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/orders/live"] });
@@ -736,6 +827,8 @@ export default function PosSystem() {
           date: order.createdAt || new Date().toISOString(),
           crNumber: businessConfig?.commercialRegistration,
           vatNumber: businessConfig?.vatNumber,
+          branchName: currentBranch?.nameAr || (currentBranch as any)?.name || undefined,
+          branchAddress: currentBranch?.address || undefined,
         });
       }
       setSelectedTableForBill(null);
@@ -825,9 +918,10 @@ export default function PosSystem() {
     const bsThreshold = allCounts.length >= 3 ? allCounts[2] : (allCounts[0] || 1);
     return Object.values(groupedItemsMap)
       .filter(group => {
-        const rep = group[0];
+        const rep = group[0] as any;
+        const matchesDept = selectedDepartment === 'all' || (rep.department || 'drinks') === selectedDepartment;
         const matchesCategory = selectedCategory === "all" || rep.category === selectedCategory;
-        if (!matchesCategory) return false;
+        if (!matchesDept || !matchesCategory) return false;
         if (!q) return true;
         return group.some(item => {
           const arName = (item.nameAr || '').toLowerCase();
@@ -842,19 +936,67 @@ export default function PosSystem() {
           isBestSeller: (item.salesCount || 0) >= bsThreshold && bsThreshold > 0,
         };
       });
-  }, [productsData, selectedCategory, searchQuery, groupedItemsMap]);
+  }, [productsData, selectedCategory, selectedDepartment, searchQuery, groupedItemsMap]);
+
+  // Departments that have at least one product
+  const availableDepartments = useMemo(() => {
+    if (!productsData) return [];
+    const depts = new Set(productsData.map((p: any) => p.department || 'drinks'));
+    const result: { id: 'drinks' | 'food'; nameAr: string; nameEn: string }[] = [];
+    if (depts.has('drinks')) result.push({ id: 'drinks', nameAr: 'مشروبات', nameEn: 'Drinks' });
+    if (depts.has('food'))   result.push({ id: 'food',   nameAr: 'أكل',      nameEn: 'Food'   });
+    return result;
+  }, [productsData]);
+
+  // Arabic display names for raw category keys (fallback when no MenuCategory records exist)
+  const CATEGORY_DISPLAY: Record<string, { ar: string; en: string }> = {
+    hot:       { ar: 'ساخن',           en: 'Hot' },
+    cold:      { ar: 'بارد',           en: 'Cold' },
+    desserts:  { ar: 'الحلى',          en: 'Desserts' },
+    food:      { ar: 'أكل',            en: 'Food' },
+    drinks:    { ar: 'مشروبات',        en: 'Drinks' },
+    coffee:    { ar: 'قهوة',           en: 'Coffee' },
+    juice:     { ar: 'عصائر',          en: 'Juices' },
+    tea:       { ar: 'شاي',            en: 'Tea' },
+    snacks:    { ar: 'سناكس',          en: 'Snacks' },
+    breakfast: { ar: 'فطور',           en: 'Breakfast' },
+    lunch:     { ar: 'غداء',           en: 'Lunch' },
+    dinner:    { ar: 'عشاء',           en: 'Dinner' },
+    bakery:    { ar: 'مخبوزات',        en: 'Bakery' },
+    seasonal:  { ar: 'موسمي',          en: 'Seasonal' },
+    special:   { ar: 'مميز',           en: 'Special' },
+    other:     { ar: 'أخرى',           en: 'Other' },
+  };
 
   const visibleCategories = useMemo(() => {
-    const itemCategorySet = new Set(productsData?.map(p => p.category).filter(Boolean) || []);
-    return menuCategories
-      .filter(c => itemCategorySet.has(c.id))
-      .map(c => ({
+    const filteredProducts = selectedDepartment === 'all'
+      ? productsData || []
+      : (productsData || []).filter((p: any) => (p.department || 'drinks') === selectedDepartment);
+    const itemCategorySet = new Set(filteredProducts.map((p: any) => p.category).filter(Boolean));
+
+    // ① Try to match against MenuCategory records (when they exist)
+    const fromMenuCats = menuCategories
+      .filter((c: any) => itemCategorySet.has(c.id))
+      .map((c: any) => ({
         id: c.id,
-        name: i18n.language === 'ar' ? (c.nameAr || c.nameEn) : (c.nameEn || c.nameAr),
+        name: i18n.language === 'ar' ? (c.nameAr || c.nameEn || c.id) : (c.nameEn || c.nameAr || c.id),
         icon: Tag,
-        color: "text-primary"
       }));
-  }, [productsData, menuCategories, i18n.language]);
+
+    if (fromMenuCats.length > 0) return fromMenuCats;
+
+    // ② Fallback: build buttons from the raw category strings on products
+    return Array.from(itemCategorySet).map((catKey: any) => {
+      const display = CATEGORY_DISPLAY[catKey as string];
+      return {
+        id: catKey,
+        name: display
+          ? (i18n.language === 'ar' ? display.ar : display.en)
+          : catKey,
+        icon: Tag,
+      };
+    });
+  }, [productsData, menuCategories, selectedDepartment, i18n.language]);
 
   // Helper: get the correct unit price for a POS order item, respecting the selected size
   // Defined here (before calculateTotal) so it can be used in useMemo callbacks
@@ -885,7 +1027,7 @@ export default function PosSystem() {
 
   const calculateSubtotal = useMemo(() => calculateTotal / 1.15, [calculateTotal]);
 
-  // Discount coupon (e.g. TECH10 — كلية التقنية للبنات بينبع)
+  // Discount coupon (e.g. TECH10 — خصم خاص)
   const [discountCode, setDiscountCode] = useState("");
   const [isValidatingDiscount, setIsValidatingDiscount] = useState(false);
   const [appliedDiscount, setAppliedDiscount] = useState<{ code: string; percentage: number; reason?: string } | null>(null);
@@ -1249,7 +1391,7 @@ export default function PosSystem() {
         // until PayMob confirms; webhook will flip it to 'payment_confirmed'.
         status: 'awaiting_payment',
         deliveryType: orderType === 'car_pickup' ? 'car_pickup' : orderType === 'delivery' ? 'delivery' : orderType === 'dine_in' ? 'dine-in' : 'pickup',
-        branchId: employee?.branchId || 'main',
+        branchId: activeBranchId || employee?.branchId || 'main',
         tenantId: employee?.tenantId || 'demo-tenant',
         employeeId: employee?.id,
         channel: 'pos',
@@ -1371,7 +1513,7 @@ export default function PosSystem() {
         plateNumber: orderType === "car_pickup" ? carPlateInput || undefined : undefined,
         carInfo: orderType === "car_pickup" && carTypeInput ? { carType: carTypeInput, carColor: carColorInput, plateNumber: carPlateInput } : undefined,
         carPickup: orderType === "car_pickup" || undefined,
-        branchId: employee?.branchId || "main",
+        branchId: activeBranchId || employee?.branchId || "main",
         tenantId: employee?.tenantId || "demo-tenant",
         employeeId: employee?.id,
         channel: "pos",
@@ -1458,18 +1600,20 @@ export default function PosSystem() {
             date: new Date().toISOString(),
             crNumber: businessConfig?.commercialRegistration,
             vatNumber: businessConfig?.vatNumber,
+            branchName: currentBranch?.nameAr || (currentBranch as any)?.name || undefined,
+            branchAddress: currentBranch?.address || undefined,
             notes: orderNote || undefined,
           };
-          try { printTaxInvoice(printSnapshot, { autoPrint: true }); } catch (e) {
-            console.warn('[POS] Offline auto-print failed silently:', e);
-          }
+          printTaxInvoice(printSnapshot, { autoPrint: true }).catch((e) => {
+            console.warn('[POS] Offline auto-print failed:', e);
+          });
         }
 
-        // Show the receipt dialog
+        // Show quick print bar (POS stays open for next order)
         setLastPrintFailed(false);
-        setShowReceiptDialog(true);
+        setShowQuickPrintBar(true);
 
-        // Clear cart
+        // Clear cart immediately so POS is ready for next order
         setOrderItems([]);
         setSplitCashAmount("");
         setCustomerName("");
@@ -1505,28 +1649,15 @@ export default function PosSystem() {
         vatNumber: businessConfig?.vatNumber,
       });
 
-      // ── Pre-render receipt PNG immediately so print is instant when user clicks ──
-      preRenderReceiptPng({
-        orderNumber: orderNumForPrint,
-        createdAt: new Date().toISOString(),
-        tableNumber: orderType === "dine_in" ? tableNumber : undefined,
-        totalAmount: total,
-        paymentMethod: PAYMENT_METHOD_LABELS[paymentMethod] || paymentMethod,
-        employeeName: employee?.fullName || t('pos.employee_fallback'),
-        deliveryType: orderType,
-        orderType: orderType,
-        customerName,
-        customerPhone,
-        notes: orderNote || undefined,
-        items: orderItems.map(item => ({
-          nameAr: item.coffeeItem?.nameAr || '',
-          nameEn: item.coffeeItem?.nameEn || '',
-          quantity: item.quantity,
-          price: getPosItemUnitPrice(item),
-          selectedSize: item.selectedSize || undefined,
-          customization: item.customization,
-        })),
-      });
+      // NOTE: a receipt PNG pre-render step used to run here on every single
+      // order via html2canvas. Its output was never actually consumed
+      // anywhere in the app (dead code), and html2canvas internally creates
+      // a temporary iframe to clone the DOM for rendering — ANY iframe
+      // appearing in the DOM on Android WebView forces a viewport
+      // recalculation that visibly shrinks the whole POS screen for a
+      // moment. That is what caused "the screen shrinks right after
+      // completing a new order." Removed entirely — see
+      // .agents/memory/pos-html2canvas-iframe-shrink.md for details.
 
       setLastOrder({
         orderNumber: orderNumForPrint,
@@ -1591,12 +1722,12 @@ export default function PosSystem() {
             : undefined,
           notes: orderNote || undefined,
         };
-        // Fire immediately — thermal path is instant, HTML fallback uses pre-warmed ZATCA QR cache
-        try {
-          printTaxInvoice(printSnapshot, { autoPrint: true });
-        } catch (e) {
-          console.warn('[POS] Auto-print failed silently:', e);
-        }
+        // Fire immediately — thermal path is instant, HTML fallback uses pre-warmed ZATCA QR cache.
+        // NOTE: printTaxInvoice is async — a synchronous try/catch around an
+        // un-awaited call cannot catch its rejections, so use .catch() instead.
+        printTaxInvoice(printSnapshot, { autoPrint: true }).catch((e) => {
+          console.warn('[POS] Auto-print failed:', e);
+        });
       }
       broadcastToDisplay("payment_success", {
         orderNumber: result.orderNumber || result.dailyNumber || '',
@@ -1610,7 +1741,7 @@ export default function PosSystem() {
       }
 
       setLastPrintFailed(false);
-      setShowReceiptDialog(true);
+      setShowQuickPrintBar(true);
 
       setOrderItems([]);
       setSplitCashAmount("");
@@ -1655,6 +1786,8 @@ export default function PosSystem() {
       date: lastOrder.date,
       crNumber: businessConfig?.commercialRegistration,
       vatNumber: businessConfig?.vatNumber,
+      branchName: currentBranch?.nameAr || currentBranch?.name || undefined,
+      branchAddress: currentBranch?.address || undefined,
     } as any;
   };
 
@@ -1673,6 +1806,10 @@ export default function PosSystem() {
   }, [receiptPreviewHtml, showReceiptDialog]);
 
   useEffect(() => {
+    // Android: never create a staged iframe — any iframe in the DOM causes
+    // Android Chrome/WebView to recalculate the viewport to the iframe's
+    // narrow paper width, shrinking the entire POS UI.
+    if (isAndroidDevice) return;
     if (!showReceiptDialog || !receiptPreviewHtml) return;
     if (stagedPrintIframeRef.current) return;
 
@@ -1684,7 +1821,6 @@ export default function PosSystem() {
     iframe.addEventListener('load', () => { stagedPrintReadyRef.current = true; });
     const doc = iframe.contentDocument || iframe.contentWindow?.document;
     if (!doc) {
-      // Browser refused us a document — bail out gracefully; fallback path will be used.
       try { iframe.remove(); } catch {}
       return;
     }
@@ -1693,7 +1829,6 @@ export default function PosSystem() {
       doc.write(receiptPreviewHtml);
       doc.close();
       stagedPrintIframeRef.current = iframe;
-      // Mark ready once the document has fully parsed (covers browsers that don't fire load for srcdoc-less iframes)
       if (doc.readyState === 'complete') {
         stagedPrintReadyRef.current = true;
       } else {
@@ -1708,7 +1843,9 @@ export default function PosSystem() {
   }, [showReceiptDialog, receiptPreviewHtml]);
 
   // Helper: fast-path print only when staged iframe is truly ready & populated.
+  // Android always returns false — we use the no-iframe path (printTaxInvoice).
   const tryStagedPrint = (): boolean => {
+    if (isAndroidDevice) return false;
     const staged = stagedPrintIframeRef.current;
     if (!staged || !staged.contentWindow) return false;
     if (!stagedPrintReadyRef.current) return false;
@@ -1717,7 +1854,6 @@ export default function PosSystem() {
       return false;
     }
     try {
-      staged.contentWindow.focus();
       staged.contentWindow.print();
       return true;
     } catch {
@@ -1725,7 +1861,7 @@ export default function PosSystem() {
     }
   };
 
-  const handlePrintReceipt = () => {
+  const handlePrintReceipt = async () => {
     const data = buildLastOrderInvoiceData();
     if (!data) return;
     const ps = loadPrinterSettings();
@@ -1736,7 +1872,14 @@ export default function PosSystem() {
     }
     // Fast path: if we have a staged iframe truly ready, print synchronously
     if (tryStagedPrint()) return;
-    // Fallback to full thermal/HTML pipeline
+    // Android: build HTML and call printHtmlInPage directly — user pressed the
+    // button intentionally so window.print() is acceptable here (not auto-print).
+    if (isAndroidDevice) {
+      const html = await buildReceiptPreviewHtml(data);
+      printHtmlInPage(html, '80mm');
+      return;
+    }
+    // Desktop / iOS fallback
     printTaxInvoice(data, { autoPrint: true });
   };
 
@@ -1800,2628 +1943,3094 @@ export default function PosSystem() {
       date: order.createdAt || new Date().toISOString(),
       crNumber: businessConfig?.commercialRegistration,
       vatNumber: businessConfig?.vatNumber,
+      branchName: currentBranch?.nameAr || currentBranch?.name || undefined,
+      branchAddress: currentBranch?.address || undefined,
     }, { autoPrint: true });
   };
 
   if (!employee) return <LoadingState />;
 
+  // Branch selector screen for admin/owner
+  if (isAdminOwner && !activeBranchId) {
+    return (
+      <div className="fixed inset-0 bg-[#0d0d0d] flex flex-col items-center justify-center p-6 z-[9999]" dir="rtl">
+        <div className="w-full max-w-md space-y-6">
+          <div className="text-center space-y-2">
+            <div className="bg-primary/10 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <Coffee className="w-8 h-8 text-primary" />
+            </div>
+            <h1 className="text-2xl font-black text-white">اختر فرع نقطة البيع</h1>
+            <p className="text-sm text-gray-400">اختر الفرع الذي ستشتغل عليه في هذه الجلسة</p>
+          </div>
+          <div className="space-y-3">
+            {allBranches.filter((b: any) => b.isActive !== false).map((branch: any) => (
+              <button
+                key={branch.id}
+                onClick={() => {
+                  sessionStorage.setItem('pos_branch_id', branch.id);
+                  setPosBranchId(branch.id);
+                }}
+                className="w-full p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/30 transition-all text-right"
+              >
+                <div className="font-bold text-white text-lg">{branch.nameAr}</div>
+                {branch.address && <div className="text-gray-400 text-sm mt-0.5">{branch.address}</div>}
+              </button>
+            ))}
+            {allBranches.length === 0 && (
+              <div className="text-center text-gray-500 py-8">جاري تحميل الفروع...</div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const scale = posZoom / 100;
   const inverseScale = 1 / scale;
 
   return (
-    <div dir="ltr" style={{ width: "100vw", height: "100vh", overflow: "hidden" }}>
-    <div
-      className="flex flex-col bg-background overflow-hidden selection:bg-primary selection:text-primary-foreground"
-      dir={dir}
-      style={{
-        width: `${inverseScale * 100}vw`,
-        height: `${inverseScale * 100}vh`,
-        transform: `scale(${scale})`,
-        transformOrigin: "top left",
-      }}
-    >
-      <header className={`flex ${isMobile ? 'flex-col' : 'flex-row'} items-center justify-between px-3 py-2 sm:px-6 sm:py-3 border-b bg-card gap-2 sm:gap-0`}>
-        <div className={`flex items-center gap-2 ${isMobile ? 'w-full justify-between' : 'gap-4 w-auto justify-start'}`}>
-          <div className="flex items-center gap-2">
-            <div className="bg-primary/10 p-1.5 sm:p-2 rounded-lg">
-              <Coffee className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
+    <div id="pos-root" dir="ltr" style={{ width: "100vw", height: "100vh", overflow: "hidden" }}>
+      <div
+        className="flex flex-col bg-background overflow-hidden selection:bg-primary selection:text-primary-foreground"
+        dir={dir}
+        style={{
+          width: `${inverseScale * 100}vw`,
+          height: `${inverseScale * 100}vh`,
+          transform: `scale(${scale})`,
+          transformOrigin: "top left",
+        }}
+      >
+        <header className="flex flex-col sm:flex-row items-center justify-between px-3 py-2 sm:px-6 sm:py-3 border-b bg-card gap-2 sm:gap-0">
+          <div className="flex items-center gap-2 sm:gap-4 w-full sm:w-auto justify-between sm:justify-start">
+            <div className="flex items-center gap-2">
+              <img src={tasaliLogo} alt="تسالي كرومش" className="h-9 sm:h-11 w-auto object-contain" />
+              <div>
+                <h1 className="text-lg sm:text-2xl font-black tracking-tight text-primary">تسالي كرومش</h1>
+                {currentBranch && (
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] sm:text-xs text-muted-foreground font-medium">{currentBranch.nameAr}</span>
+                    {isAdminOwner && (
+                      <button
+                        onClick={() => { sessionStorage.removeItem('pos_branch_id'); setPosBranchId(null); }}
+                        className="text-[9px] sm:text-[10px] text-primary hover:underline"
+                        title="تغيير الفرع"
+                      >تغيير</button>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
-            <h1 className="text-lg sm:text-2xl font-black tracking-tight text-primary">TASALI</h1>
+            
+            <div className="flex items-center gap-2 sm:hidden">
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => setShowOrdersPanel(true)}
+                className="relative"
+                data-testid="button-mobile-orders"
+              >
+                <ClipboardList className="w-4 h-4" />
+                {newOrdersCount > 0 && (
+                  <Badge className="absolute -top-2 -right-2 px-1.5 min-w-[18px] h-[18px] bg-red-500 animate-pulse">
+                    {newOrdersCount}
+                  </Badge>
+                )}
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => setShowPrinterSettings(true)}
+                className="relative"
+                data-testid="button-mobile-printer-settings"
+                title={tc("إعدادات الطابعة", "Printer Settings")}
+              >
+                <Printer className="w-4 h-4" />
+                <span className={`absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full ${printerMode === 'network' ? 'bg-blue-500' : printerMode === 'bluetooth' ? 'bg-purple-500' : printerMode === 'webusb' ? 'bg-green-500' : 'bg-gray-400'}`} />
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => setShowPOSSettings(true)}
+                data-testid="button-mobile-settings"
+              >
+                <Settings className="w-4 h-4" />
+              </Button>
+              {splitViewMode && (
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => setSplitViewMode(false)}
+                  data-testid="button-mobile-back"
+                >
+                  <ArrowRight className="w-4 h-4" />
+                </Button>
+              )}
+            </div>
           </div>
-          
-          <div className={`${isMobile ? 'flex' : 'hidden'} items-center gap-2`}>
-            <Button 
-              variant="outline" 
+
+          <div className="hidden sm:flex items-center gap-3">
+            <Tabs value={orderType} onValueChange={(v) => setOrderType(v as OrderType)} className="w-full max-w-sm">
+              <TabsList className="grid grid-cols-4 w-full h-10 p-1">
+                {ORDER_TYPES.map((type) => (
+                  <TabsTrigger key={type.id} value={type.id} className="text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground" data-testid={`tab-order-type-${type.id}`}>
+                    <type.icon className="w-3.5 h-3.5 ml-1.5" />
+                    {t(`pos.order_type_${type.id}`)}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+          </div>
+
+          <div className="flex items-center flex-wrap gap-2 sm:gap-3 w-full sm:w-auto justify-end">
+            <Button
+              variant={posTerminalConnected ? "default" : "outline"}
+              size="sm"
+              onClick={() => setPosTerminalConnected(!posTerminalConnected)}
+              className="hidden sm:flex gap-1"
+              data-testid="button-pos-terminal-toggle"
+            >
+              <MonitorSmartphone className="w-4 h-4" />
+              <span className="text-xs">{posTerminalConnected ? t('pos.terminal_connected') : t('pos.terminal_disconnected')}</span>
+              <div className={`w-2 h-2 rounded-full ${posTerminalConnected ? 'bg-green-400' : 'bg-orange-400'}`} />
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => window.open('/customer-display', '_blank')}
+              className="hidden sm:flex gap-1"
+              data-testid="button-customer-display"
+            >
+              <SplitSquareVertical className="w-4 h-4" />
+              <span className="text-xs">{t('pos.customer_display')}</span>
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowPrinterSettings(true)}
+              className="hidden sm:flex relative"
+              data-testid="button-pos-printer-settings"
+              title={tc("إعدادات الطابعة", "Printer Settings")}
+            >
+              <Printer className="w-4 h-4" />
+              <span className={`absolute top-0.5 right-0.5 w-2 h-2 rounded-full border border-background ${printerMode === 'network' ? 'bg-blue-500' : printerMode === 'bluetooth' ? 'bg-purple-500' : printerMode === 'webusb' ? 'bg-green-500' : 'bg-gray-400'}`} />
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowPOSSettings(true)}
+              className="hidden sm:flex"
+              data-testid="button-pos-settings"
+            >
+              <Settings className="w-4 h-4" />
+            </Button>
+
+            <div className="hidden sm:flex">
+              <AudioUnlockBanner
+                pageKey="pos"
+                soundEnabled={soundEnabled}
+                onToggleSound={(val) => { setSoundEnabled(val); saveSoundEnabled('pos', val); }}
+                compact
+              />
+            </div>
+
+            <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-red-500'}`} title={wsConnected ? t('pos.connected_status') : t('pos.disconnected_status')} />
+
+            {/* ─── Notifications Bell ─── */}
+            <Popover open={showNotifications} onOpenChange={setShowNotifications}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="relative" data-testid="button-notifications-bell">
+                  <Bell className="w-4 h-4" />
+                  {notifications.filter(n => !n.read).length > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center animate-pulse">
+                      {notifications.filter(n => !n.read).length}
+                    </span>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-80 p-0 max-h-96 overflow-y-auto" align="end">
+                <div className="flex items-center justify-between px-4 py-3 border-b">
+                  <span className="font-bold text-sm">الإشعارات</span>
+                  {notifications.length > 0 && (
+                    <button
+                      className="text-xs text-primary hover:underline"
+                      onClick={() => setNotifications(prev => prev.map(n => ({ ...n, read: true })))}
+                    >
+                      تحديد الكل كمقروء
+                    </button>
+                  )}
+                </div>
+                {notifications.length === 0 ? (
+                  <div className="py-8 text-center text-muted-foreground text-sm">لا توجد إشعارات</div>
+                ) : (
+                  <div className="divide-y">
+                    {notifications.map(n => (
+                      <div
+                        key={n.id}
+                        className={`px-4 py-3 text-sm cursor-pointer hover:bg-muted/50 transition-colors ${!n.read ? 'bg-primary/5 font-medium' : 'text-muted-foreground'}`}
+                        onClick={() => setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, read: true } : x))}
+                      >
+                        <div className="flex justify-between items-start gap-2">
+                          <span className="flex-1">{n.text}</span>
+                          <span className="text-xs text-muted-foreground shrink-0">{n.time}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </PopoverContent>
+            </Popover>
+
+            <Button
+              variant="outline"
               size="sm"
               onClick={() => setShowOrdersPanel(true)}
-              className="relative"
-              data-testid="button-mobile-orders"
+              className="relative hidden sm:flex"
+              data-testid="button-desktop-orders"
             >
-              <ClipboardList className="w-4 h-4" />
+              <ClipboardList className="w-4 h-4 ml-2" />
+              {t('pos.orders')}
               {newOrdersCount > 0 && (
                 <Badge className="absolute -top-2 -right-2 px-1.5 min-w-[18px] h-[18px] bg-red-500 animate-pulse">
                   {newOrdersCount}
                 </Badge>
               )}
             </Button>
+
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
-              onClick={() => i18n.changeLanguage(i18n.language === 'ar' ? 'en' : 'ar')}
-              className="h-8 px-2 text-xs font-bold text-muted-foreground"
-              data-testid="button-mobile-language"
+              onClick={() => setShowTablesDialog(true)}
+              className="hidden sm:flex"
+              data-testid="button-tables-grid"
             >
-              {i18n.language === 'ar' ? 'EN' : 'ع'}
+              <Grid3X3 className="w-4 h-4 ml-2" />
+              {t('pos.tables')}
             </Button>
-            {/* Device layout toggle — mobile header */}
+
             <Button
-              variant="ghost"
-              size="icon"
-              onClick={cyclePosLayoutMode}
-              className="h-8 w-8"
-              title={layoutModeLabel}
-              data-testid="button-mobile-layout-mode"
-            >
-              <LayoutModeIcon className="w-4 h-4" />
-            </Button>
-            <Button 
-              variant="ghost" 
+              variant="outline"
               size="sm"
-              onClick={() => setShowPOSSettings(true)}
-              data-testid="button-mobile-settings"
+              onClick={() => setShowOpenBillsDialog(true)}
+              className="relative hidden sm:flex"
+              data-testid="button-open-bills"
             >
-              <Settings className="w-4 h-4" />
+              <Receipt className="w-4 h-4 ml-2" />
+              {t('pos.open_bills')}
+              {openTableOrders.length > 0 && (
+                <Badge className="absolute -top-2 -right-2 px-1.5 min-w-[18px] h-[18px] bg-primary text-primary-foreground">
+                  {openTableOrders.length}
+                </Badge>
+              )}
             </Button>
-            <Button variant="ghost" size="icon" onClick={() => setLocation("/employee/home")} className="h-8 w-8" data-testid="button-mobile-back-dashboard">
-              <ArrowRight className="w-5 h-5 text-muted-foreground" />
-            </Button>
-          </div>
-        </div>
 
-        <div className={`${isMobile ? 'hidden' : 'flex'} items-center gap-3`}>
-          <Tabs value={orderType} onValueChange={(v) => setOrderType(v as OrderType)} className="w-full max-w-sm">
-            <TabsList className="grid grid-cols-4 w-full h-10 p-1">
-              {ORDER_TYPES.map((type) => (
-                <TabsTrigger key={type.id} value={type.id} className="text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground" data-testid={`tab-order-type-${type.id}`}>
-                  <type.icon className="w-3.5 h-3.5 ml-1.5" />
-                  {t(`pos.order_type_${type.id}`)}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-        </div>
-
-        <div className={`${isMobile ? 'hidden' : 'flex'} items-center gap-2`}>
-          {/* Orders with badge */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowOrdersPanel(true)}
-            className="relative"
-            data-testid="button-desktop-orders"
-          >
-            <ClipboardList className="w-4 h-4 ml-2" />
-            {t('pos.orders')}
-            {newOrdersCount > 0 && (
-              <Badge className="absolute -top-2 -right-2 px-1.5 min-w-[18px] h-[18px] bg-red-500 animate-pulse">
-                {newOrdersCount}
-              </Badge>
-            )}
-          </Button>
-
-          {/* Car orders badge — shows only when there are alerts */}
-          {carPreparationAlerts.length > 0 && (
             <Button
               variant="outline"
               size="sm"
               onClick={() => setShowCarOrdersPanel(true)}
-              className="relative gap-1 border-amber-300 text-amber-600 hover:bg-amber-50"
+              className="relative hidden sm:flex gap-1 border-primary/30 text-primary hover:bg-primary/10"
               data-testid="button-car-orders"
+              title={tc("طلبات السيارات", "Car Orders")}
             >
               <Car className="w-4 h-4" />
-              <Badge className="bg-amber-500 text-white animate-pulse px-1.5 min-w-[18px] h-[18px]">
-                {carPreparationAlerts.length}
-              </Badge>
+              <span className="text-xs font-bold">{tc("سيارات", "Cars")}</span>
+              {carPreparationAlerts.length > 0 && (
+                <Badge className="absolute -top-2 -right-2 px-1.5 min-w-[18px] h-[18px] bg-amber-500 text-white animate-pulse">
+                  {carPreparationAlerts.length}
+                </Badge>
+              )}
             </Button>
-          )}
 
-          {/* WS dot */}
-          <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-red-500'}`} title={wsConnected ? t('pos.connected_status') : t('pos.disconnected_status')} />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowRefundDialog(true)}
+              className="hidden sm:flex gap-1 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-400"
+              data-testid="button-refund-open"
+              title={tc("استرجاع طلب / Refund", "Refund Order")}
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span className="text-xs font-bold">{tc("استرجاع", "Refund")}</span>
+            </Button>
 
-          {/* Employee name */}
-          <div className="flex items-center gap-2 bg-muted/50 px-2 py-1 rounded-full border">
-            <div className="w-2 h-2 rounded-full bg-green-500" />
-            <span className="text-xs font-medium">{employee?.fullName || t('pos.employee_fallback')}</span>
-          </div>
-
-          {/* Device layout toggle — desktop header */}
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={cyclePosLayoutMode}
-            className="h-9 w-9"
-            title={layoutModeLabel}
-            data-testid="button-desktop-layout-mode"
-          >
-            <LayoutModeIcon className="w-4 h-4" />
-          </Button>
-
-          {/* Settings — all extra features live here */}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setShowPOSSettings(true)}
-            className="h-9 w-9"
-            data-testid="button-pos-settings"
-            title={tc("الإعدادات", "Settings")}
-          >
-            <Settings className="w-5 h-5" />
-          </Button>
-
-          {/* Back to dashboard */}
-          <Button variant="ghost" size="icon" onClick={() => setLocation("/employee/home")} className="h-9 w-9" data-testid="button-back-dashboard" title={t('pos.back_to_dashboard')}>
-            <ArrowRight className="w-5 h-5 text-muted-foreground" />
-          </Button>
-        </div>
-      </header>
-      <PosShiftBar />
-
-      <main className="flex-1 flex overflow-hidden">
-
-        <section className={`${!isMobile || mobilePanelView === 'products' ? 'flex' : 'hidden'} flex-1 flex-col overflow-hidden`}>
-          {/* Category Top Bar */}
-          <div className={`${mobilePanelView === 'cart' ? 'hidden' : ''} flex border-b bg-muted/30 shrink-0`}>
-            {/* Scrollable category buttons */}
-            <div className="flex gap-1 overflow-x-auto px-2 py-2 no-scrollbar flex-1 min-w-0">
-              <Button
-                variant={selectedCategory === "all" ? "default" : "ghost"}
-                className="flex-row gap-1.5 h-9 px-3 shrink-0 rounded-lg"
-                onClick={() => setSelectedCategory("all")}
-                data-testid="button-category-all"
-              >
-                <Grid3X3 className="w-4 h-4" />
-                <span className="text-xs font-bold whitespace-nowrap">{t('pos.category_all')}</span>
-              </Button>
-              {visibleCategories.map((cat: any) => (
-                <Button
-                  key={cat.id}
-                  variant={selectedCategory === cat.id ? "default" : "ghost"}
-                  className="flex-row gap-1.5 h-9 px-3 shrink-0 rounded-lg"
-                  onClick={() => setSelectedCategory(cat.id)}
-                  data-testid={`button-category-${cat.id}`}
-                >
-                  <cat.icon className="w-4 h-4" />
-                  <span className="text-xs font-bold whitespace-nowrap">{cat.name}</span>
-                </Button>
-              ))}
+            <div className="flex items-center gap-2 bg-muted/50 px-2 py-1 rounded-full border">
+              <div className="w-2 h-2 rounded-full bg-green-500" />
+              <span className="text-[10px] sm:text-xs font-medium">{employee?.fullName || t('pos.employee_fallback')}</span>
             </div>
-            {/* Fixed three-dots button */}
-            <div ref={categoryDropdownRef} className="relative flex items-center shrink-0 border-r px-1">
-              <Button
-                variant={showCategoryDropdown ? "default" : "ghost"}
-                size="icon"
-                className="h-9 w-9 rounded-lg shrink-0"
-                onClick={() => setShowCategoryDropdown(v => !v)}
-                data-testid="button-category-dropdown-toggle"
-              >
-                <MoreHorizontal className="w-4 h-4" />
-              </Button>
-              {showCategoryDropdown && (
-                <div
-                  className="absolute top-full left-0 z-50 mt-1 bg-card border rounded-xl shadow-2xl p-2 min-w-[220px] max-h-[60vh] overflow-y-auto"
-                  style={{ direction: 'rtl' }}
+            
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => i18n.changeLanguage(i18n.language === 'ar' ? 'en' : 'ar')}
+              className="h-8 px-2 text-xs font-bold"
+              data-testid="button-toggle-language-pos"
+            >
+              {i18n.language === 'ar' ? 'EN' : 'ع'}
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => setLocation("/employee/home")} className="h-8 w-8 sm:h-9 sm:w-9" data-testid="button-back-dashboard" title={t('pos.back_to_dashboard')}>
+              <ArrowRight className="w-5 h-5 text-muted-foreground" />
+            </Button>
+          </div>
+        </header>
+        <PosShiftBar />
+
+        <main className="flex-1 flex overflow-hidden">
+
+          <section className={`${mobilePanelView === 'products' ? 'flex' : 'hidden'} md:flex flex-1 flex-col overflow-hidden`}>
+            {/* Category + Department Top Bar */}
+            <div className={`${mobilePanelView === 'cart' ? 'hidden' : ''} flex border-b bg-muted/30 shrink-0`}>
+              {/* Scrollable category buttons */}
+              <div className="flex gap-1 overflow-x-auto px-2 py-2 no-scrollbar flex-1 min-w-0">
+                {/* "الكل" button — resets both dept and category */}
+                <Button
+                  variant={selectedDepartment === "all" && selectedCategory === "all" ? "default" : "ghost"}
+                  className="flex-row gap-1.5 h-9 px-3 shrink-0 rounded-lg"
+                  onClick={() => { setSelectedDepartment('all'); setSelectedCategory("all"); }}
+                  data-testid="button-category-all"
                 >
-                  <p className="text-[10px] font-bold text-muted-foreground px-2 pb-1.5">{i18n.language === 'ar' ? 'جميع الأقسام' : 'All Categories'}</p>
-                  <button
-                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold transition-colors text-right ${selectedCategory === 'all' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
-                    onClick={() => { setSelectedCategory('all'); setShowCategoryDropdown(false); }}
-                    data-testid="button-catdrop-all"
+                  <Grid3X3 className="w-4 h-4" />
+                  <span className="text-xs font-bold whitespace-nowrap">{t('pos.category_all')}</span>
+                </Button>
+
+                {/* Department buttons — always visible when products exist */}
+                {availableDepartments.map(dept => (
+                  <Button
+                    key={`dept-${dept.id}`}
+                    variant={selectedDepartment === dept.id && selectedCategory === "all" ? "default" : "ghost"}
+                    className="flex-row gap-1.5 h-9 px-3 shrink-0 rounded-lg"
+                    onClick={() => { setSelectedDepartment(dept.id); setSelectedCategory('all'); }}
+                    data-testid={`button-dept-${dept.id}`}
                   >
-                    <Grid3X3 className="w-4 h-4 shrink-0" />
-                    <span>{t('pos.category_all')}</span>
-                  </button>
-                  {visibleCategories.map((cat: any) => (
+                    {dept.id === 'drinks' ? <Coffee className="w-4 h-4" /> : <ShoppingBag className="w-4 h-4" />}
+                    <span className="text-xs font-bold whitespace-nowrap">{i18n.language === 'ar' ? dept.nameAr : dept.nameEn}</span>
+                  </Button>
+                ))}
+
+                {/* Separator before sub-categories */}
+                {visibleCategories.length > 0 && (
+                  <div className="w-px bg-border self-stretch mx-1 shrink-0" />
+                )}
+
+                {/* Sub-category buttons */}
+                {visibleCategories.map((cat: any) => (
+                  <Button
+                    key={cat.id}
+                    variant={selectedCategory === cat.id ? "default" : "ghost"}
+                    className="flex-row gap-1.5 h-9 px-3 shrink-0 rounded-lg"
+                    onClick={() => setSelectedCategory(cat.id)}
+                    data-testid={`button-category-${cat.id}`}
+                  >
+                    <cat.icon className="w-4 h-4" />
+                    <span className="text-xs font-bold whitespace-nowrap">{cat.name}</span>
+                  </Button>
+                ))}
+              </div>
+              {/* Fixed three-dots button */}
+              <div ref={categoryDropdownRef} className="relative flex items-center shrink-0 border-r px-1">
+                <Button
+                  variant={showCategoryDropdown ? "default" : "ghost"}
+                  size="icon"
+                  className="h-9 w-9 rounded-lg shrink-0"
+                  onClick={() => setShowCategoryDropdown(v => !v)}
+                  data-testid="button-category-dropdown-toggle"
+                >
+                  <MoreHorizontal className="w-4 h-4" />
+                </Button>
+                {showCategoryDropdown && (
+                  <div
+                    className="absolute top-full left-0 z-50 mt-1 bg-card border rounded-xl shadow-2xl p-2 min-w-[220px] max-h-[60vh] overflow-y-auto"
+                    style={{ direction: 'rtl' }}
+                  >
+                    <p className="text-[10px] font-bold text-muted-foreground px-2 pb-1.5">{i18n.language === 'ar' ? 'جميع الأقسام' : 'All Categories'}</p>
                     <button
-                      key={cat.id}
-                      className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold transition-colors text-right ${selectedCategory === cat.id ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
-                      onClick={() => { setSelectedCategory(cat.id); setShowCategoryDropdown(false); }}
-                      data-testid={`button-catdrop-${cat.id}`}
+                      className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold transition-colors text-right ${selectedCategory === 'all' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+                      onClick={() => { setSelectedCategory('all'); setShowCategoryDropdown(false); }}
+                      data-testid="button-catdrop-all"
                     >
-                      <cat.icon className="w-4 h-4 shrink-0" />
-                      <span>{cat.name}</span>
+                      <Grid3X3 className="w-4 h-4 shrink-0" />
+                      <span>{t('pos.category_all')}</span>
                     </button>
+                    {visibleCategories.map((cat: any) => (
+                      <button
+                        key={cat.id}
+                        className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold transition-colors text-right ${selectedCategory === cat.id ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+                        onClick={() => { setSelectedCategory(cat.id); setShowCategoryDropdown(false); }}
+                        data-testid={`button-catdrop-${cat.id}`}
+                      >
+                        <cat.icon className="w-4 h-4 shrink-0" />
+                        <span>{cat.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="p-2 sm:p-4 border-b bg-card/50 flex flex-col sm:flex-row gap-2 sm:gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  ref={searchInputRef}
+                  placeholder={`${t('pos.search_placeholder')}  (/ ${tc('أو','or')} F2)`}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pr-10 h-9 sm:h-12 text-sm sm:text-base rounded-xl border-2 focus-visible:ring-primary"
+                  data-testid="input-search-products"
+                />
+              </div>
+              <div className="flex gap-2 sm:hidden overflow-x-auto whitespace-nowrap pb-1 no-scrollbar">
+                {ORDER_TYPES.map((type) => (
+                  <Button
+                    key={type.id}
+                    variant={orderType === type.id ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setOrderType(type.id as OrderType)}
+                    className="whitespace-nowrap shrink-0 h-9"
+                    data-testid={`button-mobile-order-type-${type.id}`}
+                  >
+                    <type.icon className="w-4 h-4 ml-1" />
+                    {t(`pos.order_type_${type.id}`)}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            <ScrollArea className="flex-1 p-2 sm:p-4 lg:p-6">
+              {isLoadingProducts ? (
+                <LoadingState message={t('pos.loading_products')} />
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-3 lg:gap-4 pb-[58px] md:pb-0">
+                  {filteredItemsList.map((item: any) => (
+                    <Card 
+                      key={item.id}
+                      className={`group relative overflow-hidden cursor-pointer transition-shadow hover:shadow-lg border-2 ${
+                        !item.isAvailable ? 'opacity-60 grayscale cursor-not-allowed' : 'hover:border-primary/50'
+                      }`}
+                      onClick={() => {
+                        if (!item.isAvailable) return;
+                        const groupKey = getGroupingKey(item);
+                        const group = groupedItemsMap[groupKey] || [item];
+                        const hasVariants = group.length > 1;
+                        const hasSizes = item.availableSizes && item.availableSizes.length > 0;
+                        const hasAddons = itemsWithAddonsSet.has(item.id);
+                        if (!hasVariants && !hasSizes && !hasAddons) {
+                          addToOrder(item);
+                        } else {
+                          const existingCartItem = orderItems.find((oi: any) => oi.coffeeItem.id === item.id);
+                          setPosCustomizationItem({ item, group, initialCustomization: existingCartItem?._fullCustomization });
+                        }
+                      }}
+                      data-testid={`card-product-${item.id}`}
+                    >
+                      <div className="aspect-square relative overflow-hidden">
+                        {item.imageUrl ? (
+                          <img 
+                            src={item.imageUrl} 
+                            alt={item.nameAr}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-muted flex items-center justify-center">
+                            <Coffee className="w-10 h-10 text-muted-foreground/30" />
+                          </div>
+                        )}
+                        {!item.isAvailable && (
+                          <div className="absolute inset-0 bg-background/80 flex items-center justify-center">
+                            <Badge variant="destructive" className="text-[10px] sm:text-sm font-bold px-2 py-0.5 sm:px-3 sm:py-1">{t('pos.out_of_stock')}</Badge>
+                          </div>
+                        )}
+                        {(() => {
+                          const groupKey = getGroupingKey(item);
+                          const groupCount = (groupedItemsMap[groupKey] || [item]).length;
+                          const hasAddonsBadge = itemsWithAddonsSet.has(item.id);
+                          const customBadge = i18n.language === 'ar'
+                            ? (item.badgeAr || item.badgeEn)
+                            : (item.badgeEn || item.badgeAr);
+                          return (
+                            <div className="absolute top-1.5 right-1.5 flex flex-col gap-1">
+                              {item.isBestSeller && (
+                                <Badge className="text-[9px] sm:text-[10px] px-1.5 py-0.5 bg-primary text-white font-bold">
+                                  🔥 {i18n.language === 'ar' ? 'الأكثر طلباً' : 'Best Seller'}
+                                </Badge>
+                              )}
+                              {item.isNewProduct === 1 && (
+                                <Badge className="text-[9px] sm:text-[10px] px-1.5 py-0.5 bg-green-500 text-white font-bold">
+                                  {i18n.language === 'ar' ? 'جديد' : 'New'}
+                                </Badge>
+                              )}
+                              {customBadge && (
+                                <Badge className="text-[9px] sm:text-[10px] px-1.5 py-0.5 bg-accent text-white font-bold border-0">
+                                  {customBadge}
+                                </Badge>
+                              )}
+                              {groupCount > 1 && (
+                                <Badge className="text-[9px] sm:text-[10px] px-1.5 py-0.5 bg-primary/90 text-white font-bold">
+                                  {groupCount} {i18n.language === 'ar' ? 'خيارات' : 'options'}
+                                </Badge>
+                              )}
+                              {hasAddonsBadge && (
+                                <Badge className="text-[9px] sm:text-[10px] px-1.5 py-0.5 bg-orange-500/90 text-white font-bold">
+                                  + {i18n.language === 'ar' ? 'إضافات' : 'Addons'}
+                                </Badge>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                      <CardContent className="p-2 sm:p-3">
+                        <h3 className="font-bold text-xs sm:text-base mb-1 line-clamp-1">{getItemDisplayName(item)}</h3>
+                        <div className="flex justify-between items-center">
+                          <p className="text-primary font-black text-xs sm:text-base flex items-center gap-1">{Number(item.price).toFixed(2)} <SarIcon size={12} />{showVatLabel && <span className="text-muted-foreground font-medium text-[9px] sm:text-[10px] mr-1">{t('pos.vat_included')}</span>}</p>
+                          <div className="bg-primary/10 text-primary rounded-full p-1">
+                            <Plus className="w-3.5 h-3.5" />
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
                   ))}
                 </div>
               )}
-            </div>
-          </div>
+            </ScrollArea>
+          </section>
 
-          <div className="p-2 sm:p-4 border-b bg-card/50 flex flex-col sm:flex-row gap-2 sm:gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                ref={searchInputRef}
-                placeholder={`${t('pos.search_placeholder')}  (/ ${tc('أو','or')} F2)`}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pr-10 h-9 sm:h-12 text-sm sm:text-base rounded-xl border-2 focus-visible:ring-primary"
-                data-testid="input-search-products"
-              />
-            </div>
-            <div className={`${isMobile ? 'flex' : 'hidden'} gap-2 overflow-x-auto whitespace-nowrap pb-1 no-scrollbar`}>
-              {ORDER_TYPES.map((type) => (
+          <aside className={`${mobilePanelView === 'cart' ? 'flex' : 'hidden'} md:flex w-full md:w-80 lg:w-[420px] border-r flex flex-col bg-card shrink-0`}>
+            <div className="p-2 sm:p-3 border-b flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
                 <Button
-                  key={type.id}
-                  variant={orderType === type.id ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setOrderType(type.id as OrderType)}
-                  className="whitespace-nowrap shrink-0 h-9"
-                  data-testid={`button-mobile-order-type-${type.id}`}
+                  variant="ghost"
+                  size="icon"
+                  className="md:hidden h-8 w-8 text-muted-foreground"
+                  onClick={() => setMobilePanelView('products')}
+                  data-testid="button-back-to-products"
                 >
-                  <type.icon className="w-4 h-4 ml-1" />
-                  {t(`pos.order_type_${type.id}`)}
+                  <ChevronRight className="w-5 h-5" />
                 </Button>
-              ))}
-            </div>
-          </div>
-
-          <ScrollArea className="flex-1 p-2 sm:p-4 lg:p-6">
-            {isLoadingProducts ? (
-              <LoadingState message={t('pos.loading_products')} />
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-3 lg:gap-4 pb-[58px] md:pb-0">
-                {filteredItemsList.map((item: any) => (
-                  <Card 
-                    key={item.id}
-                    className={`group relative overflow-hidden cursor-pointer transition-shadow hover:shadow-lg border-2 ${
-                      !item.isAvailable ? 'opacity-60 grayscale cursor-not-allowed' : 'hover:border-primary/50'
-                    }`}
-                    onClick={() => {
-                      if (!item.isAvailable) return;
-                      const groupKey = getGroupingKey(item);
-                      const group = groupedItemsMap[groupKey] || [item];
-                      const hasVariants = group.length > 1;
-                      const hasSizes = item.availableSizes && item.availableSizes.length > 0;
-                      const hasAddons = itemsWithAddonsSet.has(item.id);
-                      if (!hasVariants && !hasSizes && !hasAddons) {
-                        addToOrder(item);
-                      } else {
-                        const existingCartItem = orderItems.find((oi: any) => oi.coffeeItem.id === item.id);
-                        setPosCustomizationItem({ item, group, initialCustomization: existingCartItem?._fullCustomization });
-                      }
-                    }}
-                    data-testid={`card-product-${item.id}`}
-                  >
-                    <div className="aspect-square relative overflow-hidden">
-                      {item.imageUrl ? (
-                        <img 
-                          src={item.imageUrl} 
-                          alt={item.nameAr}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full bg-muted flex items-center justify-center">
-                          <Coffee className="w-10 h-10 text-muted-foreground/30" />
-                        </div>
-                      )}
-                      {!item.isAvailable && (
-                        <div className="absolute inset-0 bg-background/80 flex items-center justify-center">
-                          <Badge variant="destructive" className="text-[10px] sm:text-sm font-bold px-2 py-0.5 sm:px-3 sm:py-1">{t('pos.out_of_stock')}</Badge>
-                        </div>
-                      )}
-                      {(() => {
-                        const groupKey = getGroupingKey(item);
-                        const groupCount = (groupedItemsMap[groupKey] || [item]).length;
-                        const hasAddonsBadge = itemsWithAddonsSet.has(item.id);
-                        const customBadge = i18n.language === 'ar'
-                          ? (item.badgeAr || item.badgeEn)
-                          : (item.badgeEn || item.badgeAr);
-                        return (
-                          <div className="absolute top-1.5 right-1.5 flex flex-col gap-1">
-                            {item.isBestSeller && (
-                              <Badge className="text-[9px] sm:text-[10px] px-1.5 py-0.5 bg-primary text-white font-bold">
-                                🔥 {i18n.language === 'ar' ? 'الأكثر طلباً' : 'Best Seller'}
-                              </Badge>
-                            )}
-                            {item.isNewProduct === 1 && (
-                              <Badge className="text-[9px] sm:text-[10px] px-1.5 py-0.5 bg-green-500 text-white font-bold">
-                                {i18n.language === 'ar' ? 'جديد' : 'New'}
-                              </Badge>
-                            )}
-                            {customBadge && (
-                              <Badge className="text-[9px] sm:text-[10px] px-1.5 py-0.5 bg-accent text-white font-bold border-0">
-                                {customBadge}
-                              </Badge>
-                            )}
-                            {groupCount > 1 && (
-                              <Badge className="text-[9px] sm:text-[10px] px-1.5 py-0.5 bg-primary/90 text-white font-bold">
-                                {groupCount} {i18n.language === 'ar' ? 'خيارات' : 'options'}
-                              </Badge>
-                            )}
-                            {hasAddonsBadge && (
-                              <Badge className="text-[9px] sm:text-[10px] px-1.5 py-0.5 bg-orange-500/90 text-white font-bold">
-                                + {i18n.language === 'ar' ? 'إضافات' : 'Addons'}
-                              </Badge>
-                            )}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                    <CardContent className="p-2 sm:p-3">
-                      <h3 className="font-bold text-xs sm:text-base mb-1 line-clamp-1">{getItemDisplayName(item)}</h3>
-                      <div className="flex justify-between items-center">
-                        <p className="text-primary font-black text-xs sm:text-base">{Number(item.price).toFixed(2)} {t('pos.currency')}{showVatLabel && <span className="text-muted-foreground font-medium text-[9px] sm:text-[10px] mr-1">{t('pos.vat_included')}</span>}</p>
-                        <div className="bg-primary/10 text-primary rounded-full p-1">
-                          <Plus className="w-3.5 h-3.5" />
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                <div className="bg-primary p-1.5 rounded-lg hidden sm:flex">
+                  <ShoppingBag className="w-4 h-4 text-primary-foreground" />
+                </div>
+                <div>
+                  <h2 className="font-bold text-sm sm:text-base">{t('pos.order_details')}</h2>
+                  {orderItems.length > 0 && (
+                    <p className="text-[10px] text-muted-foreground">{orderItems.length} {i18n.language === 'ar' ? 'منتج' : 'items'}</p>
+                  )}
+                </div>
               </div>
-            )}
-          </ScrollArea>
-        </section>
-
-        <aside className={`${!isMobile || mobilePanelView === 'checkout' ? 'flex' : 'hidden'} ${isMobile ? 'w-full' : 'w-80 lg:w-[420px]'} border-r flex flex-col bg-card shrink-0`}>
-          <div className="p-2 sm:p-3 border-b flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                className={`${isMobile ? 'flex' : 'hidden'} h-8 w-8 text-muted-foreground`}
-                onClick={() => setMobilePanelView('products')}
-                data-testid="button-back-to-products"
-              >
-                <ChevronRight className="w-5 h-5" />
-              </Button>
-              <div className={`bg-primary p-1.5 rounded-lg ${isMobile ? 'hidden' : 'flex'}`}>
-                <ShoppingBag className="w-4 h-4 text-primary-foreground" />
-              </div>
-              <div>
-                <h2 className="font-bold text-sm sm:text-base">{t('pos.order_details')}</h2>
+              <div className="flex gap-1">
+                {/* Hold current cart */}
                 {orderItems.length > 0 && (
-                  <p className="text-[10px] text-muted-foreground">{orderItems.length} {i18n.language === 'ar' ? 'منتج' : 'items'}</p>
+                  <Button variant="ghost" size="icon" title={tc('احجز الطلب (F5)','Hold Order (F5)')} onClick={holdCurrentCart} className="h-8 w-8 text-amber-600 hover:text-amber-700" data-testid="button-hold-order">
+                    <PauseCircle className="w-4 h-4" />
+                  </Button>
+                )}
+                {/* Held carts badge */}
+                {heldCarts.length > 0 && (
+                  <Button variant="ghost" size="icon" title={tc('الطلبات المحجوزة (F6)','Held Orders (F6)')} onClick={() => setShowHeldCarts(true)} className="h-8 w-8 relative" data-testid="button-show-held-carts">
+                    <Archive className="w-4 h-4" />
+                    <span className="absolute -top-1 -right-1 bg-amber-500 text-white rounded-full w-4 h-4 text-[9px] font-bold flex items-center justify-center">{heldCarts.length}</span>
+                  </Button>
+                )}
+                {/* Merge bills */}
+                {cartTabs.length > 1 && (
+                  <Button variant="ghost" size="icon" title={tc('دمج الفواتير','Merge Bills')} onClick={() => setShowMergeBills(true)} className="h-8 w-8" data-testid="button-merge-bills">
+                    <Merge className="w-4 h-4" />
+                  </Button>
+                )}
+                {orderItems.length > 0 && (
+                  <Button variant="ghost" size="icon" onClick={() => { setOrderItems([]); setSplitCashAmount(""); setItemDiscounts({}); broadcastToDisplay("order_cancelled", { items: [], subtotal: 0, tax: 0, total: 0 }); }} className="text-destructive h-8 w-8" data-testid="button-clear-order">
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
                 )}
               </div>
             </div>
-            <div className="flex gap-1">
-              {/* Hold current cart */}
-              {orderItems.length > 0 && (
-                <Button variant="ghost" size="icon" title={tc('احجز الطلب (F5)','Hold Order (F5)')} onClick={holdCurrentCart} className="h-8 w-8 text-amber-600 hover:text-amber-700" data-testid="button-hold-order">
-                  <PauseCircle className="w-4 h-4" />
-                </Button>
-              )}
-              {/* Held carts badge */}
-              {heldCarts.length > 0 && (
-                <Button variant="ghost" size="icon" title={tc('الطلبات المحجوزة (F6)','Held Orders (F6)')} onClick={() => setShowHeldCarts(true)} className="h-8 w-8 relative" data-testid="button-show-held-carts">
-                  <Archive className="w-4 h-4" />
-                  <span className="absolute -top-1 -right-1 bg-amber-500 text-white rounded-full w-4 h-4 text-[9px] font-bold flex items-center justify-center">{heldCarts.length}</span>
-                </Button>
-              )}
-              {/* Merge bills */}
-              {cartTabs.length > 1 && (
-                <Button variant="ghost" size="icon" title={tc('دمج الفواتير','Merge Bills')} onClick={() => setShowMergeBills(true)} className="h-8 w-8" data-testid="button-merge-bills">
-                  <Merge className="w-4 h-4" />
-                </Button>
-              )}
-              {orderItems.length > 0 && (
-                <Button variant="ghost" size="icon" onClick={() => { setOrderItems([]); setSplitCashAmount(""); setItemDiscounts({}); broadcastToDisplay("order_cancelled", { items: [], subtotal: 0, tax: 0, total: 0 }); }} className="text-destructive h-8 w-8" data-testid="button-clear-order">
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              )}
-            </div>
-          </div>
 
-          {/* ── Cart Tabs Bar (Multi-Cart) ──────────────────────────────── */}
-          {cartTabs.length > 1 && (
-            <div className="flex items-center gap-0.5 px-2 pt-1 pb-0 border-b overflow-x-auto no-scrollbar bg-muted/20">
-              {cartTabs.map(tab => (
-                <div key={tab.id} className="flex items-center shrink-0">
-                  <button
-                    onClick={() => switchCartTab(tab.id)}
-                    className={`flex items-center gap-1 px-2 py-1.5 rounded-t-lg text-[10px] font-bold whitespace-nowrap border-b-2 transition-all ${
-                      activeTabId === tab.id
-                        ? 'border-primary text-primary bg-primary/5'
-                        : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/40'
-                    }`}
-                    data-testid={`button-cart-tab-${tab.id}`}
-                  >
-                    {tab.name}
-                    {tab.itemCount > 0 && (
-                      <span className={`rounded-full px-1 text-[9px] font-black ${activeTabId === tab.id ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
-                        {tab.itemCount}
-                      </span>
-                    )}
-                  </button>
-                  {cartTabs.length > 1 && (
+            {/* ── Cart Tabs Bar (Multi-Cart) ──────────────────────────────── */}
+            {cartTabs.length > 1 && (
+              <div className="flex items-center gap-0.5 px-2 pt-1 pb-0 border-b overflow-x-auto no-scrollbar bg-muted/20">
+                {cartTabs.map(tab => (
+                  <div key={tab.id} className="flex items-center shrink-0">
                     <button
-                      onClick={() => closeCartTab(tab.id)}
-                      className="w-3.5 h-3.5 text-muted-foreground/50 hover:text-destructive transition-colors mr-1"
-                      data-testid={`button-close-tab-${tab.id}`}
+                      onClick={() => switchCartTab(tab.id)}
+                      className={`flex items-center gap-1 px-2 py-1.5 rounded-t-lg text-[10px] font-bold whitespace-nowrap border-b-2 transition-all ${
+                        activeTabId === tab.id
+                          ? 'border-primary text-primary bg-primary/5'
+                          : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/40'
+                      }`}
+                      data-testid={`button-cart-tab-${tab.id}`}
                     >
-                      <X className="w-3 h-3" />
-                    </button>
-                  )}
-                </div>
-              ))}
-              <button
-                onClick={newCartTab}
-                className="flex items-center gap-0.5 px-2 py-1.5 rounded-t-lg text-[10px] text-muted-foreground hover:text-primary transition-colors shrink-0"
-                title={tc('طلب جديد (F4 / Ctrl+T)','New Order (F4 / Ctrl+T)')}
-                data-testid="button-new-cart-tab"
-              >
-                <Plus className="w-3 h-3" />
-                <span>{tc('جديد','New')}</span>
-              </button>
-            </div>
-          )}
-          {/* Quick new tab when only 1 tab */}
-          {cartTabs.length === 1 && (
-            <div className="flex justify-end px-2 pt-1">
-              <button
-                onClick={newCartTab}
-                className="flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-primary transition-colors"
-                title={tc('طلب جديد (F4)','New Order (F4)')}
-                data-testid="button-new-first-tab"
-              >
-                <Plus className="w-3 h-3" />
-                <span>{tc('+ طلب جديد','+ New Order')}</span>
-              </button>
-            </div>
-          )}
-
-          <ScrollArea className="flex-1 px-2 sm:px-4 py-2">
-            {orderItems.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-muted-foreground opacity-50 py-20">
-                <ShoppingBag className="w-12 h-12 mb-4" />
-                <p className="text-sm font-bold">{t('pos.empty_cart')}</p>
-              </div>
-            ) : (
-              <div className="space-y-2 pb-2">
-                {orderItems.map((item) => (
-                  <div key={item.lineItemId} className="flex items-center gap-2 p-2 sm:p-3 rounded-xl border bg-background shadow-sm" data-testid={`order-item-${item.lineItemId}`}>
-                    {/* Item info */}
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-bold text-xs sm:text-sm leading-tight line-clamp-2">{getItemDisplayName(item.coffeeItem)}</h4>
-                      {item.customization?.selectedItemAddons && item.customization.selectedItemAddons.length > 0 && (
-                        <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                          + {item.customization.selectedItemAddons.map((a: any) => a.nameAr).join('، ')}
-                        </p>
+                      {tab.name}
+                      {tab.itemCount > 0 && (
+                        <span className={`rounded-full px-1 text-[9px] font-black ${activeTabId === tab.id ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                          {tab.itemCount}
+                        </span>
                       )}
-                      <div className="flex items-center gap-1 flex-wrap mt-0.5">
-                        <p className="text-primary font-black text-xs">
-                          {(getPosItemUnitPrice(item) * item.quantity).toFixed(2)} {t('pos.currency')}
-                        </p>
-                        {/* Per-item discount badge */}
-                        {itemDiscounts[item.lineItemId] ? (
-                          <button
-                            onClick={() => { setShowItemDiscountFor(item.lineItemId); setItemDiscountInput(String(itemDiscounts[item.lineItemId].value)); setItemDiscountType(itemDiscounts[item.lineItemId].type); }}
-                            className="text-[9px] font-bold text-green-700 bg-green-100 rounded px-1 inline-flex items-center gap-0.5 dark:bg-green-900/30 dark:text-green-400"
-                            data-testid={`badge-item-discount-${item.lineItemId}`}
-                          >
-                            <Percent className="w-2.5 h-2.5" />
-                            -{itemDiscounts[item.lineItemId].type === 'percent' ? `${itemDiscounts[item.lineItemId].value}%` : `${itemDiscounts[item.lineItemId].value} ${tc('ر.س','SAR')}`}
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => { setShowItemDiscountFor(item.lineItemId); setItemDiscountInput(''); setItemDiscountType('percent'); }}
-                            className="text-[9px] text-muted-foreground/60 hover:text-primary inline-flex items-center gap-0.5 transition-colors"
-                            data-testid={`button-add-item-discount-${item.lineItemId}`}
-                          >
-                            <Tag className="w-2.5 h-2.5" />
-                            {tc('خصم','Disc')}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    {/* Quantity controls */}
-                    <div className="flex items-center bg-muted rounded-full p-0.5 shrink-0">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 rounded-full hover:bg-background"
-                        onClick={() => updateQuantity(item.lineItemId, item.quantity - 1)}
-                        data-testid={`button-decrease-${item.lineItemId}`}
+                    </button>
+                    {cartTabs.length > 1 && (
+                      <button
+                        onClick={() => closeCartTab(tab.id)}
+                        className="w-3.5 h-3.5 text-muted-foreground/50 hover:text-destructive transition-colors mr-1"
+                        data-testid={`button-close-tab-${tab.id}`}
                       >
-                        <Minus className="w-3 h-3" />
-                      </Button>
-                      <span className="w-6 text-center text-xs font-black">{item.quantity}</span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 rounded-full hover:bg-background"
-                        onClick={() => updateQuantity(item.lineItemId, item.quantity + 1)}
-                        data-testid={`button-increase-${item.lineItemId}`}
-                      >
-                        <Plus className="w-3 h-3" />
-                      </Button>
-                    </div>
-                    {/* Delete button */}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 rounded-full text-destructive hover:bg-destructive/10 shrink-0"
-                      onClick={() => updateQuantity(item.lineItemId, 0)}
-                      data-testid={`button-delete-${item.lineItemId}`}
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </Button>
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
                   </div>
                 ))}
-              </div>
-            )}
-          </ScrollArea>
-
-          <div className="border-t">
-            <button
-              className="w-full flex items-center justify-between px-3 sm:px-4 py-2 hover:bg-muted/50 transition-colors text-sm"
-              onClick={() => setShowCustomerInfo(v => !v)}
-              data-testid="button-toggle-customer-info"
-            >
-              <span className="flex items-center gap-2 font-medium text-muted-foreground">
-                <User className="w-3.5 h-3.5" />
-                {customerName
-                  ? customerName
-                  : i18n.language === 'ar' ? 'بيانات العميل' : 'Customer Info'}
-                {(customerName || customerPhone) && (
-                  <span className="w-2 h-2 rounded-full bg-primary inline-block" />
-                )}
-              </span>
-              <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${showCustomerInfo ? 'rotate-180' : ''}`} />
-            </button>
-            {showCustomerInfo && (
-              <div className="px-2 sm:px-4 pb-2 space-y-2">
-                <Input
-                  placeholder={t('pos.customer_name')}
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  className="h-9 text-sm"
-                  data-testid="input-pos-customer-name"
-                />
-                <div className="relative">
-                  <Input
-                    placeholder={t('pos.customer_phone')}
-                    value={customerPhone}
-                    onChange={(e) => {
-                      setCustomerPhone(e.target.value);
-                      setCustomerLookupFound(null);
-                    }}
-                    className={`h-9 text-sm pr-8 ${customerLookupFound === true ? 'border-green-500 focus-visible:ring-green-400' : customerLookupFound === false ? 'border-orange-400' : ''}`}
-                    dir="ltr"
-                    data-testid="input-pos-customer-phone"
-                  />
-                  <div className="absolute inset-y-0 right-2 flex items-center pointer-events-none">
-                    {isLookingUpCustomer && <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />}
-                    {!isLookingUpCustomer && customerLookupFound === true && <CheckCircle className="w-3.5 h-3.5 text-green-500" />}
-                    {!isLookingUpCustomer && customerLookupFound === false && <User className="w-3.5 h-3.5 text-orange-400" />}
-                  </div>
-                </div>
-                {orderType === "dine_in" && (
-                  <Input
-                    placeholder={t('pos.table_number')}
-                    value={tableNumber}
-                    onChange={(e) => setTableNumber(e.target.value)}
-                    className="h-9 text-sm"
-                    data-testid="input-pos-table-number"
-                  />
-                )}
-                {orderType === "car_pickup" && (
-                  <div className="space-y-2 mt-1 p-2 rounded-lg border border-purple-500/30 bg-purple-500/5">
-                    <p className="text-xs font-bold text-purple-500 flex items-center gap-1">🚗 {tc("بيانات السيارة","Car Info")}</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <Input
-                        placeholder={tc("نوع السيارة", "Car model")}
-                        value={carTypeInput}
-                        onChange={(e) => setCarTypeInput(e.target.value)}
-                        className="h-8 text-xs"
-                        data-testid="input-pos-car-type"
-                      />
-                      <Input
-                        placeholder={tc("لون السيارة", "Car color")}
-                        value={carColorInput}
-                        onChange={(e) => setCarColorInput(e.target.value)}
-                        className="h-8 text-xs"
-                        data-testid="input-pos-car-color"
-                      />
-                    </div>
-                    <Input
-                      placeholder={tc("رقم اللوحة", "Plate number")}
-                      value={carPlateInput}
-                      onChange={(e) => setCarPlateInput(e.target.value)}
-                      className="h-8 text-xs"
-                      data-testid="input-pos-car-plate"
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          <div className="px-2 sm:px-4 py-2 border-t">
-            <p className="text-xs sm:text-sm font-bold text-muted-foreground mb-2">{t('pos.payment_method')}</p>
-            <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
-              {PAYMENT_METHODS.map((method) => (
-                <Button
-                  key={method.id}
-                  type="button"
-                  variant={paymentMethod === method.id ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => {
-                    setPaymentMethod(method.id as PaymentMethod);
-                    setSplitCashAmount("");
-                    if (method.id === 'split') {
-                      setPersonPayments([{ id: Date.now().toString(), method: 'cash', amount: '' }]);
-                    }
-                  }}
-                  className="flex flex-col gap-0.5 h-auto py-2 text-[10px] sm:text-xs"
-                  data-testid={`button-payment-${method.id}`}
+                <button
+                  onClick={newCartTab}
+                  className="flex items-center gap-0.5 px-2 py-1.5 rounded-t-lg text-[10px] text-muted-foreground hover:text-primary transition-colors shrink-0"
+                  title={tc('طلب جديد (F4 / Ctrl+T)','New Order (F4 / Ctrl+T)')}
+                  data-testid="button-new-cart-tab"
                 >
-                  <method.icon className="w-4 h-4" />
-                  <span className="font-bold">{t((method as any).tKey)}</span>
-                </Button>
-              ))}
-            </div>
-            {paymentMethod === "cash" && (() => {
-              const received = parseFloat(splitCashAmount) || 0;
-              const change = received - finalGrandTotal;
-              const roundUpTo = (n: number) => Math.ceil(finalGrandTotal / n) * n;
-              const quickAmounts: { label: string; value: number; testId: string }[] = [
-                { label: tc("بالضبط","Exact"), value: finalGrandTotal, testId: "exact" },
-                { label: `≈${roundUpTo(10)}`, value: roundUpTo(10), testId: "round10" },
-                { label: `≈${roundUpTo(50)}`, value: roundUpTo(50), testId: "round50" },
-                { label: `≈${roundUpTo(100)}`, value: roundUpTo(100), testId: "round100" },
-              ];
-              const bills = [50, 100, 200, 500];
-              const switchToSplitWithCard = () => {
-                const cashEntered = received > 0 ? Math.min(received, finalGrandTotal) : finalGrandTotal / 2;
-                const cardPart = Math.max(0, finalGrandTotal - cashEntered);
-                setPersonPayments([{
-                  id: Date.now().toString(),
-                  method: 'mixed',
-                  amount: '',
-                  cashAmount: cashEntered.toFixed(2),
-                  cardAmount: cardPart.toFixed(2),
-                }]);
-                setPaymentMethod('split' as PaymentMethod);
-              };
-              return (
-                <div className="mt-0.5 rounded border border-primary/20 bg-primary/5 p-1 space-y-0.5">
-                  <div className="flex items-center gap-1">
-                    <Banknote className="w-2.5 h-2.5 text-primary shrink-0" />
-                    <Input
-                      type="number"
-                      min={0}
-                      step={0.5}
-                      placeholder={finalGrandTotal.toFixed(2)}
-                      value={splitCashAmount}
-                      onChange={e => setSplitCashAmount(e.target.value)}
-                      className="h-6 text-[10px] font-bold flex-1"
-                      data-testid="input-cash-received"
-                    />
-                    <SarIcon size={9} />
-                  </div>
-                  {/* Quick amounts + bills in one row */}
-                  <div className="grid grid-cols-8 gap-0.5">
-                    {quickAmounts.map((q) => (
-                      <Button key={q.testId} type="button" size="sm" variant="outline" className="h-4 text-[7px] font-bold px-0 border-primary/30 hover:bg-primary/10" onClick={() => setSplitCashAmount(q.value.toFixed(2))} data-testid={`button-quick-cash-${q.testId}`}>{q.label}</Button>
-                    ))}
-                    {bills.map((b) => (
-                      <Button key={b} type="button" size="sm" variant="outline" className="h-4 text-[7px] font-bold px-0" onClick={() => setSplitCashAmount(((parseFloat(splitCashAmount) || 0) + b).toFixed(2))} data-testid={`button-add-bill-${b}`}>+{b}</Button>
-                    ))}
-                  </div>
-                  {splitCashAmount && received > 0 && (
-                    <div className={`flex items-center justify-between rounded px-1 py-0 text-[9px] font-bold border ${change >= 0 ? 'bg-green-50 dark:bg-green-950/30 text-green-700 border-green-300' : 'bg-red-50 dark:bg-red-950/20 text-red-600 border-red-300'}`}>
-                      <span>{change >= 0 ? tc("🪙 الباقي","🪙 Change") : tc("⚠️ ناقص","⚠️ Short")}</span>
-                      <span className="font-black">{Math.abs(change).toFixed(2)} <SarIcon size={9} /></span>
-                    </div>
-                  )}
-                  <div className="flex gap-0.5">
-                    {received < finalGrandTotal && (
-                      <Button type="button" size="sm" variant="outline" className="flex-1 h-5 text-[8px] font-black border-dashed border-primary/50 text-primary hover:bg-primary/10 gap-0.5 px-1" onClick={switchToSplitWithCard} data-testid="button-switch-cash-to-split">
-                        <CreditCard className="w-2.5 h-2.5" />
-                        {received > 0
-                          ? tc(`${(finalGrandTotal - received).toFixed(2)} شبكة`, `${(finalGrandTotal - received).toFixed(2)} card`)
-                          : tc("كاش+شبكة","Cash+Card")}
-                      </Button>
-                    )}
-                    <Button type="button" size="sm" variant="ghost" className="h-5 text-[8px] text-muted-foreground px-2" onClick={() => setSplitCashAmount("")} data-testid="button-clear-cash">{tc("مسح","Clear")}</Button>
-                  </div>
-                </div>
-              );
-            })()}
-            {paymentMethod === "card" && (
-              <div className="mt-2 space-y-2 rounded-xl border-2 border-primary/20 bg-primary/5 p-3">
-                <p className="text-[10px] sm:text-xs text-muted-foreground text-center">
-                  {t('pos.card_amount_note')}
-                </p>
-                {posTerminalConnected ? (
-                  <div className="flex items-center justify-center gap-1.5 text-green-600 text-[10px] sm:text-xs" data-testid="status-terminal-connected">
-                    <div className="w-2 h-2 rounded-full bg-green-500" />
-                    <span className="font-medium">{t('pos.terminal_connected_status')}</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-center gap-1.5 text-orange-500 text-[10px] sm:text-xs" data-testid="status-terminal-disconnected">
-                    <AlertTriangle className="w-3 h-3" />
-                    <span className="font-medium">{t('pos.terminal_disconnected_status')}</span>
-                  </div>
-                )}
-                {/* Quick switch shortcuts */}
-                <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-primary/10">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-8 text-[10px] font-black border-dashed border-primary/50 text-primary hover:bg-primary/10 gap-1"
-                    onClick={() => {
-                      const half = finalGrandTotal / 2;
-                      setPersonPayments([{
-                        id: Date.now().toString(),
-                        method: 'mixed',
-                        amount: '',
-                        cashAmount: half.toFixed(2),
-                        cardAmount: half.toFixed(2),
-                      }]);
-                      setPaymentMethod('split' as PaymentMethod);
-                    }}
-                    data-testid="button-switch-card-to-split"
-                  >
-                    <Banknote className="w-3.5 h-3.5" />
-                    {tc("نصف كاش + نصف شبكة","½ Cash + ½ Card")}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-8 text-[10px] font-black border-dashed border-primary/50 text-primary hover:bg-primary/10 gap-1"
-                    onClick={() => {
-                      setPersonPayments([{
-                        id: Date.now().toString(),
-                        method: 'mixed',
-                        amount: '',
-                        cashAmount: '',
-                        cardAmount: finalGrandTotal.toFixed(2),
-                      }]);
-                      setPaymentMethod('split' as PaymentMethod);
-                    }}
-                    data-testid="button-card-go-split"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    {tc("تقسيم مخصص","Custom split")}
-                  </Button>
-                </div>
+                  <Plus className="w-3 h-3" />
+                  <span>{tc('جديد','New')}</span>
+                </button>
               </div>
             )}
-            {paymentMethod === "split" && (() => {
-              const orderTotal = finalGrandTotal;
-              const getPersonCashUI = (p: PersonPayment) =>
-                p.method === 'mixed' ? (parseFloat(p.cashAmount || '') || 0) : p.method === 'cash' ? (parseFloat(p.amount) || 0) : 0;
-              const getPersonCardUI = (p: PersonPayment) =>
-                p.method === 'mixed' ? (parseFloat(p.cardAmount || '') || 0) : p.method === 'card' ? (parseFloat(p.amount) || 0) : 0;
-              const getPersonTotalUI = (p: PersonPayment) => getPersonCashUI(p) + getPersonCardUI(p);
-              const paidTotal = personPayments.reduce((s, p) => s + getPersonTotalUI(p), 0);
-              const remaining = Math.max(0, orderTotal - paidTotal);
-              const isComplete = Math.abs(paidTotal - orderTotal) <= 0.01;
-              const addPerson = () => setPersonPayments(prev => [...prev, { id: Date.now().toString(), method: 'cash', amount: '' }]);
-              const removePerson = (id: string) => setPersonPayments(prev => prev.filter(p => p.id !== id));
-              const updatePerson = (id: string, field: keyof PersonPayment, val: string) =>
-                setPersonPayments(prev => prev.map(p => p.id === id ? { ...p, [field]: val } : p));
-              const fillRemaining = (id: string) => {
-                const p = personPayments.find(pp => pp.id === id)!;
-                if (p.method === 'mixed') {
-                  updatePerson(id, 'cashAmount', remaining > 0 ? remaining.toFixed(2) : '');
-                } else {
-                  updatePerson(id, 'amount', remaining > 0 ? remaining.toFixed(2) : '');
-                }
-              };
-              const totalCash = personPayments.reduce((s, p) => s + getPersonCashUI(p), 0);
-              const totalCard = personPayments.reduce((s, p) => s + getPersonCardUI(p), 0);
-              const splitEqualCash = (n: number) => {
-                const per = orderTotal / n;
-                const items = Array.from({ length: n }, (_, i) => ({
-                  id: `${Date.now()}-${i}`,
-                  method: 'cash' as const,
-                  amount: per.toFixed(2),
-                }));
-                setPersonPayments(items);
-              };
-              const splitCashCard = () => {
-                const half = orderTotal / 2;
-                setPersonPayments([{
-                  id: Date.now().toString(),
-                  method: 'mixed',
-                  amount: '',
-                  cashAmount: half.toFixed(2),
-                  cardAmount: half.toFixed(2),
-                }]);
-              };
-              const resetSplit = () => setPersonPayments([{ id: Date.now().toString(), method: 'cash', amount: '' }]);
-              return (
-                <div className="mt-2 space-y-2 rounded-xl border-2 border-primary/30 bg-primary/5 p-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[11px] font-bold text-primary">{tc("تقسيم الفاتورة على أشخاص","Split bill between people")}</p>
-                    <span className="text-[10px] bg-primary/10 text-primary font-bold px-2 py-0.5 rounded-full">{tc("إجمالي","Total")}: {orderTotal.toFixed(2)}</span>
-                  </div>
-                  {/* Quick presets */}
-                  <div className="grid grid-cols-5 gap-1">
-                    {[2, 3, 4, 5].map((n) => (
-                      <Button
-                        key={n}
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-[10px] font-black border-primary/40 hover:bg-primary/10"
-                        onClick={() => splitEqualCash(n)}
-                        data-testid={`button-split-equal-${n}`}
-                      >÷{n}<br /><span className="text-[8px] font-normal">{(orderTotal / n).toFixed(2)}</span></Button>
-                    ))}
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-[10px] font-black border-primary/40 hover:bg-primary/10 text-red-600"
-                      onClick={resetSplit}
-                      data-testid="button-split-reset"
-                    >{tc("صفر","Reset")}</Button>
-                  </div>
-                  <div className="grid grid-cols-2 gap-1">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-[10px] font-black border-dashed border-primary/50 text-primary hover:bg-primary/10"
-                      onClick={splitCashCard}
-                      data-testid="button-split-cash-card-half"
-                    >½ {tc("كاش","Cash")} + ½ {tc("شبكة","Card")}</Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-[10px] font-black border-dashed border-primary/50 text-primary hover:bg-primary/10"
-                      onClick={() => setPersonPayments([{
-                        id: Date.now().toString(),
-                        method: 'mixed',
-                        amount: '',
-                        cashAmount: '',
-                        cardAmount: '',
-                      }])}
-                      data-testid="button-split-mixed-empty"
-                    >{tc("شخص واحد — كاش + شبكة","One person — Cash+Card")}</Button>
-                  </div>
-                  <div className="space-y-2">
-                    {personPayments.map((p, idx) => (
-                      <div key={p.id} className="space-y-1.5">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] font-bold text-muted-foreground shrink-0 w-5">{idx + 1}</span>
-                          <select
-                            value={p.method}
-                            onChange={e => updatePerson(p.id, 'method', e.target.value)}
-                            className="h-8 rounded-md border border-input bg-background text-xs font-bold px-1 shrink-0"
-                            data-testid={`select-person-method-${idx}`}
-                          >
-                            <option value="cash">{tc("كاش","Cash")}</option>
-                            <option value="card">{tc("شبكة","Card")}</option>
-                            <option value="mixed">{tc("كاش+شبكة","Cash+Card")}</option>
-                          </select>
-                          {p.method !== 'mixed' && (
-                            <Input
-                              type="number"
-                              min={0}
-                              step={0.01}
-                              placeholder={tc("المبلغ","Amount")}
-                              value={p.amount}
-                              onChange={e => updatePerson(p.id, 'amount', e.target.value)}
-                              className="h-8 text-sm font-bold flex-1 min-w-0"
-                              data-testid={`input-person-amount-${idx}`}
-                            />
-                          )}
-                          {p.method === 'mixed' && (
-                            <span className="text-[10px] text-primary font-bold flex-1 text-center">
-                              {getPersonTotalUI(p) > 0 ? `${getPersonTotalUI(p).toFixed(2)} ${tc("ر.س","SAR")}` : tc("أدخل المبالغ أدناه","Enter below")}
-                            </span>
-                          )}
-                          {remaining > 0 && getPersonTotalUI(p) === 0 && (
+            {/* Quick new tab when only 1 tab */}
+            {cartTabs.length === 1 && (
+              <div className="flex justify-end px-2 pt-1">
+                <button
+                  onClick={newCartTab}
+                  className="flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-primary transition-colors"
+                  title={tc('طلب جديد (F4)','New Order (F4)')}
+                  data-testid="button-new-first-tab"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>{tc('+ طلب جديد','+ New Order')}</span>
+                </button>
+              </div>
+            )}
+
+            <ScrollArea className="flex-1 px-2 sm:px-4 py-2">
+              {orderItems.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-muted-foreground opacity-50 py-20">
+                  <ShoppingBag className="w-12 h-12 mb-4" />
+                  <p className="text-sm font-bold">{t('pos.empty_cart')}</p>
+                </div>
+              ) : (
+                <div className="space-y-2 pb-2">
+                  {orderItems.map((item) => (
+                    <div key={item.lineItemId} className="flex items-center gap-2 p-2 sm:p-3 rounded-xl border bg-background shadow-sm" data-testid={`order-item-${item.lineItemId}`}>
+                      {/* Item info */}
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-bold text-xs sm:text-sm leading-tight line-clamp-2">{getItemDisplayName(item.coffeeItem)}</h4>
+                        {item.customization?.selectedItemAddons && item.customization.selectedItemAddons.length > 0 && (
+                          <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                            + {item.customization.selectedItemAddons.map((a: any) => a.nameAr).join('، ')}
+                          </p>
+                        )}
+                        <div className="flex items-center gap-1 flex-wrap mt-0.5">
+                          <p className="text-primary font-black text-xs flex items-center gap-1">
+                            {(getPosItemUnitPrice(item) * item.quantity).toFixed(2)} <SarIcon size={11} />
+                          </p>
+                          {/* Per-item discount badge */}
+                          {itemDiscounts[item.lineItemId] ? (
                             <button
-                              onClick={() => fillRemaining(p.id)}
-                              className="text-[9px] text-primary underline shrink-0 whitespace-nowrap"
-                            >{remaining.toFixed(2)}</button>
-                          )}
-                          {personPayments.length > 1 && (
-                            <button onClick={() => removePerson(p.id)} className="text-red-500 hover:text-red-700 shrink-0">
-                              <X className="w-3.5 h-3.5" />
+                              onClick={() => { setShowItemDiscountFor(item.lineItemId); setItemDiscountInput(String(itemDiscounts[item.lineItemId].value)); setItemDiscountType(itemDiscounts[item.lineItemId].type); }}
+                              className="text-[9px] font-bold text-green-700 bg-green-100 rounded px-1 inline-flex items-center gap-0.5 dark:bg-green-900/30 dark:text-green-400"
+                              data-testid={`badge-item-discount-${item.lineItemId}`}
+                            >
+                              <Percent className="w-2.5 h-2.5" />
+                              -{itemDiscounts[item.lineItemId].type === 'percent' ? `${itemDiscounts[item.lineItemId].value}%` : `${itemDiscounts[item.lineItemId].value} ${tc('ر.س','SAR')}`}
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => { setShowItemDiscountFor(item.lineItemId); setItemDiscountInput(''); setItemDiscountType('percent'); }}
+                              className="text-[9px] text-muted-foreground/60 hover:text-primary inline-flex items-center gap-0.5 transition-colors"
+                              data-testid={`button-add-item-discount-${item.lineItemId}`}
+                            >
+                              <Tag className="w-2.5 h-2.5" />
+                              {tc('خصم','Disc')}
                             </button>
                           )}
                         </div>
-                        {p.method === 'mixed' && (
-                          <div className="flex items-center gap-1.5 mr-5">
-                            <Banknote className="w-3.5 h-3.5 text-green-600 shrink-0" />
-                            <Input
-                              type="number" min={0} step={0.01}
-                              placeholder={tc("كاش","Cash")}
-                              value={p.cashAmount || ''}
-                              onChange={e => updatePerson(p.id, 'cashAmount', e.target.value)}
-                              className="h-7 text-xs font-bold flex-1"
-                              data-testid={`input-person-cash-${idx}`}
-                            />
-                            <CreditCard className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                            <Input
-                              type="number" min={0} step={0.01}
-                              placeholder={tc("شبكة","Card")}
-                              value={p.cardAmount || ''}
-                              onChange={e => updatePerson(p.id, 'cardAmount', e.target.value)}
-                              className="h-7 text-xs font-bold flex-1"
-                              data-testid={`input-person-card-${idx}`}
-                            />
-                          </div>
-                        )}
                       </div>
-                    ))}
-                  </div>
-                  <button
-                    onClick={addPerson}
-                    className="text-[10px] text-primary font-bold flex items-center gap-1 hover:underline"
-                    data-testid="button-add-person"
-                  >
-                    <Plus className="w-3 h-3" />
-                    {tc("إضافة شخص","Add person")}
-                  </button>
-                  <div className={`flex items-center justify-between rounded-lg px-3 py-2 text-xs font-bold border ${isComplete ? 'bg-green-50 dark:bg-green-950/30 text-green-700 border-green-200' : remaining > 0 ? 'bg-amber-50 dark:bg-amber-950/20 text-amber-700 border-amber-200' : 'bg-red-50 text-red-600 border-red-200'}`}>
-                    <span>{isComplete ? tc("✓ مكتمل","✓ Complete") : remaining > 0 ? tc("المتبقي:","Remaining:") : tc("زيادة!","Over!")}</span>
-                    <span className="font-black text-sm">{isComplete ? '' : Math.abs(remaining > 0 ? remaining : paidTotal - orderTotal).toFixed(2) + ' ' + tc("ر.س","SAR")}</span>
-                  </div>
-                  <div className="flex justify-between text-[10px] text-muted-foreground pt-1 border-t">
-                    <span>{tc("نقدي","Cash")}: {totalCash.toFixed(2)}</span>
-                    <span>{tc("شبكة","Card")}: {totalCard.toFixed(2)}</span>
-                    <span className="font-bold text-primary">{tc("مدفوع","Paid")}: {paidTotal.toFixed(2)}</span>
-                  </div>
+                      {/* Quantity controls */}
+                      <div className="flex items-center bg-muted rounded-full p-0.5 shrink-0">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 rounded-full hover:bg-background"
+                          onClick={() => updateQuantity(item.lineItemId, item.quantity - 1)}
+                          data-testid={`button-decrease-${item.lineItemId}`}
+                        >
+                          <Minus className="w-3 h-3" />
+                        </Button>
+                        <span className="w-6 text-center text-xs font-black">{item.quantity}</span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 rounded-full hover:bg-background"
+                          onClick={() => updateQuantity(item.lineItemId, item.quantity + 1)}
+                          data-testid={`button-increase-${item.lineItemId}`}
+                        >
+                          <Plus className="w-3 h-3" />
+                        </Button>
+                      </div>
+                      {/* Delete button */}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 rounded-full text-destructive hover:bg-destructive/10 shrink-0"
+                        onClick={() => updateQuantity(item.lineItemId, 0)}
+                        data-testid={`button-delete-${item.lineItemId}`}
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  ))}
                 </div>
-              );
-            })()}
-          </div>
+              )}
+            </ScrollArea>
 
-          <div className="flex p-2 sm:p-4 pb-[72px] md:pb-4 border-t bg-muted/10 gap-2 sm:gap-3 flex-col">
-            {/* Discount coupon input */}
-            <div className="rounded-xl border-2 border-dashed border-primary/40 bg-primary/5 p-2 sm:p-3" data-testid="card-pos-discount">
-              <div className="flex items-center gap-1.5 mb-1.5">
-                <Tag className="w-3.5 h-3.5 text-primary" />
-                <span className="text-[11px] sm:text-xs font-black text-primary">
-                  {tc('كوبون خصم', 'Discount Coupon')}
+            <div className="border-t">
+              <button
+                className="w-full flex items-center justify-between px-3 sm:px-4 py-2 hover:bg-muted/50 transition-colors text-sm"
+                onClick={() => setShowCustomerInfo(v => !v)}
+                data-testid="button-toggle-customer-info"
+              >
+                <span className="flex items-center gap-2 font-medium text-muted-foreground">
+                  <User className="w-3.5 h-3.5" />
+                  {customerName
+                    ? customerName
+                    : i18n.language === 'ar' ? 'بيانات العميل' : 'Customer Info'}
+                  {(customerName || customerPhone) && (
+                    <span className="w-2 h-2 rounded-full bg-primary inline-block" />
+                  )}
                 </span>
-              </div>
-              {appliedDiscount ? (
-                <div className="flex items-center justify-between gap-2 bg-green-50 dark:bg-green-950/30 border border-green-300 dark:border-green-700 rounded-lg px-2 py-1.5">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] sm:text-xs font-black text-green-700 dark:text-green-300 truncate" data-testid="text-applied-coupon">
-                      {appliedDiscount.code} — {appliedDiscount.percentage}%
-                    </p>
-                    {appliedDiscount.reason && (
-                      <p className="text-[9px] sm:text-[10px] text-green-600 dark:text-green-400 truncate">
-                        {appliedDiscount.reason}
-                      </p>
+                <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${showCustomerInfo ? 'rotate-180' : ''}`} />
+              </button>
+              {showCustomerInfo && (
+                <div className="px-2 sm:px-4 pb-2 space-y-2">
+                  <Input
+                    placeholder={t('pos.customer_name')}
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    className="h-9 text-sm"
+                    data-testid="input-pos-customer-name"
+                  />
+                  <div className="relative">
+                    <Input
+                      placeholder={t('pos.customer_phone')}
+                      value={customerPhone}
+                      onChange={(e) => {
+                        setCustomerPhone(e.target.value);
+                        setCustomerLookupFound(null);
+                      }}
+                      className={`h-9 text-sm pr-8 ${customerLookupFound === true ? 'border-green-500 focus-visible:ring-green-400' : customerLookupFound === false ? 'border-orange-400' : ''}`}
+                      dir="ltr"
+                      data-testid="input-pos-customer-phone"
+                    />
+                    <div className="absolute inset-y-0 right-2 flex items-center pointer-events-none">
+                      {isLookingUpCustomer && <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />}
+                      {!isLookingUpCustomer && customerLookupFound === true && <CheckCircle className="w-3.5 h-3.5 text-green-500" />}
+                      {!isLookingUpCustomer && customerLookupFound === false && <User className="w-3.5 h-3.5 text-orange-400" />}
+                    </div>
+                  </div>
+                  {orderType === "dine_in" && (
+                    <Input
+                      placeholder={t('pos.table_number')}
+                      value={tableNumber}
+                      onChange={(e) => setTableNumber(e.target.value)}
+                      className="h-9 text-sm"
+                      data-testid="input-pos-table-number"
+                    />
+                  )}
+                  {orderType === "car_pickup" && (
+                    <div className="space-y-2 mt-1 p-2 rounded-lg border border-purple-500/30 bg-purple-500/5">
+                      <p className="text-xs font-bold text-purple-500 flex items-center gap-1">🚗 {tc("بيانات السيارة","Car Info")}</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Input
+                          placeholder={tc("نوع السيارة", "Car model")}
+                          value={carTypeInput}
+                          onChange={(e) => setCarTypeInput(e.target.value)}
+                          className="h-8 text-xs"
+                          data-testid="input-pos-car-type"
+                        />
+                        <Input
+                          placeholder={tc("لون السيارة", "Car color")}
+                          value={carColorInput}
+                          onChange={(e) => setCarColorInput(e.target.value)}
+                          className="h-8 text-xs"
+                          data-testid="input-pos-car-color"
+                        />
+                      </div>
+                      <Input
+                        placeholder={tc("رقم اللوحة", "Plate number")}
+                        value={carPlateInput}
+                        onChange={(e) => setCarPlateInput(e.target.value)}
+                        className="h-8 text-xs"
+                        data-testid="input-pos-car-plate"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="px-2 sm:px-4 py-2 border-t">
+              <p className="text-xs sm:text-sm font-bold text-muted-foreground mb-2">{t('pos.payment_method')}</p>
+              {(() => {
+                const customPosMethods = allPaymentMethods.filter((m: any) => m.isCustom && m.enabledForPos !== false);
+                const allPos = [...PAYMENT_METHODS.map(m => ({ ...m, isCustom: false })), ...customPosMethods.map((m: any) => ({ id: m.id, isCustom: true, nameAr: m.nameAr, emoji: m.emoji || '💳' }))];
+                const visibleMethods = allPos.slice(0, 3);
+                const overflowMethods = allPos.slice(3);
+                return (
+                  <div className="flex gap-1.5 sm:gap-2">
+                    {visibleMethods.map((method) => (
+                      <Button
+                        key={method.id}
+                        type="button"
+                        variant={paymentMethod === method.id ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => {
+                          setPaymentMethod(method.id as PaymentMethod);
+                          setSplitCashAmount("");
+                          if (method.id === 'split') {
+                            setPersonPayments([{ id: Date.now().toString(), method: 'cash', amount: '' }]);
+                          }
+                        }}
+                        className="flex flex-col gap-0.5 h-auto py-2 text-[10px] sm:text-xs flex-1"
+                        data-testid={`button-payment-${method.id}`}
+                      >
+                        {(method as any).isCustom
+                          ? <span className="text-base leading-none">{(method as any).emoji}</span>
+                          : (() => { const IconComp = (method as any).icon; return <IconComp className="w-4 h-4" />; })()
+                        }
+                        <span className="font-bold truncate max-w-full px-1">
+                          {(method as any).isCustom ? (method as any).nameAr : t((method as any).tKey)}
+                        </span>
+                      </Button>
+                    ))}
+                    {overflowMethods.length > 0 && (
+                      <Popover open={showMorePayments} onOpenChange={setShowMorePayments}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            type="button"
+                            variant={overflowMethods.some(m => m.id === paymentMethod) ? "default" : "outline"}
+                            size="sm"
+                            className="flex flex-col gap-0.5 h-auto py-2 text-[10px] sm:text-xs w-12 shrink-0"
+                            data-testid="button-payment-more"
+                          >
+                            <MoreHorizontal className="w-4 h-4" />
+                            <span className="font-bold">{overflowMethods.length}+</span>
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-48 p-2" side="top" align="end">
+                          <div className="space-y-1">
+                            {overflowMethods.map((method) => (
+                              <button
+                                key={method.id}
+                                type="button"
+                                onClick={() => {
+                                  setPaymentMethod(method.id as PaymentMethod);
+                                  setSplitCashAmount("");
+                                  setShowMorePayments(false);
+                                }}
+                                className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold transition-colors ${paymentMethod === method.id ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+                                data-testid={`button-payment-overflow-${method.id}`}
+                              >
+                                {(method as any).isCustom
+                                  ? <span className="text-base">{(method as any).emoji}</span>
+                                  : (() => { const IconComp = (method as any).icon; return <IconComp className="w-4 h-4" />; })()
+                                }
+                                <span className="truncate">
+                                  {(method as any).isCustom ? (method as any).nameAr : t((method as any).tKey)}
+                                </span>
+                                {paymentMethod === method.id && <Check className="w-3.5 h-3.5 ml-auto shrink-0" />}
+                              </button>
+                            ))}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
                     )}
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 text-red-600 hover:bg-red-50 shrink-0"
-                    onClick={handleClearDiscount}
-                    data-testid="button-clear-discount"
-                  >
-                    <XCircle className="h-4 w-4" />
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-1.5">
-                  <Input
-                    value={discountCode}
-                    onChange={(e) => setDiscountCode(e.target.value.toUpperCase())}
-                    placeholder={tc('أدخل الكود', 'Enter code')}
-                    className="h-8 text-[11px] sm:text-xs font-bold"
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleValidateDiscount(); } }}
-                    data-testid="input-discount-code"
-                  />
-                  <Button
-                    size="sm"
-                    className="h-8 px-2 text-[11px] sm:text-xs font-bold shrink-0"
-                    onClick={handleValidateDiscount}
-                    disabled={isValidatingDiscount || !discountCode.trim()}
-                    data-testid="button-apply-discount"
-                  >
-                    {isValidatingDiscount ? '...' : tc('تطبيق', 'Apply')}
-                  </Button>
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-1.5 sm:space-y-2">
-              <div className="flex justify-between text-[10px] sm:text-sm">
-                <span className="text-muted-foreground">{t('pos.subtotal')}</span>
-                <span className="font-bold">{calculateSubtotal.toFixed(2)} {t('pos.currency')}</span>
-              </div>
-              <div className="flex justify-between text-[10px] sm:text-sm">
-                <span className="text-muted-foreground">{t('pos.tax')}</span>
-                <span className="font-bold">{(calculateTotal - calculateSubtotal).toFixed(2)} {t('pos.currency')}</span>
-              </div>
-              <Separator />
-              <div className="flex justify-between items-center pt-1">
-                <span className="font-black text-sm sm:text-base">{t('pos.total')}</span>
-                <span className={`font-black text-base sm:text-xl ${(usePoints && pointsDiscount > 0) || appliedDiscount ? 'line-through text-muted-foreground text-sm sm:text-base' : 'text-primary'}`}>{calculateTotal.toFixed(2)} {t('pos.currency')}</span>
-              </div>
-              {usePoints && pointsDiscount > 0 && (
-                <div className="flex justify-between text-[10px] sm:text-sm text-amber-600">
-                  <span className="font-bold">{i18n.language === 'ar' ? 'خصم بطاقة تسالي' : 'Tasali Card'}</span>
-                  <span className="font-bold">- {pointsDiscount.toFixed(2)} {t('pos.currency')}</span>
-                </div>
-              )}
-              {appliedDiscount && couponDiscountAmount > 0 && (
-                <div className="flex justify-between text-[10px] sm:text-sm text-green-600" data-testid="text-coupon-discount-line">
-                  <span className="font-bold">{tc('كوبون', 'Coupon')} {appliedDiscount.code} ({appliedDiscount.percentage}%)</span>
-                  <span className="font-bold">- {couponDiscountAmount.toFixed(2)} {t('pos.currency')}</span>
-                </div>
-              )}
-              {((usePoints && pointsDiscount > 0) || appliedDiscount) && (
-                <div className="flex justify-between items-center">
-                  <span className="font-black text-sm sm:text-base">{i18n.language === 'ar' ? 'الإجمالي بعد الخصم' : 'Total After Discount'}</span>
-                  <span className={`font-black text-base sm:text-xl ${(itemDiscountTotal > 0 || manualDiscountAmount > 0 || serviceChargeAmount > 0) ? 'line-through text-muted-foreground text-sm' : 'text-primary'}`} data-testid="text-grand-total">{calculateGrandTotal.toFixed(2)} {t('pos.currency')}</span>
-                </div>
-              )}
-
-              {/* ── Engine extras: item discounts, manual discount, service charge ── */}
-              {itemDiscountTotal > 0 && (
-                <div className="flex justify-between text-[10px] sm:text-sm text-green-600">
-                  <span className="font-bold flex items-center gap-1"><Tag className="w-3 h-3" />{tc('خصم العناصر','Item Discounts')}</span>
-                  <span className="font-bold">- {itemDiscountTotal.toFixed(2)} {t('pos.currency')}</span>
-                </div>
-              )}
-              {manualDiscountAmount > 0 && (
-                <div className="flex justify-between text-[10px] sm:text-sm text-green-600">
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => setShowManualDiscount(true)} className="font-bold flex items-center gap-1 hover:underline">
-                      <DollarSign className="w-3 h-3" />{tc('خصم يدوي','Manual Discount')}
-                      {manualDiscount && <span className="text-[9px] text-muted-foreground">({manualDiscount.type === 'percent' ? `${manualDiscount.value}%` : `${manualDiscount.value} ${tc('ر.س','SAR')}`})</span>}
-                    </button>
-                    <button onClick={() => setManualDiscount(undefined)} className="text-destructive hover:opacity-70 ml-1"><X className="w-3 h-3" /></button>
-                  </div>
-                  <span className="font-bold">- {manualDiscountAmount.toFixed(2)} {t('pos.currency')}</span>
-                </div>
-              )}
-              {serviceCharge.enabled && serviceChargeAmount > 0 && (
-                <div className="flex justify-between text-[10px] sm:text-sm text-orange-600">
-                  <button onClick={() => setServiceCharge(prev => ({...prev, enabled: false}))} className="font-bold flex items-center gap-1 hover:underline">
-                    <Hash className="w-3 h-3" />{tc('رسوم الخدمة','Service Charge')} ({serviceCharge.value}{serviceCharge.type === 'percent' ? '%' : ` ${tc('ر.س','SAR')}`})
-                  </button>
-                  <span className="font-bold">+ {serviceChargeAmount.toFixed(2)} {t('pos.currency')}</span>
-                </div>
-              )}
-
-              {/* Service charge quick toggle */}
-              {!serviceCharge.enabled && (
-                <button
-                  onClick={() => setServiceCharge(prev => ({ ...prev, enabled: true }))}
-                  className="text-[10px] text-muted-foreground/50 hover:text-orange-600 transition-colors flex items-center gap-1"
-                  data-testid="button-enable-service-charge"
-                >
-                  <Hash className="w-3 h-3" />
-                  {tc('إضافة رسوم خدمة (F7)','Add Service Charge (F7)')}
-                </button>
-              )}
-              {/* Manual discount quick add */}
-              {!manualDiscountAmount && (
-                <button
-                  onClick={() => setShowManualDiscount(true)}
-                  className="text-[10px] text-muted-foreground/50 hover:text-green-600 transition-colors flex items-center gap-1"
-                  data-testid="button-add-manual-discount"
-                >
-                  <DollarSign className="w-3 h-3" />
-                  {tc('إضافة خصم يدوي','Add Manual Discount')}
-                </button>
-              )}
-
-              {(itemDiscountTotal > 0 || manualDiscountAmount > 0 || serviceChargeAmount > 0) && (
-                <>
-                  <Separator />
-                  <div className="flex justify-between items-center pt-1">
-                    <span className="font-black text-sm sm:text-base">{tc('الإجمالي النهائي','Final Total')}</span>
-                    <span className="font-black text-base sm:text-xl text-primary" data-testid="text-final-grand-total">{finalGrandTotal.toFixed(2)} {t('pos.currency')}</span>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Points discount toggle — only when customer found with ≥100 pts */}
-            {customerLookupFound === true && customerPoints >= 100 && (
-              <div className={`rounded-xl border-2 p-3 transition-colors ${usePoints ? 'border-amber-400 bg-amber-50 dark:bg-amber-950/30' : 'border-muted bg-muted/30'}`}>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Wallet className="w-4 h-4 text-amber-600 shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-xs font-black text-amber-700 dark:text-amber-300 leading-none">
-                        {i18n.language === 'ar' ? 'استخدام النقاط' : 'Use Points'}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground mt-0.5">
-                        {customerPoints} {i18n.language === 'ar' ? 'نقطة' : 'pts'} = {(customerPoints / 50).toFixed(2)} {t('pos.currency')}
-                      </p>
-                    </div>
-                  </div>
-                  <Switch
-                    checked={usePoints}
-                    onCheckedChange={setUsePoints}
-                    data-testid="toggle-use-points"
-                  />
-                </div>
-                {usePoints && (
-                  <p className="text-[11px] text-amber-700 dark:text-amber-300 font-bold mt-2 border-t border-amber-200 dark:border-amber-700 pt-2">
-                    {i18n.language === 'ar'
-                      ? <span>سيُخصم {pointsDiscount.toFixed(2)} <SarIcon size={10} /> ({Math.round(pointsDiscount * 50)} نقطة) من الطلب</span>
-                      : `${pointsDiscount.toFixed(2)} SAR (${Math.round(pointsDiscount * 50)} pts) will be deducted`}
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* Offline / Queue Indicator */}
-            {(!isOnline || offlineQueueCount > 0) && (
-              <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${!isOnline ? 'bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800' : 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800'}`} data-testid="pos-offline-indicator">
-                {!isOnline ? <WifiOff className="w-4 h-4 shrink-0" /> : <Wifi className="w-4 h-4 shrink-0" />}
-                <span className="flex-1">
-                  {!isOnline ? tc('غير متصل — الطلبات تُخزّن محلياً','Offline — Orders saved locally') : `${offlineQueueCount} ${tc('طلب في انتظار الإرسال','orders pending upload')}`}
-                </span>
-                {isOnline && offlineQueueCount > 0 && (
-                  <button
-                    className="text-xs underline"
-                    onClick={async () => {
-                      const { synced } = await syncOfflineOrders();
-                      const c = await countPendingOrders().catch(() => 0);
-                      setOfflineQueueCount(c);
-                      if (synced > 0) queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
-                    }}
-                  >{tc("مزامنة","Sync")}</button>
-                )}
-              </div>
-            )}
-
-            <div className="flex gap-2">
-              <Button
-                className="flex-1 h-11 sm:h-13 text-sm sm:text-base font-black rounded-xl shadow-lg shadow-primary/20 gap-2"
-                disabled={orderItems.length === 0 || syncing}
-                onClick={() => setShowOrderReview(true)}
-                data-testid="button-checkout"
-              >
-                {syncing ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <>
-                    {PAYMENT_METHODS.find(m => m.id === paymentMethod)?.icon && (() => {
-                      const IconComp = PAYMENT_METHODS.find(m => m.id === paymentMethod)!.icon;
-                      return <IconComp className="w-4 h-4" />;
-                    })()}
-                  </>
-                )}
-                {i18n.language === 'ar' ? 'مراجعة الطلب والدفع' : 'Review & Pay'}
-              </Button>
-            </div>
-          </div>
-        </aside>
-
-      </main>
-
-      {/* Mobile bottom navigation — part of flex layout (NOT fixed, avoids CSS transform conflict) */}
-      <div className={`${isMobile ? 'flex' : 'hidden'} shrink-0 z-50 flex-col`}>
-        {/* Checkout pill — floats above bar when items exist */}
-        {orderItems.length > 0 && mobilePanelView === 'products' && (
-          <div className="px-4 py-2 bg-card/95 border-t" style={{ borderColor: 'hsl(var(--border)/0.6)' }}>
-            <button
-              onClick={() => setMobilePanelView('checkout')}
-              className="w-full h-12 rounded-2xl font-black text-sm flex items-center justify-between px-5 shadow-lg active:scale-95 transition-transform bg-primary text-primary-foreground"
-              data-testid="button-mobile-checkout-pill"
-            >
-              <div className="flex items-center gap-2">
-                <ShoppingCart className="w-4 h-4" />
-                <span>{i18n.language === 'ar' ? 'مراجعة الطلب' : 'Review Order'}</span>
-                <span className="bg-white/25 text-[11px] font-black rounded-full w-5 h-5 flex items-center justify-center">
-                  {orderItems.reduce((s, i) => s + i.quantity, 0)}
-                </span>
-              </div>
-              <span className="font-black text-base">
-                {finalGrandTotal.toFixed(1)} <span className="text-[11px] opacity-80">{t('pos.currency')}</span>
-              </span>
-            </button>
-          </div>
-        )}
-
-        {/* Main tab bar */}
-        <div className="bg-card border-t flex h-[58px]"
-          style={{ borderColor: 'hsl(var(--border)/0.6)' }}
-        >
-        {/* Tab 1: نقطة البيع — product selection */}
-        <button
-          onClick={() => setMobilePanelView('products')}
-          className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-all duration-200 relative ${
-            mobilePanelView === 'products'
-              ? 'text-primary'
-              : 'text-muted-foreground'
-          }`}
-          data-testid="button-mobile-tab-products"
-        >
-          {mobilePanelView === 'products' && (
-            <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[3px] rounded-b-full bg-primary" />
-          )}
-          <div className={`w-10 h-8 rounded-xl flex items-center justify-center transition-all duration-200 ${mobilePanelView === 'products' ? 'bg-primary/10' : ''}`}>
-            <Grid3X3 className="w-5 h-5" />
-          </div>
-          <span className="text-[10px] font-bold">{i18n.language === 'ar' ? 'نقطة البيع' : 'POS'}</span>
-        </button>
-
-        {/* Tab 2: مراجعة الطلب والدفع — cart + payment */}
-        <button
-          onClick={() => setMobilePanelView('checkout')}
-          className={`flex-1 flex flex-col items-center justify-center gap-0.5 relative transition-all duration-200 ${
-            mobilePanelView === 'checkout'
-              ? 'text-primary'
-              : 'text-muted-foreground'
-          }`}
-          data-testid="button-mobile-tab-checkout"
-        >
-          {mobilePanelView === 'checkout' && (
-            <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[3px] rounded-b-full bg-primary" />
-          )}
-          <div className={`w-10 h-8 rounded-xl flex items-center justify-center transition-all duration-200 relative ${mobilePanelView === 'checkout' ? 'bg-primary/10' : ''}`}>
-            <Receipt className="w-5 h-5" />
-            {orderItems.length > 0 && (
-              <span className="absolute -top-1 -right-1.5 bg-primary text-primary-foreground text-[9px] font-black rounded-full min-w-[15px] h-[15px] flex items-center justify-center px-0.5 shadow-sm">
-                {orderItems.reduce((s, i) => s + i.quantity, 0)}
-              </span>
-            )}
-          </div>
-          <span className="text-[10px] font-bold">
-            {i18n.language === 'ar' ? 'الطلب' : 'Order'}
-          </span>
-        </button>
-        </div>
-      </div>
-
-      <Dialog open={showOrdersPanel} onOpenChange={(open) => { setShowOrdersPanel(open); if (open) setNewOrdersCount(0); }}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col" dir={dir}>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ClipboardList className="w-5 h-5" />
-              {t('pos.live_orders', { count: liveOrders?.length || 0 })}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="flex gap-2 px-1 pb-2 flex-wrap">
-            {([
-              { key: 'all' as const, label: i18n.language === 'ar' ? 'الكل' : 'All', count: liveOrders?.length || 0 },
-              { key: 'online' as const, label: i18n.language === 'ar' ? 'أونلاين' : 'Online', count: liveOrders?.filter((o: any) => o.channel === 'online' || o.channel === 'web').length || 0 },
-              { key: 'pos' as const, label: i18n.language === 'ar' ? 'كاشير' : 'POS', count: liveOrders?.filter((o: any) => o.channel === 'pos' || !o.channel).length || 0 },
-              { key: 'car' as const, label: i18n.language === 'ar' ? 'سيارات' : 'Cars', count: liveOrders?.filter((o: any) => o.orderType === 'car_pickup' || o.orderType === 'car-pickup').length || 0 },
-            ]).map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setOrdersFilter(tab.key)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${
-                  ordersFilter === tab.key
-                    ? tab.key === 'online' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
-                    : tab.key === 'car' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
-                    : 'bg-primary/10 text-primary'
-                    : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                }`}
-              >
-                {tab.key === 'online' && <MonitorSmartphone className="w-3.5 h-3.5" />}
-                {tab.key === 'car' && <Car className="w-3.5 h-3.5" />}
-                {tab.label}
-                {tab.count > 0 && (
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
-                    ordersFilter === tab.key ? 'bg-white/50 dark:bg-white/10' : 'bg-background'
-                  }`}>{tab.count}</span>
-                )}
-              </button>
-            ))}
-          </div>
-          <div className="flex-1 overflow-y-auto min-h-0" style={{ maxHeight: 'calc(90vh - 130px)' }}>
-            <div className="space-y-3 p-1">
-              {(() => {
-                const filteredOrders = (liveOrders || []).filter((o: any) => {
-                  if (ordersFilter === 'online') return o.channel === 'online' || o.channel === 'web';
-                  if (ordersFilter === 'pos') return o.channel === 'pos' || o.channel === undefined || o.channel === null;
-                  if (ordersFilter === 'car') return o.orderType === 'car_pickup' || o.orderType === 'car-pickup';
-                  return true;
-                });
-                if (filteredOrders.length === 0) return (
-                  <div className="text-center py-12 text-muted-foreground">
-                    <ClipboardList className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                    <p className="font-bold">{ordersFilter !== 'all'
-                      ? (i18n.language === 'ar' ? 'لا توجد طلبات في هذا التصنيف' : 'No orders in this filter')
-                      : t('pos.no_live_orders')}</p>
-                  </div>
-                );
-                return filteredOrders.map((order: any) => {
-                  const orderCustomerName = order.customerName || order.customerInfo?.customerName || order.customerInfo?.name || '';
-                  const orderCustomerPhone = order.customerPhone || order.customerInfo?.customerPhone || order.customerInfo?.phone || '';
-                  const statusColors: Record<string, string> = {
-                    'pending': 'border-yellow-500 bg-yellow-500/5',
-                    'in_progress': 'border-blue-500 bg-blue-500/5',
-                    'ready': 'border-green-500 bg-green-500/5',
-                  };
-                  const statusLabels: Record<string, string> = {
-                    'pending': t('pos.status_pending'),
-                    'payment_confirmed': t('pos.status_confirmed'),
-                    'in_progress': t('pos.status_in_progress'),
-                    'ready': t('pos.status_ready'),
-                  };
-                  const carInfo = order.carType || order.carInfo?.carType;
-                  const carColor = order.carColor || order.carInfo?.carColor;
-                  const carPlateNum = order.plateNumber || order.carInfo?.plateNumber || order.carPlate || "";
-                  
-                  return (
-                    <Card key={order.id || order._id} className={`border-2 ${statusColors[order.status] || 'border-border'}`} data-testid={`order-card-${order.id}`}>
-                      <CardContent className="p-4">
-                        <div className="flex justify-between items-start mb-3">
-                          <div>
-                            <div className="flex items-center gap-2 mb-1 flex-wrap">
-                              <span className="font-black text-lg">{fmtOrderNum(order.orderNumber)}</span>
-                              <Badge variant={order.status === 'ready' ? 'default' : 'secondary'} className="text-xs">
-                                {statusLabels[order.status] || order.status}
-                              </Badge>
-                              {(order.channel === 'online' || order.channel === 'web') && (
-                                <Badge className="text-[10px] bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 border-0 gap-1">
-                                  <MonitorSmartphone className="w-3 h-3" />
-                                  {i18n.language === 'ar' ? 'أونلاين' : 'Online'}
-                                </Badge>
-                              )}
-                              {(order.status === 'refunded' || (order as any).isFullyRefunded) && (
-                                <Badge className="text-xs bg-red-100 text-red-700 border border-red-300">مسترجع ↩</Badge>
-                              )}
-                              {(order as any).refundedAmount > 0 && !(order as any).isFullyRefunded && order.status !== 'refunded' && (
-                                <Badge className="text-xs bg-orange-100 text-orange-700 border border-orange-300">جزئي ↩</Badge>
-                              )}
-                              {order.orderType && (
-                                <Badge variant="outline" className="text-xs">
-                                  {order.orderType === 'dine_in' || order.orderType === 'dine-in' ? t('pos.order_type_dine_label') : 
-                                   order.orderType === 'takeaway' || order.orderType === 'pickup' ? t('pos.order_type_takeaway_label') : 
-                                   order.orderType === 'car_pickup' || order.orderType === 'car-pickup' ? t('pos.order_type_car_label') : 
-                                   order.orderType === 'delivery' ? t('pos.order_type_delivery_label') : order.orderType}
-                                </Badge>
-                              )}
-                            </div>
-                            {orderCustomerName && (
-                              <p className="text-sm text-muted-foreground">
-                                <span className="font-medium">{orderCustomerName}</span>
-                                {orderCustomerPhone && <span className="mr-2 text-xs">({orderCustomerPhone})</span>}
-                              </p>
-                            )}
-                            {order.tableNumber && (
-                              <p className="text-xs text-muted-foreground">{t('pos.table_label', { number: order.tableNumber })}</p>
-                            )}
-                            {carInfo && (
-                              <div className="flex flex-col gap-0.5 mt-1 text-xs text-purple-500 bg-purple-500/10 rounded p-1.5 border border-purple-500/20">
-                                <div className="flex items-center gap-1 font-bold">
-                                  <Navigation className="w-3 h-3" />
-                                  <span>🚗 استلام من السيارة</span>
-                                </div>
-                                <span>{carInfo} | {carColor}{carPlateNum ? ` | لوحة: ${carPlateNum}` : ''}</span>
-                              </div>
-                            )}
-                          </div>
-                          <div className="text-left">
-                            <span className="font-black text-primary text-lg">{Number(order.totalAmount).toFixed(2)}</span>
-                            <span className="text-xs text-muted-foreground mr-1">{t('pos.currency')}</span>
-                          </div>
-                        </div>
-                        
-                        <div className="mb-3">
-                          {(Array.isArray(order.items) ? order.items : []).map((item: any, idx: number) => (
-                            <div key={idx} className="flex justify-between text-xs py-0.5">
-                              <span>{item.name || item.nameAr || item.coffeeItem?.nameAr} x{item.quantity}</span>
-                              <span className="text-muted-foreground">{Number(item.price || item.unitPrice || 0).toFixed(2)}</span>
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* ─── Order Tracking Strip ─── */}
-                        {order.status !== 'cancelled' && order.status !== 'completed' && (
-                          <div className="mb-3">
-                            {(() => {
-                              const steps = [
-                                { key: 'pending', label: i18n.language === 'ar' ? 'مؤكد' : 'Confirmed', aliases: ['payment_confirmed', 'confirmed'] },
-                                { key: 'in_progress', label: i18n.language === 'ar' ? 'تحضير' : 'Preparing' },
-                                { key: 'ready', label: i18n.language === 'ar' ? 'جاهز' : 'Ready' },
-                                { key: 'completed', label: i18n.language === 'ar' ? 'مكتمل' : 'Done' },
-                              ];
-                              const currentIdx = steps.findIndex(s => s.key === order.status || (s.aliases || []).includes(order.status));
-                              return (
-                                <div className="flex items-center gap-1" dir="ltr">
-                                  {steps.map((step, idx) => (
-                                    <div key={step.key} className="flex items-center flex-1">
-                                      <div className="flex flex-col items-center flex-1">
-                                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center text-[9px] font-bold transition-colors ${
-                                          idx <= currentIdx
-                                            ? 'bg-primary border-primary text-primary-foreground'
-                                            : 'border-muted-foreground/30 text-muted-foreground'
-                                        }`}>
-                                          {idx < currentIdx ? '✓' : idx + 1}
-                                        </div>
-                                        <span className={`text-[9px] mt-0.5 text-center leading-tight ${idx <= currentIdx ? 'text-primary font-medium' : 'text-muted-foreground'}`}>
-                                          {step.label}
-                                        </span>
-                                      </div>
-                                      {idx < steps.length - 1 && (
-                                        <div className={`h-[2px] flex-1 mx-0.5 rounded transition-colors ${idx < currentIdx ? 'bg-primary' : 'bg-muted-foreground/20'}`} />
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              );
-                            })()}
-                          </div>
-                        )}
-
-                        {/* ─── Action Buttons (all orders, not just online) ─── */}
-                        <div className="flex gap-2 flex-wrap">
-                          {(order.status === 'pending' || order.status === 'payment_confirmed' || order.status === 'confirmed') && (
-                            <Button 
-                              size="sm" 
-                              onClick={() => updateOrderStatusMutation.mutate({ orderId: order.id || order._id, status: 'in_progress' })}
-                              disabled={updateOrderStatusMutation.isPending}
-                              className="bg-blue-600 hover:bg-blue-700 text-white"
-                              data-testid={`button-start-prep-${order.id}`}
-                            >
-                              <Clock className="w-3 h-3 ml-1" />
-                              {t('pos.start_prep')}
-                            </Button>
-                          )}
-                          {order.status === 'in_progress' && (
-                            <Button 
-                              size="sm" 
-                              onClick={() => updateOrderStatusMutation.mutate({ orderId: order.id || order._id, status: 'ready' })}
-                              disabled={updateOrderStatusMutation.isPending}
-                              className="bg-green-600 hover:bg-green-700 text-white"
-                              data-testid={`button-ready-${order.id}`}
-                            >
-                              <Check className="w-3 h-3 ml-1" />
-                              {t('pos.mark_ready')}
-                            </Button>
-                          )}
-                          {order.status === 'ready' && (
-                            <Button 
-                              size="sm" 
-                              onClick={() => updateOrderStatusMutation.mutate({ orderId: order.id || order._id, status: 'completed' })}
-                              disabled={updateOrderStatusMutation.isPending}
-                              className="bg-primary hover:bg-primary/90"
-                              data-testid={`button-delivered-${order.id}`}
-                            >
-                              <CheckCircle className="w-3 h-3 ml-1" />
-                              {t('pos.mark_delivered')}
-                            </Button>
-                          )}
-                          <Button 
-                            size="sm" 
-                            variant="outline"
-                            onClick={() => handlePrintLiveOrder(order)}
-                            data-testid={`button-print-order-${order.id}`}
-                          >
-                            <Printer className="w-3 h-3 ml-1" />
-                            {t('pos.print')}
-                          </Button>
-                          {order.status !== 'cancelled' && order.status !== 'completed' && (
-                            <Button 
-                              size="sm" 
-                              variant="destructive"
-                              onClick={() => updateOrderStatusMutation.mutate({ orderId: order.id || order._id, status: 'cancelled' })}
-                              disabled={updateOrderStatusMutation.isPending}
-                              data-testid={`button-cancel-${order.id}`}
-                            >
-                              <X className="w-3 h-3 ml-1" />
-                              {t('pos.cancel')}
-                            </Button>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                });
-              })()}
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Order Review Dialog */}
-      <Dialog open={showOrderReview} onOpenChange={setShowOrderReview}>
-        <DialogContent className="max-w-lg w-full max-h-[90vh] h-[90vh] flex flex-col p-0 gap-0 overflow-hidden" dir={dir}>
-          <DialogHeader className="px-5 pt-5 pb-3 border-b shrink-0">
-            <DialogTitle className="flex items-center gap-2 text-lg font-black">
-              <ShoppingCart className="w-5 h-5 text-primary" />
-              {i18n.language === 'ar' ? 'مراجعة الطلب' : 'Order Review'}
-            </DialogTitle>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {i18n.language === 'ar'
-                ? 'راجع الأصناف قبل إتمام الدفع'
-                : 'Review items before completing payment'}
-            </p>
-          </DialogHeader>
-
-          {/* Items list */}
-          <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
-            <div className="space-y-2">
-              {orderItems.map((item) => {
-                const unitPrice = getPosItemUnitPrice(item);
-                const lineTotal = unitPrice * item.quantity;
-                const itemAddons = item.customization?.selectedItemAddons || [];
-                return (
-                  <div
-                    key={item.lineItemId}
-                    className="flex items-start gap-3 p-3 rounded-xl border bg-card"
-                    data-testid={`review-item-${item.lineItemId}`}
-                  >
-                    {/* Name */}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-bold text-sm leading-snug">{item.coffeeItem.nameAr}</p>
-                      {item.coffeeItem.nameEn && (
-                        <p className="text-xs text-muted-foreground">{item.coffeeItem.nameEn}</p>
-                      )}
-                      {item.selectedSize && (
-                        <p className="text-[10px] text-blue-600 mt-0.5">الحجم: {item.selectedSize}</p>
-                      )}
-                      {itemAddons.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {itemAddons.map((a: any, i: number) => (
-                            <span key={i} className="text-[10px] bg-muted px-1.5 py-0.5 rounded-full text-muted-foreground">
-                              +{a.nameAr || a.name}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Qty controls */}
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        className="w-7 h-7 rounded-full border bg-muted flex items-center justify-center text-base font-bold hover:bg-destructive/10 transition-colors"
-                        onClick={() => updateQuantity(item.lineItemId, item.quantity - 1)}
-                        data-testid={`review-qty-dec-${item.lineItemId}`}
-                      >
-                        <Minus className="w-3 h-3" />
-                      </button>
-                      <span className="w-6 text-center text-sm font-black" data-testid={`review-qty-${item.lineItemId}`}>{item.quantity}</span>
-                      <button
-                        className="w-7 h-7 rounded-full border bg-muted flex items-center justify-center text-base font-bold hover:bg-primary/10 transition-colors"
-                        onClick={() => updateQuantity(item.lineItemId, item.quantity + 1)}
-                        data-testid={`review-qty-inc-${item.lineItemId}`}
-                      >
-                        <Plus className="w-3 h-3" />
-                      </button>
-                    </div>
-
-                    {/* Line price */}
-                    <div className="text-sm font-black text-primary shrink-0 w-16 text-left" data-testid={`review-price-${item.lineItemId}`}>
-                      {lineTotal.toFixed(2)}
-                    </div>
-
-                    {/* Delete */}
-                    <button
-                      className="w-7 h-7 rounded-full flex items-center justify-center text-destructive hover:bg-destructive/10 transition-colors shrink-0"
-                      onClick={() => updateQuantity(item.lineItemId, 0)}
-                      data-testid={`review-delete-${item.lineItemId}`}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Summary + payment method + action buttons */}
-          <div className="px-5 pt-3 pb-5 border-t bg-muted/20 shrink-0 space-y-3">
-            {/* Totals */}
-            <div className="space-y-1 text-sm">
-              <div className="flex justify-between text-muted-foreground">
-                <span>{t('pos.subtotal')}</span>
-                <span className="font-bold">{calculateSubtotal.toFixed(2)} {t('pos.currency')}</span>
-              </div>
-              <div className="flex justify-between text-muted-foreground">
-                <span>{t('pos.tax')}</span>
-                <span className="font-bold">{(calculateTotal - calculateSubtotal).toFixed(2)} {t('pos.currency')}</span>
-              </div>
-              <Separator />
-              <div className="flex justify-between items-center pt-1">
-                <span className="font-black text-base">{t('pos.total')}</span>
-                <span className={`font-black text-xl ${(usePoints && pointsDiscount > 0) || appliedDiscount ? 'line-through text-muted-foreground text-base' : 'text-primary'}`}>{calculateTotal.toFixed(2)} {t('pos.currency')}</span>
-              </div>
-              {usePoints && pointsDiscount > 0 && (
-                <div className="flex justify-between text-sm text-amber-600">
-                  <span className="font-bold">{i18n.language === 'ar' ? 'خصم بطاقة تسالي' : 'Tasali Card Discount'}</span>
-                  <span className="font-bold">- {pointsDiscount.toFixed(2)} {t('pos.currency')}</span>
-                </div>
-              )}
-              {appliedDiscount && couponDiscountAmount > 0 && (
-                <div className="flex justify-between text-sm text-green-600">
-                  <span className="font-bold">{tc('كوبون', 'Coupon')} {appliedDiscount.code} ({appliedDiscount.percentage}%)</span>
-                  <span className="font-bold">- {couponDiscountAmount.toFixed(2)} {t('pos.currency')}</span>
-                </div>
-              )}
-              {((usePoints && pointsDiscount > 0) || appliedDiscount) && (
-                <div className="flex justify-between items-center pt-1 border-t">
-                  <span className="font-black text-base">{i18n.language === 'ar' ? 'الإجمالي النهائي' : 'Final Total'}</span>
-                  <span className="font-black text-xl text-primary">{calculateGrandTotal.toFixed(2)} {t('pos.currency')}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Order note */}
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-muted-foreground">
-                {i18n.language === 'ar' ? 'ملاحظة على الطلب' : 'Order Note'}
-              </label>
-              <textarea
-                value={orderNote}
-                onChange={(e) => setOrderNote(e.target.value)}
-                placeholder={i18n.language === 'ar' ? 'أضف ملاحظة أو تعليمات خاصة...' : 'Add a note or special instructions...'}
-                rows={2}
-                className="w-full rounded-xl border bg-card px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/40 text-right placeholder:text-muted-foreground"
-                dir="auto"
-                data-testid="input-order-note"
-              />
-            </div>
-
-            {/* Payment method (read-only summary) */}
-            <div className="flex items-center gap-2 bg-card border rounded-xl px-4 py-2.5">
-              {(() => {
-                const m = PAYMENT_METHODS.find(m => m.id === paymentMethod);
-                if (!m) return null;
-                const IconComp = m.icon;
-                return (
-                  <>
-                    <IconComp className="w-4 h-4 text-primary shrink-0" />
-                    <span className="text-sm font-bold flex-1">{t(m.tKey)}</span>
-                    <button
-                      className="text-xs text-muted-foreground underline"
-                      onClick={() => setShowOrderReview(false)}
-                      data-testid="review-change-payment"
-                    >
-                      {i18n.language === 'ar' ? 'تغيير' : 'Change'}
-                    </button>
-                  </>
                 );
               })()}
-            </div>
 
-            {/* Action buttons */}
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              <Button
-                variant="outline"
-                className="h-11 font-bold gap-2"
-                onClick={() => setShowOrderReview(false)}
-                data-testid="review-back-btn"
-              >
-                <ArrowRight className="w-4 h-4" />
-                {i18n.language === 'ar' ? 'رجوع' : 'Back'}
-              </Button>
-              <Button
-                className="h-11 font-black gap-2 shadow-lg shadow-primary/20"
-                disabled={orderItems.length === 0 || syncing}
-                onClick={async () => {
-                  setShowOrderReview(false);
-                  await handleCheckout();
-                }}
-                data-testid="review-confirm-pay-btn"
-              >
-                {syncing ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <CheckCircle2 className="w-4 h-4" />
-                )}
-                {i18n.language === 'ar' ? 'إتمام الدفع' : 'Confirm Payment'}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={showReceiptDialog} onOpenChange={setShowReceiptDialog}>
-        <DialogContent className="max-w-sm max-h-[94vh] p-0 overflow-hidden flex flex-col" dir={dir}>
-          <DialogHeader className="px-4 pt-3 pb-2 border-b shrink-0">
-            <DialogTitle className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Receipt className="w-5 h-5 text-primary" />
-                {t('pos.receipt_title')}
-              </div>
-              {receiptCountdown > 0 && (
-                <span className="text-xs font-bold text-muted-foreground bg-muted px-2 py-0.5 rounded-full tabular-nums">
-                  {receiptCountdown}s
-                </span>
-              )}
-            </DialogTitle>
-          </DialogHeader>
-
-          {lastOrder && (
-            <div className="flex flex-col flex-1 overflow-hidden">
-              {/* ── Offline warning ── */}
-              {lastOrder.isOffline && (
-                <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-300 dark:border-amber-700 px-3 py-2 shrink-0">
-                  <span className="text-amber-600 dark:text-amber-400">📶</span>
-                  <div className="text-right">
-                    <p className="text-xs font-bold text-amber-700 dark:text-amber-400">
-                      {i18n.language === 'ar' ? 'طلب محفوظ بدون إنترنت' : 'Saved Offline'}
-                    </p>
-                    <p className="text-xs text-amber-600 dark:text-amber-500">
-                      {i18n.language === 'ar' ? 'سيُرسل تلقائياً عند استعادة الاتصال' : 'Will sync when back online'}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* ── New-design receipt iframe ── */}
-              <div className="flex-1 overflow-y-auto bg-[#e0ddd8]" data-testid="text-receipt-order-number">
-                {receiptPreviewHtml ? (
-                  <iframe
-                    srcDoc={receiptPreviewHtml}
-                    title="customer-receipt"
-                    className="w-full border-0"
-                    style={{ height: '580px', minHeight: '400px' }}
-                    sandbox="allow-same-origin"
-                  />
-                ) : (
-                  <div className="flex flex-col items-center justify-center h-48 gap-3 text-muted-foreground">
-                    <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                    <span className="text-sm">{tc('جاري تحضير الفاتورة…', 'Preparing receipt…')}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* ── Print error banner ── */}
-              {lastPrintFailed && (
-                <div className="flex items-start gap-2 bg-red-50 dark:bg-red-950/30 border-t border-red-200 dark:border-red-800 px-3 py-2 shrink-0 text-right">
-                  <span className="text-lg">⚠️</span>
-                  <div className="flex-1 text-xs text-red-700 dark:text-red-400">
-                    <p className="font-bold mb-0.5">لم تتم الطباعة</p>
-                    <p>افتح إعدادات الطابعة ← اختر الطابعة (USB) ← ثم اضغط "طباعة" أدناه</p>
-                  </div>
-                </div>
-              )}
-
-              {/* ── Action buttons (5-action panel) ── */}
-              <div className="flex flex-col gap-2 p-3 border-t bg-background shrink-0">
-                <Button
-                  className="w-full gap-2 h-11 text-base font-bold"
-                  onClick={() => { setShowReceiptDialog(false); }}
-                  data-testid="button-new-order"
-                >
-                  <Plus className="w-5 h-5" />
-                  {t('pos.new_order_btn')}
-                  {receiptCountdown > 0 && (
-                    <span className="mr-1 text-xs opacity-70">({receiptCountdown})</span>
-                  )}
-                </Button>
-
-                {/* Row 1: full-width preview */}
-                <Button
-                  variant="secondary"
-                  className="w-full gap-2"
-                  onClick={handlePreviewBoth}
-                  data-testid="button-preview-receipt"
-                >
-                  <Receipt className="w-4 h-4" />
-                  {tc('معاينة الفواتير', 'Preview Invoices')}
-                </Button>
-
-                {/* Row 2: customer + kitchen */}
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    className={`flex-1 gap-2 ${lastPrintFailed ? 'border-red-400 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30' : 'border-blue-300 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/30'}`}
-                    onClick={() => { setLastPrintFailed(false); setReceiptCountdown(0); handlePrintCustomerOnly(); }}
-                    data-testid="button-print-receipt"
-                  >
-                    <Printer className="w-4 h-4" />
-                    {lastPrintFailed ? tc('إعادة الطباعة', 'Retry') : tc('فاتورة العميل', 'Customer')}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="flex-1 gap-2 border-amber-300 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/30"
-                    onClick={handlePrintKitchenOnly}
-                    data-testid="button-print-kitchen"
-                  >
-                    <Printer className="w-4 h-4" />
-                    {tc('طلب المطبخ', 'Kitchen')}
-                  </Button>
-                </div>
-
-                {/* Row 3: print both + edit */}
-                <div className="flex gap-2">
-                  <Button
-                    className="flex-1 gap-2 bg-slate-900 hover:bg-black text-white"
-                    onClick={handlePrintBoth}
-                    data-testid="button-print-both"
-                  >
-                    <Printer className="w-4 h-4" />
-                    {tc('طباعة الكل', 'Print Both')}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="flex-1 gap-2 border-rose-300 text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/30"
-                    onClick={handleEditLastOrder}
-                    data-testid="button-edit-order"
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                    {tc('تعديل الطلب', 'Edit Order')}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* ── Receipt visual preview modal ──────────────────────────────────── */}
-      <Dialog open={showReceiptPreview} onOpenChange={setShowReceiptPreview}>
-        <DialogContent className="max-w-md max-h-[96vh] p-0 overflow-hidden flex flex-col">
-          <DialogHeader className="px-4 pt-4 pb-2 border-b shrink-0">
-            <DialogTitle className="flex items-center gap-2 text-base">
-              <Receipt className="w-4 h-4 text-primary" />
-              معاينة الفاتورة
-            </DialogTitle>
-          </DialogHeader>
-          {/* Tab switcher */}
-          <div className="shrink-0 flex border-b bg-muted/40">
-            <button
-              className={`flex-1 py-2 text-sm font-semibold transition-colors ${previewTab === 'customer' ? 'bg-background border-b-2 border-primary text-primary' : 'text-muted-foreground hover:text-foreground'}`}
-              onClick={() => setPreviewTab('customer')}
-              data-testid="tab-preview-customer"
-            >نسخة العميل</button>
-            <button
-              className={`flex-1 py-2 text-sm font-semibold transition-colors ${previewTab === 'employee' ? 'bg-background border-b-2 border-primary text-primary' : 'text-muted-foreground hover:text-foreground'}`}
-              onClick={() => setPreviewTab('employee')}
-              data-testid="tab-preview-employee"
-            >نسخة الموظف</button>
-          </div>
-          <div className="flex-1 overflow-y-auto bg-[#f5f5f0]">
-            {previewTab === 'customer' && receiptPreviewHtml && (
-              <iframe
-                srcDoc={receiptPreviewHtml}
-                title="receipt-preview-customer"
-                className="w-full border-0"
-                style={{ height: '700px', minHeight: '500px' }}
-                sandbox="allow-same-origin"
-              />
-            )}
-            {previewTab === 'employee' && employeeReceiptPreviewHtml && (
-              <iframe
-                srcDoc={employeeReceiptPreviewHtml}
-                title="receipt-preview-employee"
-                className="w-full border-0"
-                style={{ height: '700px', minHeight: '500px' }}
-                sandbox="allow-same-origin"
-              />
-            )}
-          </div>
-          <div className="shrink-0 flex gap-2 p-3 border-t bg-background">
-            <Button
-              className="flex-1 gap-2"
-              onClick={() => {
-                setShowReceiptPreview(false);
-                setLastPrintFailed(false);
-                handlePrintReceipt();
-              }}
-              data-testid="button-preview-print"
-            >
-              <Printer className="w-4 h-4" />
-              طباعة
-            </Button>
-            <Button
-              variant="outline"
-              className="flex-1"
-              onClick={() => setShowReceiptPreview(false)}
-              data-testid="button-preview-close"
-            >
-              إغلاق
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {qrPayOrder && (
-        <QrPayModal
-          open={qrPayOpen}
-          onClose={() => setQrPayOpen(false)}
-          payId={qrPayOrder.id}
-          orderNumber={qrPayOrder.orderNumber}
-          amount={qrPayOrder.amount}
-          onPaid={handleQrPaymentConfirmed}
-        />
-      )}
-
-      <DrinkCustomizationDialog
-        coffeeItem={posCustomizationItem?.item || null}
-        variants={posCustomizationItem?.group || []}
-        open={!!posCustomizationItem}
-        modal={false}
-        initialCustomization={posCustomizationItem?.initialCustomization}
-        onClose={() => setPosCustomizationItem(null)}
-        onConfirm={(customization: DrinkCustomization, quantity: number, selectedVariant?: CoffeeItem) => {
-          const targetItem = selectedVariant || posCustomizationItem?.item;
-          if (!targetItem) return;
-          const selectedItemAddons = customization.selectedAddons.map(addon => ({
-            nameAr: addon.nameAr + (addon.quantity > 1 ? ` ×${addon.quantity}` : ''),
-            nameEn: addon.nameAr,
-            price: addon.price * addon.quantity,
-          }));
-          addToOrder(targetItem, selectedItemAddons.length > 0 ? { selectedItemAddons } : undefined, customization.selectedSize || null, quantity, customization);
-          setPosCustomizationItem(null);
-        }}
-      />
-
-      <Dialog open={showTablesDialog} onOpenChange={setShowTablesDialog}>
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col" dir={dir}>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Grid3X3 className="w-5 h-5" />
-              {t('pos.tables_title', { count: tables.length })}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 overflow-y-auto min-h-0" style={{ maxHeight: 'calc(85vh - 80px)' }}>
-            {tables.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <Grid3X3 className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                <p className="font-bold">{t('pos.no_tables')}</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 p-1">
-                {tables.map((table: any) => {
-                  const isOccupied = table.isOccupied === 1 || table.isOccupied === true;
-                  const isReserved = !!table.reservationInfo;
-                  const isAvailable = !isOccupied && !isReserved;
-                  const borderColor = isAvailable ? 'border-green-500' : isReserved ? 'border-yellow-500' : 'border-red-500';
-                  const bgColor = isAvailable ? 'bg-green-500/5' : isReserved ? 'bg-yellow-500/5' : 'bg-red-500/5';
-
-                  return (
-                    <Card
-                      key={table.id || table._id}
-                      className={`border-2 ${borderColor} ${bgColor} cursor-pointer transition-all`}
-                      onClick={() => {
-                        if (isAvailable) {
-                          setTableNumber(String(table.tableNumber || table.number));
-                          setOrderType("dine_in");
-                          setShowTablesDialog(false);
-                          toast({ title: t('pos.table_selected'), description: t('pos.table_selected_desc', { number: table.tableNumber || table.number }) });
-                        }
-                      }}
-                      data-testid={`table-card-${table.id || table._id}`}
+              {paymentMethod === "cash" && (() => {
+                const received = parseFloat(splitCashAmount) || 0;
+                const change = received - finalGrandTotal;
+                const roundUpTo = (n: number) => Math.ceil(finalGrandTotal / n) * n;
+                const quickAmounts: { label: string; value: number; testId: string }[] = [
+                  { label: tc("بالضبط","Exact"), value: finalGrandTotal, testId: "exact" },
+                  { label: `≈${roundUpTo(10)}`, value: roundUpTo(10), testId: "round10" },
+                  { label: `≈${roundUpTo(50)}`, value: roundUpTo(50), testId: "round50" },
+                  { label: `≈${roundUpTo(100)}`, value: roundUpTo(100), testId: "round100" },
+                ];
+                const bills = [50, 100, 200, 500];
+                const switchToSplitWithCard = () => {
+                  const cashEntered = received > 0 ? Math.min(received, finalGrandTotal) : finalGrandTotal / 2;
+                  const cardPart = Math.max(0, finalGrandTotal - cashEntered);
+                  setPersonPayments([{
+                    id: Date.now().toString(),
+                    method: 'mixed',
+                    amount: '',
+                    cashAmount: cashEntered.toFixed(2),
+                    cardAmount: cardPart.toFixed(2),
+                  }]);
+                  setPaymentMethod('split' as PaymentMethod);
+                };
+                return (
+                  <div className="mt-1.5 rounded-lg border border-primary/20 bg-primary/5 overflow-hidden">
+                    {/* Collapsible header */}
+                    <button
+                      type="button"
+                      className="w-full flex items-center justify-between px-2.5 py-1.5 hover:bg-primary/10 transition-colors"
+                      onClick={() => setShowCashPanel(v => !v)}
+                      data-testid="button-toggle-cash-panel"
                     >
-                      <CardContent className="p-3 text-center space-y-2">
-                        <div className="text-2xl font-black">{table.tableNumber || table.number}</div>
-                        <Badge
-                          variant={isAvailable ? "default" : "secondary"}
-                          className={`text-[10px] ${isAvailable ? 'bg-green-600' : isReserved ? 'bg-yellow-500 text-black' : 'bg-red-600'}`}
-                          data-testid={`table-status-${table.id || table._id}`}
-                        >
-                          {isAvailable ? t('pos.table_available') : isReserved ? t('pos.table_reserved') : t('pos.table_occupied')}
-                        </Badge>
-                        {table.capacity && (
-                          <p className="text-[10px] text-muted-foreground">{t('pos.capacity', { count: table.capacity })}</p>
+                      <div className="flex items-center gap-1.5">
+                        <Banknote className="w-3.5 h-3.5 text-primary" />
+                        <span className="text-[10px] font-bold text-primary">{tc("المبلغ المستلم","Cash received")}</span>
+                        {splitCashAmount && received > 0 && (
+                          <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${change >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                            {change >= 0 ? `🪙 ${Math.abs(change).toFixed(2)}` : `⚠️ ${Math.abs(change).toFixed(2)}`}
+                          </span>
                         )}
-                        {isOccupied && (
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            className="w-full text-[10px]"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              emptyTableMutation.mutate(table.id || table._id);
-                            }}
-                            disabled={emptyTableMutation.isPending}
-                            data-testid={`button-empty-table-${table.id || table._id}`}
-                          >
-                            <X className="w-3 h-3 ml-1" />
-                            {t('pos.empty_table')}
-                          </Button>
-                        )}
-                        {isReserved && table.reservationInfo && (
-                          <p className="text-[10px] text-yellow-600 font-medium">
-                            {table.reservationInfo.customerName || t('pos.active_reservation')}
-                          </p>
-                        )}
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+                      </div>
+                      <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${showCashPanel ? 'rotate-180' : ''}`} />
+                    </button>
 
-      <Dialog open={showOpenBillsDialog} onOpenChange={(open) => { setShowOpenBillsDialog(open); if (!open) setSelectedTableForBill(null); }}>
-        <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col" dir={dir}>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Receipt className="w-5 h-5" />
-              {t('pos.open_bills_title', { count: openTableOrders.length })}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 overflow-y-auto min-h-0" style={{ maxHeight: 'calc(85vh - 80px)' }}>
-            {openTableOrders.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <Receipt className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                <p className="font-bold">{t('pos.no_open_bills')}</p>
-              </div>
-            ) : (
-              <div className="space-y-3 p-1">
-                {openTableOrders.map((order: any) => {
-                  const orderItems = Array.isArray(order.items) ? order.items : [];
-                  const total = Number(order.totalAmount || 0);
-                  const elapsed = order.createdAt ? Math.floor((Date.now() - new Date(order.createdAt).getTime()) / 60000) : 0;
-                  const isSelectedForClose = selectedTableForBill?.id === order.id;
-                  const statusLabels: Record<string, string> = {
-                    'pending': t('pos.status_pending'),
-                    'payment_confirmed': t('pos.status_payment_confirmed', { defaultValue: 'تأكيد الدفع' }),
-                    'confirmed': t('pos.status_confirmed', { defaultValue: 'مؤكد' }),
-                    'in_progress': t('pos.status_in_progress'),
-                    'ready': t('pos.status_ready'),
-                    'delivered': t('pos.status_delivered', { defaultValue: 'تم التسليم' }),
-                    'received': t('pos.status_received', { defaultValue: 'تم الاستلام' }),
-                    'suspended': t('pos.status_suspended', { defaultValue: 'معلق' }),
-                  };
-
-                  return (
-                    <Card key={order.id || order._id} className="border-2" data-testid={`open-bill-${order.id}`}>
-                      <CardContent className="p-4 space-y-3">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-black text-lg">{t('pos.table_number_label', { number: order.tableNumber })}</span>
-                              <Badge variant="secondary" className="text-xs">{fmtOrderNum(order.orderNumber)}</Badge>
-                              <Badge variant="outline" className="text-xs">
-                                {statusLabels[order.status] || order.status}
-                              </Badge>
-                            </div>
-                            {elapsed > 0 && (
-                              <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-                                <Clock className="w-3 h-3" />
-                                {t('pos.ago_minutes', { count: elapsed })}
-                              </p>
-                            )}
-                          </div>
-                          <div className="text-left">
-                            <span className="font-black text-primary text-lg">{total.toFixed(2)}</span>
-                            <span className="text-xs text-muted-foreground mr-1">{t('pos.currency')}</span>
-                          </div>
+                    {showCashPanel && (
+                      <div className="px-2.5 pb-2 space-y-1.5 border-t border-primary/10">
+                        <div className="flex items-center gap-1.5 pt-1.5">
+                          <Input
+                            type="number"
+                            min={0}
+                            step={0.5}
+                            placeholder={finalGrandTotal.toFixed(2)}
+                            value={splitCashAmount}
+                            onChange={e => setSplitCashAmount(e.target.value)}
+                            className="h-8 text-sm font-bold flex-1"
+                            data-testid="input-cash-received"
+                          />
+                          <SarIcon size={11} />
                         </div>
-
-                        <div className="border-t pt-2">
-                          {orderItems.slice(0, 5).map((item: any, idx: number) => (
-                            <div key={idx} className="flex justify-between text-xs py-0.5">
-                              <span>{item.name || item.nameAr || item.coffeeItem?.nameAr} x{item.quantity || 1}</span>
-                              <span className="text-muted-foreground">{Number(item.price || item.unitPrice || 0).toFixed(2)}</span>
-                            </div>
-                          ))}
-                          {orderItems.length > 5 && (
-                            <p className="text-xs text-muted-foreground mt-1">{t('pos.more_items', { count: orderItems.length - 5 })}</p>
-                          )}
-                        </div>
-
-                        {isSelectedForClose ? (
-                          <div className="border-t pt-3 space-y-3">
-                            <p className="text-sm font-bold">{t('pos.select_payment')}</p>
-                            <div className="grid grid-cols-3 gap-1.5">
-                              {PAYMENT_METHODS.map((method) => (
-                                <Button
-                                  key={method.id}
-                                  variant={billPaymentMethod === method.id ? "default" : "outline"}
-                                  size="sm"
-                                  onClick={() => setBillPaymentMethod(method.id as PaymentMethod)}
-                                  className="flex flex-col gap-0.5 h-auto py-2 text-[10px]"
-                                  data-testid={`bill-payment-${method.id}`}
-                                >
-                                  <method.icon className="w-4 h-4" />
-                                  <span className="font-bold">{t((method as any).tKey)}</span>
-                                </Button>
-                              ))}
-                            </div>
-                            <div className="flex gap-2">
-                              <Button
-                                className="flex-1 gap-2"
-                                onClick={() => closeBillMutation.mutate({ orderId: order.id || order._id, payMethod: billPaymentMethod })}
-                                disabled={closeBillMutation.isPending}
-                                data-testid={`button-confirm-close-bill-${order.id}`}
-                              >
-                                {closeBillMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-                                {t('pos.confirm_print')}
-                              </Button>
-                              <Button
-                                variant="outline"
-                                onClick={() => setSelectedTableForBill(null)}
-                                data-testid={`button-cancel-close-bill-${order.id}`}
-                              >
-                                {t('pos.cancel')}
-                              </Button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex gap-2 flex-wrap border-t pt-2">
+                        {/* Quick-fill shortcuts */}
+                        <div className="grid grid-cols-4 gap-1">
+                          {quickAmounts.map((q) => (
                             <Button
-                              size="sm"
-                              onClick={() => { setSelectedTableForBill(order); setBillPaymentMethod("cash"); }}
-                              data-testid={`button-close-bill-${order.id}`}
-                            >
-                              <Banknote className="w-3 h-3 ml-1" />
-                              {t('pos.close_bill')}
-                            </Button>
-                            <Button
+                              key={q.testId}
+                              type="button"
                               size="sm"
                               variant="outline"
+                              className="h-6 text-[9px] font-bold px-1 border-primary/30 hover:bg-primary/10"
+                              onClick={() => setSplitCashAmount(q.value.toFixed(2))}
+                              data-testid={`button-quick-cash-${q.testId}`}
+                            >{q.label}</Button>
+                          ))}
+                        </div>
+                        <div className="grid grid-cols-4 gap-1">
+                          {bills.map((b) => (
+                            <Button
+                              key={b}
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-6 text-[9px] font-bold px-1"
+                              onClick={() => setSplitCashAmount(((parseFloat(splitCashAmount) || 0) + b).toFixed(2))}
+                              data-testid={`button-add-bill-${b}`}
+                            >+{b}</Button>
+                          ))}
+                        </div>
+                        {/* Quick switch to split-with-card */}
+                        {received < finalGrandTotal && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="w-full h-7 text-[10px] font-black border-dashed border-primary/50 text-primary hover:bg-primary/10 gap-1"
+                            onClick={switchToSplitWithCard}
+                            data-testid="button-switch-cash-to-split"
+                          >
+                            <CreditCard className="w-3 h-3" />
+                            {received > 0
+                              ? tc(`الباقي ${(finalGrandTotal - received).toFixed(2)} ر.س على الشبكة`, `Charge remaining ${(finalGrandTotal - received).toFixed(2)} to card`)
+                              : tc("تقسيم كاش + شبكة","Split Cash + Card")}
+                          </Button>
+                        )}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="w-full h-6 text-[9px] text-muted-foreground"
+                          onClick={() => setSplitCashAmount("")}
+                          data-testid="button-clear-cash"
+                        >{tc("مسح","Clear")}</Button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+              {paymentMethod === "card" && (
+                <div className="mt-2 space-y-2 rounded-xl border-2 border-primary/20 bg-primary/5 p-3">
+                  <p className="text-[10px] sm:text-xs text-muted-foreground text-center">
+                    {t('pos.card_amount_note')}
+                  </p>
+                  {posTerminalConnected ? (
+                    <div className="flex items-center justify-center gap-1.5 text-green-600 text-[10px] sm:text-xs" data-testid="status-terminal-connected">
+                      <div className="w-2 h-2 rounded-full bg-green-500" />
+                      <span className="font-medium">{t('pos.terminal_connected_status')}</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center gap-1.5 text-orange-500 text-[10px] sm:text-xs" data-testid="status-terminal-disconnected">
+                      <AlertTriangle className="w-3 h-3" />
+                      <span className="font-medium">{t('pos.terminal_disconnected_status')}</span>
+                    </div>
+                  )}
+                  {/* Quick switch shortcuts */}
+                  <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-primary/10">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8 text-[10px] font-black border-dashed border-primary/50 text-primary hover:bg-primary/10 gap-1"
+                      onClick={() => {
+                        const half = finalGrandTotal / 2;
+                        setPersonPayments([{
+                          id: Date.now().toString(),
+                          method: 'mixed',
+                          amount: '',
+                          cashAmount: half.toFixed(2),
+                          cardAmount: half.toFixed(2),
+                        }]);
+                        setPaymentMethod('split' as PaymentMethod);
+                      }}
+                      data-testid="button-switch-card-to-split"
+                    >
+                      <Banknote className="w-3.5 h-3.5" />
+                      {tc("نصف كاش + نصف شبكة","½ Cash + ½ Card")}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8 text-[10px] font-black border-dashed border-primary/50 text-primary hover:bg-primary/10 gap-1"
+                      onClick={() => {
+                        setPersonPayments([{
+                          id: Date.now().toString(),
+                          method: 'mixed',
+                          amount: '',
+                          cashAmount: '',
+                          cardAmount: finalGrandTotal.toFixed(2),
+                        }]);
+                        setPaymentMethod('split' as PaymentMethod);
+                      }}
+                      data-testid="button-card-go-split"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      {tc("تقسيم مخصص","Custom split")}
+                    </Button>
+                  </div>
+                </div>
+              )}
+              {paymentMethod === "split" && (() => {
+                const orderTotal = finalGrandTotal;
+                const getPersonCashUI = (p: PersonPayment) =>
+                  p.method === 'mixed' ? (parseFloat(p.cashAmount || '') || 0) : p.method === 'cash' ? (parseFloat(p.amount) || 0) : 0;
+                const getPersonCardUI = (p: PersonPayment) =>
+                  p.method === 'mixed' ? (parseFloat(p.cardAmount || '') || 0) : p.method === 'card' ? (parseFloat(p.amount) || 0) : 0;
+                const getPersonTotalUI = (p: PersonPayment) => getPersonCashUI(p) + getPersonCardUI(p);
+                const paidTotal = personPayments.reduce((s, p) => s + getPersonTotalUI(p), 0);
+                const remaining = Math.max(0, orderTotal - paidTotal);
+                const isComplete = Math.abs(paidTotal - orderTotal) <= 0.01;
+                const addPerson = () => setPersonPayments(prev => [...prev, { id: Date.now().toString(), method: 'cash', amount: '' }]);
+                const removePerson = (id: string) => setPersonPayments(prev => prev.filter(p => p.id !== id));
+                const updatePerson = (id: string, field: keyof PersonPayment, val: string) =>
+                  setPersonPayments(prev => prev.map(p => p.id === id ? { ...p, [field]: val } : p));
+                const fillRemaining = (id: string) => {
+                  const p = personPayments.find(pp => pp.id === id)!;
+                  if (p.method === 'mixed') {
+                    updatePerson(id, 'cashAmount', remaining > 0 ? remaining.toFixed(2) : '');
+                  } else {
+                    updatePerson(id, 'amount', remaining > 0 ? remaining.toFixed(2) : '');
+                  }
+                };
+                const totalCash = personPayments.reduce((s, p) => s + getPersonCashUI(p), 0);
+                const totalCard = personPayments.reduce((s, p) => s + getPersonCardUI(p), 0);
+                const splitEqualCash = (n: number) => {
+                  const per = orderTotal / n;
+                  const items = Array.from({ length: n }, (_, i) => ({
+                    id: `${Date.now()}-${i}`,
+                    method: 'cash' as const,
+                    amount: per.toFixed(2),
+                  }));
+                  setPersonPayments(items);
+                };
+                const splitCashCard = () => {
+                  const half = orderTotal / 2;
+                  setPersonPayments([{
+                    id: Date.now().toString(),
+                    method: 'mixed',
+                    amount: '',
+                    cashAmount: half.toFixed(2),
+                    cardAmount: half.toFixed(2),
+                  }]);
+                };
+                const resetSplit = () => setPersonPayments([{ id: Date.now().toString(), method: 'cash', amount: '' }]);
+                return (
+                  <div className="mt-2 space-y-2 rounded-xl border-2 border-primary/30 bg-primary/5 p-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[11px] font-bold text-primary">{tc("تقسيم الفاتورة على أشخاص","Split bill between people")}</p>
+                      <span className="text-[10px] bg-primary/10 text-primary font-bold px-2 py-0.5 rounded-full">{tc("إجمالي","Total")}: {orderTotal.toFixed(2)}</span>
+                    </div>
+                    {/* Quick presets */}
+                    <div className="grid grid-cols-5 gap-1">
+                      {[2, 3, 4, 5].map((n) => (
+                        <Button
+                          key={n}
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-[10px] font-black border-primary/40 hover:bg-primary/10"
+                          onClick={() => splitEqualCash(n)}
+                          data-testid={`button-split-equal-${n}`}
+                        >÷{n}<br /><span className="text-[8px] font-normal">{(orderTotal / n).toFixed(2)}</span></Button>
+                      ))}
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-[10px] font-black border-primary/40 hover:bg-primary/10 text-red-600"
+                        onClick={resetSplit}
+                        data-testid="button-split-reset"
+                      >{tc("صفر","Reset")}</Button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-[10px] font-black border-dashed border-primary/50 text-primary hover:bg-primary/10"
+                        onClick={splitCashCard}
+                        data-testid="button-split-cash-card-half"
+                      >½ {tc("كاش","Cash")} + ½ {tc("شبكة","Card")}</Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-[10px] font-black border-dashed border-primary/50 text-primary hover:bg-primary/10"
+                        onClick={() => setPersonPayments([{
+                          id: Date.now().toString(),
+                          method: 'mixed',
+                          amount: '',
+                          cashAmount: '',
+                          cardAmount: '',
+                        }])}
+                        data-testid="button-split-mixed-empty"
+                      >{tc("شخص واحد — كاش + شبكة","One person — Cash+Card")}</Button>
+                    </div>
+                    <div className="space-y-2">
+                      {personPayments.map((p, idx) => (
+                        <div key={p.id} className="space-y-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-bold text-muted-foreground shrink-0 w-5">{idx + 1}</span>
+                            <select
+                              value={p.method}
+                              onChange={e => updatePerson(p.id, 'method', e.target.value)}
+                              className="h-8 rounded-md border border-input bg-background text-xs font-bold px-1 shrink-0"
+                              data-testid={`select-person-method-${idx}`}
+                            >
+                              <option value="cash">{tc("كاش","Cash")}</option>
+                              <option value="card">{tc("شبكة","Card")}</option>
+                              <option value="mixed">{tc("كاش+شبكة","Cash+Card")}</option>
+                            </select>
+                            {p.method !== 'mixed' && (
+                              <Input
+                                type="number"
+                                min={0}
+                                step={0.01}
+                                placeholder={tc("المبلغ","Amount")}
+                                value={p.amount}
+                                onChange={e => updatePerson(p.id, 'amount', e.target.value)}
+                                className="h-8 text-sm font-bold flex-1 min-w-0"
+                                data-testid={`input-person-amount-${idx}`}
+                              />
+                            )}
+                            {p.method === 'mixed' && (
+                              <span className="text-[10px] text-primary font-bold flex-1 text-center">
+                                {getPersonTotalUI(p) > 0 ? `${getPersonTotalUI(p).toFixed(2)} ${tc("ر.س","SAR")}` : tc("أدخل المبالغ أدناه","Enter below")}
+                              </span>
+                            )}
+                            {remaining > 0 && getPersonTotalUI(p) === 0 && (
+                              <button
+                                onClick={() => fillRemaining(p.id)}
+                                className="text-[9px] text-primary underline shrink-0 whitespace-nowrap"
+                              >{remaining.toFixed(2)}</button>
+                            )}
+                            {personPayments.length > 1 && (
+                              <button onClick={() => removePerson(p.id)} className="text-red-500 hover:text-red-700 shrink-0">
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                          {p.method === 'mixed' && (
+                            <div className="flex items-center gap-1.5 mr-5">
+                              <Banknote className="w-3.5 h-3.5 text-green-600 shrink-0" />
+                              <Input
+                                type="number" min={0} step={0.01}
+                                placeholder={tc("كاش","Cash")}
+                                value={p.cashAmount || ''}
+                                onChange={e => updatePerson(p.id, 'cashAmount', e.target.value)}
+                                className="h-7 text-xs font-bold flex-1"
+                                data-testid={`input-person-cash-${idx}`}
+                              />
+                              <CreditCard className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                              <Input
+                                type="number" min={0} step={0.01}
+                                placeholder={tc("شبكة","Card")}
+                                value={p.cardAmount || ''}
+                                onChange={e => updatePerson(p.id, 'cardAmount', e.target.value)}
+                                className="h-7 text-xs font-bold flex-1"
+                                data-testid={`input-person-card-${idx}`}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      onClick={addPerson}
+                      className="text-[10px] text-primary font-bold flex items-center gap-1 hover:underline"
+                      data-testid="button-add-person"
+                    >
+                      <Plus className="w-3 h-3" />
+                      {tc("إضافة شخص","Add person")}
+                    </button>
+                    <div className={`flex items-center justify-between rounded-lg px-3 py-2 text-xs font-bold border ${isComplete ? 'bg-green-50 dark:bg-green-950/30 text-green-700 border-green-200' : remaining > 0 ? 'bg-amber-50 dark:bg-amber-950/20 text-amber-700 border-amber-200' : 'bg-red-50 text-red-600 border-red-200'}`}>
+                      <span>{isComplete ? tc("✓ مكتمل","✓ Complete") : remaining > 0 ? tc("المتبقي:","Remaining:") : tc("زيادة!","Over!")}</span>
+                      <span className="font-black text-sm">{isComplete ? '' : Math.abs(remaining > 0 ? remaining : paidTotal - orderTotal).toFixed(2) + ' ' + tc("ر.س","SAR")}</span>
+                    </div>
+                    <div className="flex justify-between text-[10px] text-muted-foreground pt-1 border-t">
+                      <span>{tc("نقدي","Cash")}: {totalCash.toFixed(2)}</span>
+                      <span>{tc("شبكة","Card")}: {totalCard.toFixed(2)}</span>
+                      <span className="font-bold text-primary">{tc("مدفوع","Paid")}: {paidTotal.toFixed(2)}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div className="p-2 sm:p-4 pb-[72px] md:pb-4 border-t bg-muted/10 gap-2 sm:gap-3 flex flex-col">
+              {/* Discount coupon input */}
+              <div className="rounded-xl border-2 border-dashed border-primary/40 bg-primary/5 p-2 sm:p-3" data-testid="card-pos-discount">
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <Tag className="w-3.5 h-3.5 text-primary" />
+                  <span className="text-[11px] sm:text-xs font-black text-primary">
+                    {tc('كوبون خصم', 'Discount Coupon')}
+                  </span>
+                </div>
+                {appliedDiscount ? (
+                  <div className="flex items-center justify-between gap-2 bg-green-50 dark:bg-green-950/30 border border-green-300 dark:border-green-700 rounded-lg px-2 py-1.5">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] sm:text-xs font-black text-green-700 dark:text-green-300 truncate" data-testid="text-applied-coupon">
+                        {appliedDiscount.code} — {appliedDiscount.percentage}%
+                      </p>
+                      {appliedDiscount.reason && (
+                        <p className="text-[9px] sm:text-[10px] text-green-600 dark:text-green-400 truncate">
+                          {appliedDiscount.reason}
+                        </p>
+                      )}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-red-600 hover:bg-red-50 shrink-0"
+                      onClick={handleClearDiscount}
+                      data-testid="button-clear-discount"
+                    >
+                      <XCircle className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      value={discountCode}
+                      onChange={(e) => setDiscountCode(e.target.value.toUpperCase())}
+                      placeholder={tc('أدخل الكود', 'Enter code')}
+                      className="h-8 text-[11px] sm:text-xs font-bold"
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleValidateDiscount(); } }}
+                      data-testid="input-discount-code"
+                    />
+                    <Button
+                      size="sm"
+                      className="h-8 px-2 text-[11px] sm:text-xs font-bold shrink-0"
+                      onClick={handleValidateDiscount}
+                      disabled={isValidatingDiscount || !discountCode.trim()}
+                      data-testid="button-apply-discount"
+                    >
+                      {isValidatingDiscount ? '...' : tc('تطبيق', 'Apply')}
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1.5 sm:space-y-2">
+                <div className="flex justify-between text-[10px] sm:text-sm">
+                  <span className="text-muted-foreground">{t('pos.subtotal')}</span>
+                  <span className="font-bold flex items-center gap-1">{calculateSubtotal.toFixed(2)} <SarIcon size={11} /></span>
+                </div>
+                <div className="flex justify-between text-[10px] sm:text-sm">
+                  <span className="text-muted-foreground">{t('pos.tax')}</span>
+                  <span className="font-bold flex items-center gap-1">{(calculateTotal - calculateSubtotal).toFixed(2)} <SarIcon size={11} /></span>
+                </div>
+                <Separator />
+                <div className="flex justify-between items-center pt-1">
+                  <span className="font-black text-sm sm:text-base">{t('pos.total')}</span>
+                  <span className={`font-black text-base sm:text-xl flex items-center gap-1 ${(usePoints && pointsDiscount > 0) || appliedDiscount ? 'line-through text-muted-foreground text-sm sm:text-base' : 'text-primary'}`}>{calculateTotal.toFixed(2)} <SarIcon size={13} /></span>
+                </div>
+                {usePoints && pointsDiscount > 0 && (
+                  <div className="flex justify-between text-[10px] sm:text-sm text-amber-600">
+                    <span className="font-bold">{i18n.language === 'ar' ? 'خصم بطاقة تسالي' : 'بطاقة تسالي'}</span>
+                    <span className="font-bold flex items-center gap-1">- {pointsDiscount.toFixed(2)} <SarIcon size={11} /></span>
+                  </div>
+                )}
+                {appliedDiscount && couponDiscountAmount > 0 && (
+                  <div className="flex justify-between text-[10px] sm:text-sm text-green-600" data-testid="text-coupon-discount-line">
+                    <span className="font-bold">{tc('كوبون', 'Coupon')} {appliedDiscount.code} ({appliedDiscount.percentage}%)</span>
+                    <span className="font-bold flex items-center gap-1">- {couponDiscountAmount.toFixed(2)} <SarIcon size={11} /></span>
+                  </div>
+                )}
+                {((usePoints && pointsDiscount > 0) || appliedDiscount) && (
+                  <div className="flex justify-between items-center">
+                    <span className="font-black text-sm sm:text-base">{i18n.language === 'ar' ? 'الإجمالي بعد الخصم' : 'Total After Discount'}</span>
+                    <span className={`font-black text-base sm:text-xl flex items-center gap-1 ${(itemDiscountTotal > 0 || manualDiscountAmount > 0 || serviceChargeAmount > 0) ? 'line-through text-muted-foreground text-sm' : 'text-primary'}`} data-testid="text-grand-total">{calculateGrandTotal.toFixed(2)} <SarIcon size={13} /></span>
+                  </div>
+                )}
+
+                {/* ── Engine extras: item discounts, manual discount, service charge ── */}
+                {itemDiscountTotal > 0 && (
+                  <div className="flex justify-between text-[10px] sm:text-sm text-green-600">
+                    <span className="font-bold flex items-center gap-1"><Tag className="w-3 h-3" />{tc('خصم العناصر','Item Discounts')}</span>
+                    <span className="font-bold flex items-center gap-1">- {itemDiscountTotal.toFixed(2)} <SarIcon size={11} /></span>
+                  </div>
+                )}
+                {manualDiscountAmount > 0 && (
+                  <div className="flex justify-between text-[10px] sm:text-sm text-green-600">
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => setShowManualDiscount(true)} className="font-bold flex items-center gap-1 hover:underline">
+                        <DollarSign className="w-3 h-3" />{tc('خصم يدوي','Manual Discount')}
+                        {manualDiscount && <span className="text-[9px] text-muted-foreground">({manualDiscount.type === 'percent' ? `${manualDiscount.value}%` : `${manualDiscount.value} ر.س`})</span>}
+                      </button>
+                      <button onClick={() => setManualDiscount(undefined)} className="text-destructive hover:opacity-70 ml-1"><X className="w-3 h-3" /></button>
+                    </div>
+                    <span className="font-bold flex items-center gap-1">- {manualDiscountAmount.toFixed(2)} <SarIcon size={11} /></span>
+                  </div>
+                )}
+                {serviceCharge.enabled && serviceChargeAmount > 0 && (
+                  <div className="flex justify-between text-[10px] sm:text-sm text-orange-600">
+                    <button onClick={() => setServiceCharge(prev => ({...prev, enabled: false}))} className="font-bold flex items-center gap-1 hover:underline">
+                      <Hash className="w-3 h-3" />{tc('رسوم الخدمة','Service Charge')} ({serviceCharge.value}{serviceCharge.type === 'percent' ? '%' : ' ر.س'})
+                    </button>
+                    <span className="font-bold flex items-center gap-1">+ {serviceChargeAmount.toFixed(2)} <SarIcon size={11} /></span>
+                  </div>
+                )}
+
+                {/* Service charge quick toggle */}
+                {!serviceCharge.enabled && (
+                  <button
+                    onClick={() => setServiceCharge(prev => ({ ...prev, enabled: true }))}
+                    className="text-[10px] text-muted-foreground/50 hover:text-orange-600 transition-colors flex items-center gap-1"
+                    data-testid="button-enable-service-charge"
+                  >
+                    <Hash className="w-3 h-3" />
+                    {tc('إضافة رسوم خدمة (F7)','Add Service Charge (F7)')}
+                  </button>
+                )}
+                {/* Manual discount quick add */}
+                {!manualDiscountAmount && (
+                  <button
+                    onClick={() => setShowManualDiscount(true)}
+                    className="text-[10px] text-muted-foreground/50 hover:text-green-600 transition-colors flex items-center gap-1"
+                    data-testid="button-add-manual-discount"
+                  >
+                    <DollarSign className="w-3 h-3" />
+                    {tc('إضافة خصم يدوي','Add Manual Discount')}
+                  </button>
+                )}
+
+                {(itemDiscountTotal > 0 || manualDiscountAmount > 0 || serviceChargeAmount > 0) && (
+                  <>
+                    <Separator />
+                    <div className="flex justify-between items-center pt-1">
+                      <span className="font-black text-sm sm:text-base">{tc('الإجمالي النهائي','Final Total')}</span>
+                      <span className="font-black text-base sm:text-xl text-primary flex items-center gap-1" data-testid="text-final-grand-total">{finalGrandTotal.toFixed(2)} <SarIcon size={13} /></span>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Points discount toggle — only when customer found with ≥100 pts */}
+              {customerLookupFound === true && customerPoints >= 100 && (
+                <div className={`rounded-xl border-2 p-3 transition-colors ${usePoints ? 'border-amber-400 bg-amber-50 dark:bg-amber-950/30' : 'border-muted bg-muted/30'}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Wallet className="w-4 h-4 text-amber-600 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-xs font-black text-amber-700 dark:text-amber-300 leading-none">
+                          {i18n.language === 'ar' ? 'استخدام النقاط' : 'Use Points'}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                          {customerPoints} {i18n.language === 'ar' ? 'نقطة' : 'pts'} = {(customerPoints / 50).toFixed(2)} {t('pos.currency')}
+                        </p>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={usePoints}
+                      onCheckedChange={setUsePoints}
+                      data-testid="toggle-use-points"
+                    />
+                  </div>
+                  {usePoints && (
+                    <p className="text-[11px] text-amber-700 dark:text-amber-300 font-bold mt-2 border-t border-amber-200 dark:border-amber-700 pt-2">
+                      {i18n.language === 'ar'
+                        ? <span>سيُخصم {pointsDiscount.toFixed(2)} <SarIcon size={10} /> ({Math.round(pointsDiscount * 50)} نقطة) من الطلب</span>
+                        : `${pointsDiscount.toFixed(2)} SAR (${Math.round(pointsDiscount * 50)} pts) will be deducted`}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Offline / Queue Indicator */}
+              {(!isOnline || offlineQueueCount > 0) && (
+                <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${!isOnline ? 'bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800' : 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800'}`} data-testid="pos-offline-indicator">
+                  {!isOnline ? <WifiOff className="w-4 h-4 shrink-0" /> : <Wifi className="w-4 h-4 shrink-0" />}
+                  <span className="flex-1">
+                    {!isOnline ? tc('غير متصل — الطلبات تُخزّن محلياً','Offline — Orders saved locally') : `${offlineQueueCount} ${tc('طلب في انتظار الإرسال','orders pending upload')}`}
+                  </span>
+                  {isOnline && offlineQueueCount > 0 && (
+                    <button
+                      className="text-xs underline"
+                      onClick={async () => {
+                        const { synced } = await syncOfflineOrders();
+                        const c = await countPendingOrders().catch(() => 0);
+                        setOfflineQueueCount(c);
+                        if (synced > 0) queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+                      }}
+                    >{tc("مزامنة","Sync")}</button>
+                  )}
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <Button
+                  className="flex-1 h-11 sm:h-13 text-sm sm:text-base font-black rounded-xl shadow-lg shadow-primary/20 gap-2"
+                  disabled={orderItems.length === 0 || syncing}
+                  onClick={() => setShowOrderReview(true)}
+                  data-testid="button-checkout"
+                >
+                  {syncing ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      {PAYMENT_METHODS.find(m => m.id === paymentMethod)?.icon && (() => {
+                        const IconComp = PAYMENT_METHODS.find(m => m.id === paymentMethod)!.icon;
+                        return <IconComp className="w-4 h-4" />;
+                      })()}
+                    </>
+                  )}
+                  {i18n.language === 'ar' ? 'مراجعة الطلب والدفع' : 'Review & Pay'}
+                </Button>
+              </div>
+            </div>
+          </aside>
+
+          {/* ── Quick Shortcuts Sidebar (left strip, hidden on mobile) ── */}
+          <QuickSidebar
+            groups={[
+              [
+                {
+                  icon: <Plus className="w-5 h-5" />,
+                  label: tc('طلب جديد', 'New Order'),
+                  onClick: () => newCartTabRef.current(),
+                  shortcut: 'F4',
+                },
+                {
+                  icon: <PauseCircle className="w-5 h-5" />,
+                  label: tc('تعليق الطلب', 'Hold Order'),
+                  onClick: () => holdCurrentCartRef.current(),
+                  shortcut: 'F5',
+                },
+                {
+                  icon: <Archive className="w-5 h-5" />,
+                  label: tc('الطلبات المعلقة', 'Held Orders'),
+                  onClick: () => setShowHeldCarts(true),
+                  shortcut: 'F6',
+                },
+                {
+                  icon: <Merge className="w-5 h-5" />,
+                  label: tc('دمج الفواتير', 'Merge Bills'),
+                  onClick: () => setShowMergeBills(true),
+                  shortcut: 'Ctrl+M',
+                },
+              ],
+              [
+                {
+                  icon: <ClipboardList className="w-5 h-5" />,
+                  label: tc('الطلبات الواردة', 'Incoming Orders'),
+                  onClick: () => { setShowOrdersPanel(true); setNewOrdersCount(0); },
+                  badge: newOrdersCount || undefined,
+                  shortcut: 'F3',
+                },
+                {
+                  icon: <Grid3X3 className="w-5 h-5" />,
+                  label: tc('الطاولات', 'Tables'),
+                  onClick: () => setShowTablesDialog(true),
+                  shortcut: 'F10',
+                },
+                {
+                  icon: <FolderOpen className="w-5 h-5" />,
+                  label: tc('الحسابات المفتوحة', 'Open Bills'),
+                  onClick: () => setShowOpenBillsDialog(true),
+                  badge: openTableOrders.length || undefined,
+                  shortcut: 'F9',
+                },
+                {
+                  icon: <Car className="w-5 h-5" />,
+                  label: tc('طلبات السيارات', 'Car Orders'),
+                  onClick: () => setShowCarOrdersPanel(true),
+                  badge: carPreparationAlerts.length || undefined,
+                },
+              ],
+              [
+                {
+                  icon: <User className="w-5 h-5" />,
+                  label: tc('بحث عن عميل', 'Customer Lookup'),
+                  onClick: () => setShowCustomerInfo(v => !v),
+                  active: showCustomerInfo,
+                  shortcut: 'F8',
+                },
+                {
+                  icon: <Percent className="w-5 h-5" />,
+                  label: tc('خصم يدوي', 'Manual Discount'),
+                  onClick: () => setShowManualDiscount(true),
+                  shortcut: 'Ctrl+D',
+                },
+                {
+                  icon: <SplitSquareVertical className="w-5 h-5" />,
+                  label: tc('تقسيم الفاتورة', 'Split Bill'),
+                  onClick: () => setShowSplitPersons(true),
+                  shortcut: 'Ctrl+S',
+                },
+                {
+                  icon: <Receipt className="w-5 h-5" />,
+                  label: tc('آخر فاتورة', 'Last Receipt'),
+                  onClick: () => { if (lastOrder) setShowReceiptDialog(true); },
+                  active: !!lastOrder,
+                  shortcut: 'Ctrl+P',
+                },
+                {
+                  icon: <RotateCcw className="w-5 h-5" />,
+                  label: tc('استرجاع طلب', 'Refund'),
+                  onClick: () => setShowRefundDialog(true),
+                  danger: true,
+                },
+              ],
+              [
+                {
+                  icon: <Printer className="w-5 h-5" />,
+                  label: tc('إعدادات الطابعة', 'Printer Settings'),
+                  onClick: () => setShowPrinterSettings(true),
+                },
+                {
+                  icon: <Settings className="w-5 h-5" />,
+                  label: tc('إعدادات نقطة البيع', 'POS Settings'),
+                  onClick: () => setShowPOSSettings(true),
+                },
+                {
+                  icon: <Volume2 className="w-5 h-5" />,
+                  label: tc('إعدادات الأصوات', 'Sound Settings'),
+                  onClick: () => setShowSoundSettings(true),
+                },
+              ],
+            ]}
+            bottomItems={[
+              {
+                icon: <Home className="w-5 h-5" />,
+                label: tc('الرئيسية', 'Home'),
+                onClick: () => setLocation('/employee/home'),
+              },
+            ]}
+          />
+        </main>
+
+        {/* Mobile bottom navigation — Products / Cart tabs */}
+        <div className="md:hidden fixed bottom-0 left-0 right-0 bg-card border-t z-50 flex h-[58px] shadow-lg">
+          <button
+            onClick={() => setMobilePanelView('products')}
+            className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
+              mobilePanelView === 'products'
+                ? 'text-primary border-t-2 border-primary bg-primary/5'
+                : 'text-muted-foreground'
+            }`}
+            data-testid="button-mobile-tab-products"
+          >
+            <Grid3X3 className="w-5 h-5" />
+            <span className="text-[10px] font-bold">{i18n.language === 'ar' ? 'المنتجات' : 'Products'}</span>
+          </button>
+          <button
+            onClick={() => setMobilePanelView('cart')}
+            className={`flex-1 flex flex-col items-center justify-center gap-0.5 relative transition-colors ${
+              mobilePanelView === 'cart'
+                ? 'text-primary border-t-2 border-primary bg-primary/5'
+                : 'text-muted-foreground'
+            }`}
+            data-testid="button-mobile-tab-cart"
+          >
+            <div className="relative">
+              <ShoppingBag className="w-5 h-5" />
+              {orderItems.length > 0 && (
+                <span className="absolute -top-1.5 -right-2 bg-primary text-primary-foreground text-[9px] font-black rounded-full min-w-[16px] h-4 flex items-center justify-center px-0.5">
+                  {orderItems.length}
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] font-bold">
+              {orderItems.length > 0
+                ? `${calculateTotal.toFixed(0)} ${t('pos.currency')}`
+                : i18n.language === 'ar' ? 'الطلب' : 'Cart'}
+            </span>
+          </button>
+        </div>
+
+        <Dialog open={showOrdersPanel} onOpenChange={(open) => { setShowOrdersPanel(open); if (open) setNewOrdersCount(0); }}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col" dir={dir}>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <ClipboardList className="w-5 h-5" />
+                {t('pos.live_orders', { count: liveOrders?.length || 0 })}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="flex gap-2 px-1 pb-2 flex-wrap">
+              {([
+                { key: 'all' as const, label: i18n.language === 'ar' ? 'الكل' : 'All', count: liveOrders?.length || 0 },
+                { key: 'online' as const, label: i18n.language === 'ar' ? 'أونلاين' : 'Online', count: liveOrders?.filter((o: any) => o.channel === 'online' || o.channel === 'web').length || 0 },
+                { key: 'pos' as const, label: i18n.language === 'ar' ? 'كاشير' : 'POS', count: liveOrders?.filter((o: any) => o.channel === 'pos' || !o.channel).length || 0 },
+                { key: 'car' as const, label: i18n.language === 'ar' ? 'سيارات' : 'Cars', count: liveOrders?.filter((o: any) => o.orderType === 'car_pickup' || o.orderType === 'car-pickup').length || 0 },
+              ]).map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => setOrdersFilter(tab.key)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${
+                    ordersFilter === tab.key
+                      ? tab.key === 'online' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
+                      : tab.key === 'car' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                      : 'bg-primary/10 text-primary'
+                      : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                  }`}
+                >
+                  {tab.key === 'online' && <MonitorSmartphone className="w-3.5 h-3.5" />}
+                  {tab.key === 'car' && <Car className="w-3.5 h-3.5" />}
+                  {tab.label}
+                  {tab.count > 0 && (
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                      ordersFilter === tab.key ? 'bg-white/50 dark:bg-white/10' : 'bg-background'
+                    }`}>{tab.count}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+            <div className="flex-1 overflow-y-auto min-h-0" style={{ maxHeight: 'calc(90vh - 130px)' }}>
+              <div className="space-y-3 p-1">
+                {(() => {
+                  const filteredOrders = (liveOrders || []).filter((o: any) => {
+                    if (ordersFilter === 'online') return o.channel === 'online' || o.channel === 'web';
+                    if (ordersFilter === 'pos') return o.channel === 'pos' || o.channel === undefined || o.channel === null;
+                    if (ordersFilter === 'car') return o.orderType === 'car_pickup' || o.orderType === 'car-pickup';
+                    return true;
+                  });
+                  if (filteredOrders.length === 0) return (
+                    <div className="text-center py-12 text-muted-foreground">
+                      <ClipboardList className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                      <p className="font-bold">{ordersFilter !== 'all'
+                        ? (i18n.language === 'ar' ? 'لا توجد طلبات في هذا التصنيف' : 'No orders in this filter')
+                        : t('pos.no_live_orders')}</p>
+                    </div>
+                  );
+                  return filteredOrders.map((order: any) => {
+                    const orderCustomerName = order.customerName || order.customerInfo?.customerName || order.customerInfo?.name || '';
+                    const orderCustomerPhone = order.customerPhone || order.customerInfo?.customerPhone || order.customerInfo?.phone || '';
+                    const statusColors: Record<string, string> = {
+                      'pending': 'border-yellow-500 bg-yellow-500/5',
+                      'in_progress': 'border-blue-500 bg-blue-500/5',
+                      'ready': 'border-green-500 bg-green-500/5',
+                    };
+                    const statusLabels: Record<string, string> = {
+                      'pending': t('pos.status_pending'),
+                      'payment_confirmed': t('pos.status_confirmed'),
+                      'in_progress': t('pos.status_in_progress'),
+                      'ready': t('pos.status_ready'),
+                    };
+                    const carInfo = order.carType || order.carInfo?.carType;
+                    const carColor = order.carColor || order.carInfo?.carColor;
+                    const carPlateNum = order.plateNumber || order.carInfo?.plateNumber || order.carPlate || "";
+                    
+                    const elapsedMs = order.createdAt ? Date.now() - new Date(order.createdAt).getTime() : 0;
+                    const elapsedMin = Math.floor(elapsedMs / 60000);
+                    const elapsedLabel = elapsedMin < 1
+                      ? (i18n.language === 'ar' ? 'الآن' : 'Now')
+                      : elapsedMin < 60
+                        ? (i18n.language === 'ar' ? `منذ ${elapsedMin} د` : `${elapsedMin}m ago`)
+                        : (i18n.language === 'ar' ? `منذ ${Math.floor(elapsedMin / 60)} س` : `${Math.floor(elapsedMin / 60)}h ago`);
+                    const isLate = elapsedMin >= 15;
+
+                    return (
+                      <Card key={order.id || order._id} className={`border-2 ${statusColors[order.status] || 'border-border'}`} data-testid={`order-card-${order.id}`}>
+                        <CardContent className="p-4">
+                          <div className="flex justify-between items-start mb-3">
+                            <div>
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <span className="font-black text-lg">{fmtOrderNum(order.orderNumber)}</span>
+                                <Badge variant={order.status === 'ready' ? 'default' : 'secondary'} className="text-xs">
+                                  {statusLabels[order.status] || order.status}
+                                </Badge>
+                                <Badge className={`text-[10px] gap-1 border-0 ${isLate ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 animate-pulse' : 'bg-muted text-muted-foreground'}`}>
+                                  <Clock className="w-3 h-3" />
+                                  {elapsedLabel}
+                                </Badge>
+                                {(order.channel === 'online' || order.channel === 'web') && (
+                                  <Badge className="text-[10px] bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 border-0 gap-1">
+                                    <MonitorSmartphone className="w-3 h-3" />
+                                    {i18n.language === 'ar' ? 'أونلاين' : 'Online'}
+                                  </Badge>
+                                )}
+                                {(order.status === 'refunded' || (order as any).isFullyRefunded) && (
+                                  <Badge className="text-xs bg-red-100 text-red-700 border border-red-300">مسترجع ↩</Badge>
+                                )}
+                                {(order as any).refundedAmount > 0 && !(order as any).isFullyRefunded && order.status !== 'refunded' && (
+                                  <Badge className="text-xs bg-orange-100 text-orange-700 border border-orange-300">جزئي ↩</Badge>
+                                )}
+                                {order.orderType && (
+                                  <Badge variant="outline" className="text-xs">
+                                    {order.orderType === 'dine_in' || order.orderType === 'dine-in' ? t('pos.order_type_dine_label') : 
+                                     order.orderType === 'takeaway' || order.orderType === 'pickup' ? t('pos.order_type_takeaway_label') : 
+                                     order.orderType === 'car_pickup' || order.orderType === 'car-pickup' ? t('pos.order_type_car_label') : 
+                                     order.orderType === 'delivery' ? t('pos.order_type_delivery_label') : order.orderType}
+                                  </Badge>
+                                )}
+                              </div>
+                              {orderCustomerName && (
+                                <p className="text-sm text-muted-foreground">
+                                  <span className="font-medium">{orderCustomerName}</span>
+                                  {orderCustomerPhone && <span className="mr-2 text-xs">({orderCustomerPhone})</span>}
+                                </p>
+                              )}
+                              {order.tableNumber && (
+                                <p className="text-xs text-muted-foreground">{t('pos.table_label', { number: order.tableNumber })}</p>
+                              )}
+                              {carInfo && (
+                                <div className="flex flex-col gap-0.5 mt-1 text-xs text-purple-500 bg-purple-500/10 rounded p-1.5 border border-purple-500/20">
+                                  <div className="flex items-center gap-1 font-bold">
+                                    <Navigation className="w-3 h-3" />
+                                    <span>🚗 استلام من السيارة</span>
+                                  </div>
+                                  <span>{carInfo} | {carColor}{carPlateNum ? ` | لوحة: ${carPlateNum}` : ''}</span>
+                                </div>
+                              )}
+                            </div>
+                            <div className="text-left">
+                              <span className="font-black text-primary text-lg">{Number(order.totalAmount).toFixed(2)}</span>
+                              <span className="text-xs text-muted-foreground mr-1">{t('pos.currency')}</span>
+                            </div>
+                          </div>
+                          
+                          <div className="mb-3">
+                            {(Array.isArray(order.items) ? order.items : []).map((item: any, idx: number) => (
+                              <div key={idx} className="flex justify-between text-xs py-0.5">
+                                <span>{item.name || item.nameAr || item.coffeeItem?.nameAr} x{item.quantity}</span>
+                                <span className="text-muted-foreground">{Number(item.price || item.unitPrice || 0).toFixed(2)}</span>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* ─── Order Tracking Strip ─── */}
+                          {order.status !== 'cancelled' && order.status !== 'completed' && (
+                            <div className="mb-3">
+                              {(() => {
+                                const steps = [
+                                  { key: 'pending', label: i18n.language === 'ar' ? 'مؤكد' : 'Confirmed', aliases: ['payment_confirmed', 'confirmed'] },
+                                  { key: 'in_progress', label: i18n.language === 'ar' ? 'تحضير' : 'Preparing' },
+                                  { key: 'ready', label: i18n.language === 'ar' ? 'جاهز' : 'Ready' },
+                                  { key: 'completed', label: i18n.language === 'ar' ? 'مكتمل' : 'Done' },
+                                ];
+                                const currentIdx = steps.findIndex(s => s.key === order.status || (s.aliases || []).includes(order.status));
+                                return (
+                                  <div className="flex items-center gap-1" dir="ltr">
+                                    {steps.map((step, idx) => (
+                                      <div key={step.key} className="flex items-center flex-1">
+                                        <div className="flex flex-col items-center flex-1">
+                                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center text-[9px] font-bold transition-colors ${
+                                            idx <= currentIdx
+                                              ? 'bg-primary border-primary text-primary-foreground'
+                                              : 'border-muted-foreground/30 text-muted-foreground'
+                                          }`}>
+                                            {idx < currentIdx ? '✓' : idx + 1}
+                                          </div>
+                                          <span className={`text-[9px] mt-0.5 text-center leading-tight ${idx <= currentIdx ? 'text-primary font-medium' : 'text-muted-foreground'}`}>
+                                            {step.label}
+                                          </span>
+                                        </div>
+                                        {idx < steps.length - 1 && (
+                                          <div className={`h-[2px] flex-1 mx-0.5 rounded transition-colors ${idx < currentIdx ? 'bg-primary' : 'bg-muted-foreground/20'}`} />
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          )}
+
+                          {/* ─── Action Buttons (all orders, not just online) ─── */}
+                          <div className="flex gap-2 flex-wrap">
+                            {(order.status === 'pending' || order.status === 'payment_confirmed' || order.status === 'confirmed') && (
+                              <Button 
+                                size="sm" 
+                                onClick={() => updateOrderStatusMutation.mutate({ orderId: order.id || order._id, status: 'in_progress', estimatedPrepTimeInMinutes: 10 })}
+                                disabled={updateOrderStatusMutation.isPending}
+                                className="bg-blue-600 hover:bg-blue-700 text-white"
+                                data-testid={`button-start-prep-${order.id}`}
+                              >
+                                <Clock className="w-3 h-3 ml-1" />
+                                {t('pos.start_prep')}
+                              </Button>
+                            )}
+                            {order.status === 'in_progress' && (
+                              <Button 
+                                size="sm" 
+                                onClick={() => updateOrderStatusMutation.mutate({ orderId: order.id || order._id, status: 'ready' })}
+                                disabled={updateOrderStatusMutation.isPending}
+                                className="bg-green-600 hover:bg-green-700 text-white"
+                                data-testid={`button-ready-${order.id}`}
+                              >
+                                <Check className="w-3 h-3 ml-1" />
+                                {t('pos.mark_ready')}
+                              </Button>
+                            )}
+                            {order.status === 'ready' && (
+                              <Button 
+                                size="sm" 
+                                onClick={() => updateOrderStatusMutation.mutate({ orderId: order.id || order._id, status: 'completed' })}
+                                disabled={updateOrderStatusMutation.isPending}
+                                className="bg-primary hover:bg-primary/90"
+                                data-testid={`button-delivered-${order.id}`}
+                              >
+                                <CheckCircle className="w-3 h-3 ml-1" />
+                                {t('pos.mark_delivered')}
+                              </Button>
+                            )}
+                            <Button 
+                              size="sm" 
+                              variant="outline"
                               onClick={() => handlePrintLiveOrder(order)}
-                              data-testid={`button-print-bill-${order.id}`}
+                              data-testid={`button-print-order-${order.id}`}
                             >
                               <Printer className="w-3 h-3 ml-1" />
                               {t('pos.print')}
                             </Button>
+                            {order.status !== 'cancelled' && order.status !== 'completed' && (
+                              <Button 
+                                size="sm" 
+                                variant="destructive"
+                                onClick={() => updateOrderStatusMutation.mutate({ orderId: order.id || order._id, status: 'cancelled' })}
+                                disabled={updateOrderStatusMutation.isPending}
+                                data-testid={`button-cancel-${order.id}`}
+                              >
+                                <X className="w-3 h-3 ml-1" />
+                                {t('pos.cancel')}
+                              </Button>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Order Review Dialog */}
+        <Dialog open={showOrderReview} onOpenChange={setShowOrderReview}>
+          <DialogContent className="max-w-lg w-full max-h-[90vh] h-[90vh] flex flex-col p-0 gap-0 overflow-hidden" dir={dir}>
+            <DialogHeader className="px-5 pt-5 pb-3 border-b shrink-0">
+              <DialogTitle className="flex items-center gap-2 text-lg font-black">
+                <ShoppingCart className="w-5 h-5 text-primary" />
+                {i18n.language === 'ar' ? 'مراجعة الطلب' : 'Order Review'}
+              </DialogTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {i18n.language === 'ar'
+                  ? 'راجع الأصناف قبل إتمام الدفع'
+                  : 'Review items before completing payment'}
+              </p>
+            </DialogHeader>
+
+            {/* Items list */}
+            <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
+              <div className="space-y-2">
+                {orderItems.map((item) => {
+                  const unitPrice = getPosItemUnitPrice(item);
+                  const lineTotal = unitPrice * item.quantity;
+                  const itemAddons = item.customization?.selectedItemAddons || [];
+                  return (
+                    <div
+                      key={item.lineItemId}
+                      className="flex items-start gap-3 p-3 rounded-xl border bg-card"
+                      data-testid={`review-item-${item.lineItemId}`}
+                    >
+                      {/* Name */}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-sm leading-snug">{item.coffeeItem.nameAr}</p>
+                        {item.coffeeItem.nameEn && (
+                          <p className="text-xs text-muted-foreground">{item.coffeeItem.nameEn}</p>
+                        )}
+                        {item.selectedSize && (
+                          <p className="text-[10px] text-blue-600 mt-0.5">الحجم: {item.selectedSize}</p>
+                        )}
+                        {itemAddons.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {itemAddons.map((a: any, i: number) => (
+                              <span key={i} className="text-[10px] bg-muted px-1.5 py-0.5 rounded-full text-muted-foreground">
+                                +{a.nameAr || a.name}
+                              </span>
+                            ))}
                           </div>
                         )}
-                      </CardContent>
-                    </Card>
+                      </div>
+
+                      {/* Qty controls */}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          className="w-7 h-7 rounded-full border bg-muted flex items-center justify-center text-base font-bold hover:bg-destructive/10 transition-colors"
+                          onClick={() => updateQuantity(item.lineItemId, item.quantity - 1)}
+                          data-testid={`review-qty-dec-${item.lineItemId}`}
+                        >
+                          <Minus className="w-3 h-3" />
+                        </button>
+                        <span className="w-6 text-center text-sm font-black" data-testid={`review-qty-${item.lineItemId}`}>{item.quantity}</span>
+                        <button
+                          className="w-7 h-7 rounded-full border bg-muted flex items-center justify-center text-base font-bold hover:bg-primary/10 transition-colors"
+                          onClick={() => updateQuantity(item.lineItemId, item.quantity + 1)}
+                          data-testid={`review-qty-inc-${item.lineItemId}`}
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                      </div>
+
+                      {/* Line price */}
+                      <div className="text-sm font-black text-primary shrink-0 w-16 text-left" data-testid={`review-price-${item.lineItemId}`}>
+                        {lineTotal.toFixed(2)}
+                      </div>
+
+                      {/* Delete */}
+                      <button
+                        className="w-7 h-7 rounded-full flex items-center justify-center text-destructive hover:bg-destructive/10 transition-colors shrink-0"
+                        onClick={() => updateQuantity(item.lineItemId, 0)}
+                        data-testid={`review-delete-${item.lineItemId}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   );
                 })}
               </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+            </div>
 
-      {/* ─── Car Orders Panel ────────────────────────────────────────────────── */}
-      <Dialog open={showCarOrdersPanel} onOpenChange={setShowCarOrdersPanel}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col" dir={dir}>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Car className="w-5 h-5 text-primary" />
-              {tc("طلبات السيارات", "Car Orders")}
-              {carPreparationAlerts.length > 0 && (
-                <Badge className="bg-amber-500 text-white animate-pulse">{carPreparationAlerts.length} {tc("يحتاج تحضير", "needs prep")}</Badge>
-              )}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 overflow-y-auto space-y-3 p-1">
-            {carPreparationAlerts.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-xs font-black text-amber-600 flex items-center gap-1 px-1">
-                  <Bell className="w-3.5 h-3.5 animate-bounce" />
-                  {tc("تنبيهات — العميل يصل خلال دقائق!", "Alerts — Customer arriving soon!")}
-                </p>
-                {carPreparationAlerts.map((order: any) => (
-                  <div key={order._id} className="border-2 border-amber-400 bg-amber-50 rounded-xl p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Badge className="bg-amber-500 text-white text-xs">🚗 يصل {order.arrivalTime}</Badge>
-                        <span className="font-black text-sm">#{String(order.orderNumber || order.dailyNumber || '').padStart(3, '0')}</span>
+            {/* Summary + payment method + action buttons */}
+            <div className="px-5 pt-3 pb-5 border-t bg-muted/20 shrink-0 space-y-3">
+              {/* Totals */}
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between text-muted-foreground">
+                  <span>{t('pos.subtotal')}</span>
+                  <span className="font-bold">{calculateSubtotal.toFixed(2)} {t('pos.currency')}</span>
+                </div>
+                <div className="flex justify-between text-muted-foreground">
+                  <span>{t('pos.tax')}</span>
+                  <span className="font-bold">{(calculateTotal - calculateSubtotal).toFixed(2)} {t('pos.currency')}</span>
+                </div>
+                <Separator />
+                <div className="flex justify-between items-center pt-1">
+                  <span className="font-black text-base">{t('pos.total')}</span>
+                  <span className={`font-black text-xl ${(usePoints && pointsDiscount > 0) || appliedDiscount ? 'line-through text-muted-foreground text-base' : 'text-primary'}`}>{calculateTotal.toFixed(2)} {t('pos.currency')}</span>
+                </div>
+                {usePoints && pointsDiscount > 0 && (
+                  <div className="flex justify-between text-sm text-amber-600">
+                    <span className="font-bold">{i18n.language === 'ar' ? 'خصم بطاقة تسالي' : 'بطاقة تسالي Discount'}</span>
+                    <span className="font-bold">- {pointsDiscount.toFixed(2)} {t('pos.currency')}</span>
+                  </div>
+                )}
+                {appliedDiscount && couponDiscountAmount > 0 && (
+                  <div className="flex justify-between text-sm text-green-600">
+                    <span className="font-bold">{tc('كوبون', 'Coupon')} {appliedDiscount.code} ({appliedDiscount.percentage}%)</span>
+                    <span className="font-bold">- {couponDiscountAmount.toFixed(2)} {t('pos.currency')}</span>
+                  </div>
+                )}
+                {((usePoints && pointsDiscount > 0) || appliedDiscount) && (
+                  <div className="flex justify-between items-center pt-1 border-t">
+                    <span className="font-black text-base">{i18n.language === 'ar' ? 'الإجمالي النهائي' : 'Final Total'}</span>
+                    <span className="font-black text-xl text-primary">{calculateGrandTotal.toFixed(2)} {t('pos.currency')}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Order note */}
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-muted-foreground">
+                  {i18n.language === 'ar' ? 'ملاحظة على الطلب' : 'Order Note'}
+                </label>
+                <textarea
+                  value={orderNote}
+                  onChange={(e) => setOrderNote(e.target.value)}
+                  placeholder={i18n.language === 'ar' ? 'أضف ملاحظة أو تعليمات خاصة...' : 'Add a note or special instructions...'}
+                  rows={2}
+                  className="w-full rounded-xl border bg-card px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/40 text-right placeholder:text-muted-foreground"
+                  dir="auto"
+                  data-testid="input-order-note"
+                />
+              </div>
+
+              {/* Payment method (read-only summary) */}
+              <div className="flex items-center gap-2 bg-card border rounded-xl px-4 py-2.5">
+                {(() => {
+                  const m = PAYMENT_METHODS.find(m => m.id === paymentMethod);
+                  if (!m) return null;
+                  const IconComp = m.icon;
+                  return (
+                    <>
+                      <IconComp className="w-4 h-4 text-primary shrink-0" />
+                      <span className="text-sm font-bold flex-1">{t(m.tKey)}</span>
+                      <button
+                        className="text-xs text-muted-foreground underline"
+                        onClick={() => setShowOrderReview(false)}
+                        data-testid="review-change-payment"
+                      >
+                        {i18n.language === 'ar' ? 'تغيير' : 'Change'}
+                      </button>
+                    </>
+                  );
+                })()}
+              </div>
+
+              {/* Action buttons */}
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <Button
+                  variant="outline"
+                  className="h-11 font-bold gap-2"
+                  onClick={() => setShowOrderReview(false)}
+                  data-testid="review-back-btn"
+                >
+                  <ArrowRight className="w-4 h-4" />
+                  {i18n.language === 'ar' ? 'رجوع' : 'Back'}
+                </Button>
+                <Button
+                  className="h-11 font-black gap-2 shadow-lg shadow-primary/20"
+                  disabled={orderItems.length === 0 || syncing}
+                  onClick={async () => {
+                    setShowOrderReview(false);
+                    await handleCheckout();
+                  }}
+                  data-testid="review-confirm-pay-btn"
+                >
+                  {syncing ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="w-4 h-4" />
+                  )}
+                  {i18n.language === 'ar' ? 'إتمام الدفع' : 'Confirm Payment'}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={showReceiptDialog} onOpenChange={setShowReceiptDialog}>
+          <DialogContent className="max-w-sm max-h-[94vh] p-0 overflow-hidden flex flex-col" dir={dir}>
+            <DialogHeader className="px-4 pt-3 pb-2 border-b shrink-0">
+              <DialogTitle className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Receipt className="w-5 h-5 text-primary" />
+                  {t('pos.receipt_title')}
+                </div>
+                {receiptCountdown > 0 && (
+                  <span className="text-xs font-bold text-muted-foreground bg-muted px-2 py-0.5 rounded-full tabular-nums">
+                    {receiptCountdown}s
+                  </span>
+                )}
+              </DialogTitle>
+            </DialogHeader>
+
+            {lastOrder && (
+              <div className="flex flex-col flex-1 overflow-hidden">
+                {/* ── Offline warning ── */}
+                {lastOrder.isOffline && (
+                  <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-300 dark:border-amber-700 px-3 py-2 shrink-0">
+                    <span className="text-amber-600 dark:text-amber-400">📶</span>
+                    <div className="text-right">
+                      <p className="text-xs font-bold text-amber-700 dark:text-amber-400">
+                        {i18n.language === 'ar' ? 'طلب محفوظ بدون إنترنت' : 'Saved Offline'}
+                      </p>
+                      <p className="text-xs text-amber-600 dark:text-amber-500">
+                        {i18n.language === 'ar' ? 'سيُرسل تلقائياً عند استعادة الاتصال' : 'Will sync when back online'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Receipt preview ── */}
+                {/* Android: NO iframe — any iframe in DOM shrinks entire viewport on WebView */}
+                <div className="flex-1 overflow-y-auto bg-[#e0ddd8]" data-testid="text-receipt-order-number">
+                  {isAndroidDevice ? (
+                    /* Android: show a simple order summary card — no iframe */
+                    <div className="flex flex-col items-center justify-center gap-4 py-8 px-4 text-center" dir="rtl">
+                      <CheckCircle className="w-12 h-12 text-green-500" />
+                      <div>
+                        <p className="text-lg font-bold text-foreground">{lastOrder?.orderNumber}</p>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          {tc('اضغط زر الطباعة لطباعة الفاتورة', 'Tap the print button to print the receipt')}
+                        </p>
                       </div>
-                      <button onClick={() => setCarPreparationAlerts(prev => prev.filter(a => a._id !== order._id))} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+                      {lastOrder && (
+                        <div className="w-full bg-background rounded-xl border border-border p-4 text-right space-y-2">
+                          {lastOrder.items?.slice(0, 5).map((item: any, i: number) => (
+                            <div key={i} className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">{item.quantity}×</span>
+                              <span className="flex-1 text-right mr-2">{item.coffeeItem?.nameAr || item.name}</span>
+                            </div>
+                          ))}
+                          {(lastOrder.items?.length ?? 0) > 5 && (
+                            <p className="text-xs text-muted-foreground text-center">+{lastOrder.items.length - 5} {tc('منتجات أخرى', 'more items')}</p>
+                          )}
+                          <div className="border-t border-border pt-2 flex justify-between font-bold text-base">
+                            <span>{tc('الإجمالي', 'Total')}</span>
+                            <span>{Number(lastOrder.total || 0).toFixed(2)} {tc('ر.س', 'SAR')}</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="text-sm space-y-0.5">
-                      <p><span className="text-gray-500">العميل:</span> <strong>{order.customerName}</strong> — {order.customerPhone}</p>
-                      <p><span className="text-gray-500">السيارة:</span> <strong>{order.carColor} {order.carType}</strong> | لوحة: <strong className="font-mono">{order.plateNumber || '—'}</strong></p>
+                  ) : receiptPreviewHtml ? (
+                    <ShadowHtml
+                      html={receiptPreviewHtml}
+                      className="w-full block"
+                      style={{ height: '580px', minHeight: '400px', overflow: 'auto' }}
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center h-48 gap-3 text-muted-foreground">
+                      <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                      <span className="text-sm">{tc('جاري تحضير الفاتورة…', 'Preparing receipt…')}</span>
                     </div>
-                    <div className="text-xs text-gray-500">
-                      {(order.items || []).map((item: any, i: number) => (
-                        <span key={i}>{item.coffeeItem?.nameAr || item.nameAr} ×{item.quantity}{i < order.items.length - 1 ? '، ' : ''}</span>
-                      ))}
+                  )}
+                </div>
+
+                {/* ── Print error banner ── */}
+                {lastPrintFailed && (
+                  <div className="flex items-start gap-2 bg-red-50 dark:bg-red-950/30 border-t border-red-200 dark:border-red-800 px-3 py-2 shrink-0 text-right">
+                    <span className="text-lg">⚠️</span>
+                    <div className="flex-1 text-xs text-red-700 dark:text-red-400">
+                      <p className="font-bold mb-0.5">لم تتم الطباعة</p>
+                      <p>افتح إعدادات الطابعة ← اختر الطابعة (USB) ← ثم اضغط "طباعة" أدناه</p>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="font-black text-primary">{Number(order.totalAmount || 0).toFixed(2)} ر.س</span>
-                      <Button size="sm" className="text-xs h-7 bg-amber-500 hover:bg-amber-600 text-white" onClick={() => {
-                        import('@/lib/print-utils').then(({ printTaxInvoice }) => {
-                          printTaxInvoice({
-                            orderNumber: String(order.orderNumber || order.dailyNumber || ''),
-                            customerName: order.customerName || 'سيارة',
-                            customerPhone: order.customerPhone || '',
-                            items: (order.items || []).map((item: any) => ({
-                              coffeeItem: { nameAr: item.coffeeItem?.nameAr || item.nameAr || '', nameEn: '', price: String(item.coffeeItem?.price || item.price || 0) },
-                              quantity: item.quantity || 1,
-                            })),
-                            subtotal: String(Number(order.totalAmount || 0) / 1.15),
-                            total: String(order.totalAmount || 0),
-                            paymentMethod: 'نقدي عند الاستلام',
-                            employeeName: employee?.fullName || '',
-                            orderType: 'car_pickup' as any,
-                            orderTypeName: `🚗 ${order.carColor || ''} ${order.carType || ''} (${order.plateNumber || ''})`,
-                            date: new Date().toISOString(),
-                          }, { autoPrint: true });
-                        });
-                      }}>
-                        <Printer className="w-3 h-3 ml-1" /> طباعة
+                  </div>
+                )}
+
+                {/* ── Action buttons (5-action panel) ── */}
+                <div className="flex flex-col gap-2 p-3 border-t bg-background shrink-0">
+                  <Button
+                    className="w-full gap-2 h-11 text-base font-bold"
+                    onClick={() => { setShowReceiptDialog(false); }}
+                    data-testid="button-new-order"
+                  >
+                    <Plus className="w-5 h-5" />
+                    {t('pos.new_order_btn')}
+                    {receiptCountdown > 0 && (
+                      <span className="mr-1 text-xs opacity-70">({receiptCountdown})</span>
+                    )}
+                  </Button>
+
+                  {/* Row 1: full-width preview */}
+                  <Button
+                    variant="secondary"
+                    className="w-full gap-2"
+                    onClick={handlePreviewBoth}
+                    data-testid="button-preview-receipt"
+                  >
+                    <Receipt className="w-4 h-4" />
+                    {tc('معاينة الفواتير', 'Preview Invoices')}
+                  </Button>
+
+                  {/* Row 2: customer + kitchen */}
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      className={`flex-1 gap-2 ${lastPrintFailed ? 'border-red-400 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30' : 'border-blue-300 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/30'}`}
+                      onClick={() => { setLastPrintFailed(false); setReceiptCountdown(0); handlePrintCustomerOnly(); }}
+                      data-testid="button-print-receipt"
+                    >
+                      <Printer className="w-4 h-4" />
+                      {lastPrintFailed ? tc('إعادة الطباعة', 'Retry') : tc('فاتورة العميل', 'Customer')}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="flex-1 gap-2 border-amber-300 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                      onClick={handlePrintKitchenOnly}
+                      data-testid="button-print-kitchen"
+                    >
+                      <Printer className="w-4 h-4" />
+                      {tc('طلب المطبخ', 'Kitchen')}
+                    </Button>
+                  </div>
+
+                  {/* Row 3: print both + edit */}
+                  <div className="flex gap-2">
+                    <Button
+                      className="flex-1 gap-2 bg-slate-900 hover:bg-black text-white"
+                      onClick={handlePrintBoth}
+                      data-testid="button-print-both"
+                    >
+                      <Printer className="w-4 h-4" />
+                      {tc('طباعة الكل', 'Print Both')}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="flex-1 gap-2 border-rose-300 text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                      onClick={handleEditLastOrder}
+                      data-testid="button-edit-order"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      {tc('تعديل الطلب', 'Edit Order')}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* ── Quick Print Bar — slides in after payment, POS stays ready ─────── */}
+        {showQuickPrintBar && lastOrder && (
+          <div
+            className="fixed bottom-5 right-5 z-50 bg-background border border-border rounded-2xl shadow-2xl p-4 w-72 flex flex-col gap-3"
+            style={{ animation: 'slideInFromBottom 0.3s ease-out' }}
+            dir="rtl"
+          >
+            <style>{`
+              @keyframes slideInFromBottom {
+                from { opacity: 0; transform: translateY(24px); }
+                to   { opacity: 1; transform: translateY(0); }
+              }
+            `}</style>
+
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-5 h-5 text-green-500 shrink-0" />
+                <div>
+                  <p className="text-xs text-muted-foreground leading-none mb-0.5">{tc('تم إتمام الطلب', 'Order complete')}</p>
+                  <p className="font-bold text-base text-primary leading-none">{lastOrder.orderNumber}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {quickPrintCountdown > 0 && (
+                  <span className="text-xs text-muted-foreground tabular-nums bg-muted px-1.5 py-0.5 rounded-full">{quickPrintCountdown}</span>
+                )}
+                <button
+                  onClick={() => setShowQuickPrintBar(false)}
+                  className="text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded-full hover:bg-muted"
+                  data-testid="button-close-quick-bar"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Print error banner */}
+            {lastPrintFailed && (
+              <div className="flex items-center gap-2 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-lg px-2.5 py-1.5 text-xs text-red-700 dark:text-red-400">
+                <span>⚠️</span>
+                <span>{tc('لم تتم الطباعة — اضغط "طباعة" لإعادة المحاولة', 'Print failed — tap Print to retry')}</span>
+              </div>
+            )}
+
+            {/* Quick action buttons */}
+            <div className="flex flex-col gap-2">
+              <Button
+                className={`w-full gap-2 h-11 text-sm font-bold ${lastPrintFailed ? 'bg-red-600 hover:bg-red-700' : 'bg-primary hover:bg-primary/90'}`}
+                onClick={() => { setLastPrintFailed(false); setQuickPrintCountdown(0); handlePrintCustomerOnly(); }}
+                data-testid="button-qb-print-customer"
+              >
+                <Printer className="w-4 h-4" />
+                {lastPrintFailed ? tc('إعادة الطباعة', 'Retry Print') : tc('طباعة فاتورة العميل', 'Print Customer Receipt')}
+              </Button>
+
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1 gap-1.5 text-xs h-9 border-amber-300 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                  onClick={() => { setQuickPrintCountdown(0); handlePrintKitchenOnly(); }}
+                  data-testid="button-qb-print-kitchen"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  {tc('نسخة المطبخ', 'Kitchen Copy')}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="flex-1 gap-1.5 text-xs h-9"
+                  onClick={() => { setShowQuickPrintBar(false); setShowReceiptDialog(true); }}
+                  data-testid="button-qb-view-receipt"
+                >
+                  <Receipt className="w-3.5 h-3.5" />
+                  {tc('عرض الفاتورة', 'View Receipt')}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Receipt visual preview modal ──────────────────────────────────── */}
+        <Dialog open={showReceiptPreview} onOpenChange={setShowReceiptPreview}>
+          <DialogContent className="max-w-md max-h-[96vh] p-0 overflow-hidden flex flex-col">
+            <DialogHeader className="px-4 pt-4 pb-2 border-b shrink-0">
+              <DialogTitle className="flex items-center gap-2 text-base">
+                <Receipt className="w-4 h-4 text-primary" />
+                معاينة الفاتورة
+              </DialogTitle>
+            </DialogHeader>
+            {/* Tab switcher */}
+            <div className="shrink-0 flex border-b bg-muted/40">
+              <button
+                className={`flex-1 py-2 text-sm font-semibold transition-colors ${previewTab === 'customer' ? 'bg-background border-b-2 border-primary text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setPreviewTab('customer')}
+                data-testid="tab-preview-customer"
+              >نسخة العميل</button>
+              <button
+                className={`flex-1 py-2 text-sm font-semibold transition-colors ${previewTab === 'employee' ? 'bg-background border-b-2 border-primary text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setPreviewTab('employee')}
+                data-testid="tab-preview-employee"
+              >نسخة الموظف</button>
+            </div>
+            <div className="flex-1 overflow-y-auto bg-[#f5f5f0]">
+              {previewTab === 'customer' && receiptPreviewHtml && (
+                <ShadowHtml
+                  html={receiptPreviewHtml}
+                  className="w-full block"
+                  style={{ height: '700px', minHeight: '500px', overflow: 'auto' }}
+                />
+              )}
+              {previewTab === 'employee' && employeeReceiptPreviewHtml && (
+                <ShadowHtml
+                  html={employeeReceiptPreviewHtml}
+                  className="w-full block"
+                  style={{ height: '700px', minHeight: '500px', overflow: 'auto' }}
+                />
+              )}
+            </div>
+            <div className="shrink-0 flex gap-2 p-3 border-t bg-background">
+              <Button
+                className="flex-1 gap-2"
+                onClick={() => {
+                  setShowReceiptPreview(false);
+                  setLastPrintFailed(false);
+                  if (previewTab === 'employee') {
+                    handlePrintKitchenOnly();
+                  } else {
+                    handlePrintReceipt();
+                  }
+                }}
+                data-testid="button-preview-print"
+              >
+                <Printer className="w-4 h-4" />
+                طباعة
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setShowReceiptPreview(false)}
+                data-testid="button-preview-close"
+              >
+                إغلاق
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {qrPayOrder && (
+          <QrPayModal
+            open={qrPayOpen}
+            onClose={() => setQrPayOpen(false)}
+            payId={qrPayOrder.id}
+            orderNumber={qrPayOrder.orderNumber}
+            amount={qrPayOrder.amount}
+            onPaid={handleQrPaymentConfirmed}
+          />
+        )}
+
+        <DrinkCustomizationDialog
+          coffeeItem={posCustomizationItem?.item || null}
+          variants={posCustomizationItem?.group || []}
+          open={!!posCustomizationItem}
+          modal={false}
+          initialCustomization={posCustomizationItem?.initialCustomization}
+          onClose={() => setPosCustomizationItem(null)}
+          onConfirm={(customization: DrinkCustomization, quantity: number, selectedVariant?: CoffeeItem) => {
+            const targetItem = selectedVariant || posCustomizationItem?.item;
+            if (!targetItem) return;
+            const selectedItemAddons = customization.selectedAddons.map(addon => ({
+              nameAr: addon.nameAr + (addon.quantity > 1 ? ` ×${addon.quantity}` : ''),
+              nameEn: addon.nameAr,
+              price: addon.price * addon.quantity,
+            }));
+            addToOrder(targetItem, selectedItemAddons.length > 0 ? { selectedItemAddons } : undefined, customization.selectedSize || null, quantity, customization);
+            setPosCustomizationItem(null);
+          }}
+        />
+
+        <Dialog open={showTablesDialog} onOpenChange={setShowTablesDialog}>
+          <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col" dir={dir}>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Grid3X3 className="w-5 h-5" />
+                {t('pos.tables_title', { count: tables.length })}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="flex-1 overflow-y-auto min-h-0" style={{ maxHeight: 'calc(85vh - 80px)' }}>
+              {tables.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <Grid3X3 className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                  <p className="font-bold">{t('pos.no_tables')}</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 p-1">
+                  {tables.map((table: any) => {
+                    const isOccupied = table.isOccupied === 1 || table.isOccupied === true;
+                    const isReserved = !!table.reservationInfo;
+                    const isAvailable = !isOccupied && !isReserved;
+                    const borderColor = isAvailable ? 'border-green-500' : isReserved ? 'border-yellow-500' : 'border-red-500';
+                    const bgColor = isAvailable ? 'bg-green-500/5' : isReserved ? 'bg-yellow-500/5' : 'bg-red-500/5';
+
+                    return (
+                      <Card
+                        key={table.id || table._id}
+                        className={`border-2 ${borderColor} ${bgColor} cursor-pointer transition-all`}
+                        onClick={() => {
+                          if (isAvailable) {
+                            setTableNumber(String(table.tableNumber || table.number));
+                            setOrderType("dine_in");
+                            setShowTablesDialog(false);
+                            toast({ title: t('pos.table_selected'), description: t('pos.table_selected_desc', { number: table.tableNumber || table.number }) });
+                          }
+                        }}
+                        data-testid={`table-card-${table.id || table._id}`}
+                      >
+                        <CardContent className="p-3 text-center space-y-2">
+                          <div className="text-2xl font-black">{table.tableNumber || table.number}</div>
+                          <Badge
+                            variant={isAvailable ? "default" : "secondary"}
+                            className={`text-[10px] ${isAvailable ? 'bg-green-600' : isReserved ? 'bg-yellow-500 text-black' : 'bg-red-600'}`}
+                            data-testid={`table-status-${table.id || table._id}`}
+                          >
+                            {isAvailable ? t('pos.table_available') : isReserved ? t('pos.table_reserved') : t('pos.table_occupied')}
+                          </Badge>
+                          {table.capacity && (
+                            <p className="text-[10px] text-muted-foreground">{t('pos.capacity', { count: table.capacity })}</p>
+                          )}
+                          {isOccupied && (
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              className="w-full text-[10px]"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                emptyTableMutation.mutate(table.id || table._id);
+                              }}
+                              disabled={emptyTableMutation.isPending}
+                              data-testid={`button-empty-table-${table.id || table._id}`}
+                            >
+                              <X className="w-3 h-3 ml-1" />
+                              {t('pos.empty_table')}
+                            </Button>
+                          )}
+                          {isReserved && table.reservationInfo && (
+                            <p className="text-[10px] text-yellow-600 font-medium">
+                              {table.reservationInfo.customerName || t('pos.active_reservation')}
+                            </p>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={showOpenBillsDialog} onOpenChange={(open) => { setShowOpenBillsDialog(open); if (!open) setSelectedTableForBill(null); }}>
+          <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col" dir={dir}>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Receipt className="w-5 h-5" />
+                {t('pos.open_bills_title', { count: openTableOrders.length })}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="flex-1 overflow-y-auto min-h-0" style={{ maxHeight: 'calc(85vh - 80px)' }}>
+              {openTableOrders.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <Receipt className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                  <p className="font-bold">{t('pos.no_open_bills')}</p>
+                </div>
+              ) : (
+                <div className="space-y-3 p-1">
+                  {openTableOrders.map((order: any) => {
+                    const orderItems = Array.isArray(order.items) ? order.items : [];
+                    const total = Number(order.totalAmount || 0);
+                    const elapsed = order.createdAt ? Math.floor((Date.now() - new Date(order.createdAt).getTime()) / 60000) : 0;
+                    const isSelectedForClose = selectedTableForBill?.id === order.id;
+                    const statusLabels: Record<string, string> = {
+                      'pending': t('pos.status_pending'),
+                      'payment_confirmed': t('pos.status_payment_confirmed', { defaultValue: 'تأكيد الدفع' }),
+                      'confirmed': t('pos.status_confirmed', { defaultValue: 'مؤكد' }),
+                      'in_progress': t('pos.status_in_progress'),
+                      'ready': t('pos.status_ready'),
+                      'delivered': t('pos.status_delivered', { defaultValue: 'تم التسليم' }),
+                      'received': t('pos.status_received', { defaultValue: 'تم الاستلام' }),
+                      'suspended': t('pos.status_suspended', { defaultValue: 'معلق' }),
+                    };
+
+                    return (
+                      <Card key={order.id || order._id} className="border-2" data-testid={`open-bill-${order.id}`}>
+                        <CardContent className="p-4 space-y-3">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-black text-lg">{t('pos.table_number_label', { number: order.tableNumber })}</span>
+                                <Badge variant="secondary" className="text-xs">{fmtOrderNum(order.orderNumber)}</Badge>
+                                <Badge variant="outline" className="text-xs">
+                                  {statusLabels[order.status] || order.status}
+                                </Badge>
+                              </div>
+                              {elapsed > 0 && (
+                                <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                                  <Clock className="w-3 h-3" />
+                                  {t('pos.ago_minutes', { count: elapsed })}
+                                </p>
+                              )}
+                            </div>
+                            <div className="text-left">
+                              <span className="font-black text-primary text-lg">{total.toFixed(2)}</span>
+                              <span className="text-xs text-muted-foreground mr-1">{t('pos.currency')}</span>
+                            </div>
+                          </div>
+
+                          <div className="border-t pt-2">
+                            {orderItems.slice(0, 5).map((item: any, idx: number) => (
+                              <div key={idx} className="flex justify-between text-xs py-0.5">
+                                <span>{item.name || item.nameAr || item.coffeeItem?.nameAr} x{item.quantity || 1}</span>
+                                <span className="text-muted-foreground">{Number(item.price || item.unitPrice || 0).toFixed(2)}</span>
+                              </div>
+                            ))}
+                            {orderItems.length > 5 && (
+                              <p className="text-xs text-muted-foreground mt-1">{t('pos.more_items', { count: orderItems.length - 5 })}</p>
+                            )}
+                          </div>
+
+                          {isSelectedForClose ? (
+                            <div className="border-t pt-3 space-y-3">
+                              <p className="text-sm font-bold">{t('pos.select_payment')}</p>
+                              <div className="grid grid-cols-3 gap-1.5">
+                                {PAYMENT_METHODS.map((method) => (
+                                  <Button
+                                    key={method.id}
+                                    variant={billPaymentMethod === method.id ? "default" : "outline"}
+                                    size="sm"
+                                    onClick={() => setBillPaymentMethod(method.id as PaymentMethod)}
+                                    className="flex flex-col gap-0.5 h-auto py-2 text-[10px]"
+                                    data-testid={`bill-payment-${method.id}`}
+                                  >
+                                    <method.icon className="w-4 h-4" />
+                                    <span className="font-bold">{t((method as any).tKey)}</span>
+                                  </Button>
+                                ))}
+                              </div>
+                              <div className="flex gap-2">
+                                <Button
+                                  className="flex-1 gap-2"
+                                  onClick={() => closeBillMutation.mutate({ orderId: order.id || order._id, payMethod: billPaymentMethod })}
+                                  disabled={closeBillMutation.isPending}
+                                  data-testid={`button-confirm-close-bill-${order.id}`}
+                                >
+                                  {closeBillMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                                  {t('pos.confirm_print')}
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  onClick={() => setSelectedTableForBill(null)}
+                                  data-testid={`button-cancel-close-bill-${order.id}`}
+                                >
+                                  {t('pos.cancel')}
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex gap-2 flex-wrap border-t pt-2">
+                              <Button
+                                size="sm"
+                                onClick={() => { setSelectedTableForBill(order); setBillPaymentMethod("cash"); }}
+                                data-testid={`button-close-bill-${order.id}`}
+                              >
+                                <Banknote className="w-3 h-3 ml-1" />
+                                {t('pos.close_bill')}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handlePrintLiveOrder(order)}
+                                data-testid={`button-print-bill-${order.id}`}
+                              >
+                                <Printer className="w-3 h-3 ml-1" />
+                                {t('pos.print')}
+                              </Button>
+                              {order.customerPhone && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-green-600 border-green-200 hover:bg-green-50"
+                                  onClick={() => {
+                                    const msg = encodeURIComponent(`مرحباً ${order.customerName || ''}، طلبكم على طاولة رقم ${order.tableNumber} جاهز للتسوية. المبلغ الإجمالي: ${Number(order.totalAmount || 0).toFixed(2)} ر.س`);
+                                    window.open(`https://wa.me/966${(order.customerPhone || '').replace(/^0/, '')}?text=${msg}`, '_blank');
+                                  }}
+                                  data-testid={`button-whatsapp-bill-${order.id}`}
+                                >
+                                  📱 واتساب
+                                </Button>
+                              )}
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* ─── Car Orders Panel ────────────────────────────────────────────────── */}
+        <Dialog open={showCarOrdersPanel} onOpenChange={setShowCarOrdersPanel}>
+          <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col" dir={dir}>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Car className="w-5 h-5 text-primary" />
+                {tc("طلبات السيارات", "Car Orders")}
+                {carPreparationAlerts.length > 0 && (
+                  <Badge className="bg-amber-500 text-white animate-pulse">{carPreparationAlerts.length} {tc("يحتاج تحضير", "needs prep")}</Badge>
+                )}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="flex-1 overflow-y-auto space-y-3 p-1">
+              {carPreparationAlerts.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-black text-amber-600 flex items-center gap-1 px-1">
+                    <Bell className="w-3.5 h-3.5 animate-bounce" />
+                    {tc("تنبيهات — العميل يصل خلال دقائق!", "Alerts — Customer arriving soon!")}
+                  </p>
+                  {carPreparationAlerts.map((order: any) => (
+                    <div key={order._id} className="border-2 border-amber-400 bg-amber-50 rounded-xl p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Badge className="bg-amber-500 text-white text-xs">🚗 يصل {order.arrivalTime}</Badge>
+                          <span className="font-black text-sm">#{String(order.orderNumber || order.dailyNumber || '').padStart(3, '0')}</span>
+                        </div>
+                        <button onClick={() => setCarPreparationAlerts(prev => prev.filter(a => a._id !== order._id))} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+                      </div>
+                      <div className="text-sm space-y-0.5">
+                        <p><span className="text-gray-500">العميل:</span> <strong>{order.customerName}</strong> — {order.customerPhone}</p>
+                        <p><span className="text-gray-500">السيارة:</span> <strong>{order.carColor} {order.carType}</strong> | لوحة: <strong className="font-mono">{order.plateNumber || '—'}</strong></p>
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {(order.items || []).map((item: any, i: number) => (
+                          <span key={i}>{item.coffeeItem?.nameAr || item.nameAr} ×{item.quantity}{i < order.items.length - 1 ? '، ' : ''}</span>
+                        ))}
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="font-black text-primary">{Number(order.totalAmount || 0).toFixed(2)} ر.س</span>
+                        <Button size="sm" className="text-xs h-7 bg-amber-500 hover:bg-amber-600 text-white" onClick={() => {
+                          import('@/lib/print-utils').then(({ printTaxInvoice }) => {
+                            printTaxInvoice({
+                              orderNumber: String(order.orderNumber || order.dailyNumber || ''),
+                              customerName: order.customerName || 'سيارة',
+                              customerPhone: order.customerPhone || '',
+                              items: (order.items || []).map((item: any) => ({
+                                coffeeItem: { nameAr: item.coffeeItem?.nameAr || item.nameAr || '', nameEn: '', price: String(item.coffeeItem?.price || item.price || 0) },
+                                quantity: item.quantity || 1,
+                              })),
+                              subtotal: String(Number(order.totalAmount || 0) / 1.15),
+                              total: String(order.totalAmount || 0),
+                              paymentMethod: 'نقدي عند الاستلام',
+                              employeeName: employee?.fullName || '',
+                              orderType: 'car_pickup' as any,
+                              orderTypeName: `🚗 ${order.carColor || ''} ${order.carType || ''} (${order.plateNumber || ''})`,
+                              date: new Date().toISOString(),
+                            }, { autoPrint: true });
+                          });
+                        }}>
+                          <Printer className="w-3 h-3 ml-1" /> طباعة
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <CurbsideOrdersList employeeName={employee?.fullName || ''} />
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* ─── Refund Dialog ───────────────────────────────────────────────────── */}
+        <RefundDialog
+          open={showRefundDialog}
+          onOpenChange={setShowRefundDialog}
+          branchId={(activeBranchId || employee?.branchId)?.toString()}
+          employeeId={employee?.id?.toString()}
+          employeeName={employee?.fullName}
+          tenantId={employee?.tenantId?.toString()}
+        />
+
+        {/* ─── Printer Settings Dialog ─────────────────────────────────────────── */}
+        <Dialog open={showPrinterSettings} onOpenChange={setShowPrinterSettings}>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" dir={dir}>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-right font-bold text-xl">
+                <Printer className="w-5 h-5" />
+                {tc("إعدادات الطابعة", "Printer Settings")}
+              </DialogTitle>
+            </DialogHeader>
+            <PrinterSettingsPanel />
+          </DialogContent>
+        </Dialog>
+
+        {/* ─── Sound Settings Dialog ───────────────────────────────────────────── */}
+        <Dialog open={showSoundSettings} onOpenChange={setShowSoundSettings}>
+          <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto" dir={dir}>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-right font-bold text-xl">
+                <Volume2 className="w-5 h-5 text-primary" />
+                {tc("إعدادات الأصوات", "Sound Settings")}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="py-2">
+              <SoundSettingsPanel />
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={showPOSSettings} onOpenChange={setShowPOSSettings}>
+          <DialogContent className="max-w-md" dir={dir}>
+            <DialogHeader>
+              <DialogTitle className="text-right font-bold text-xl">{t('pos.settings_title')}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-6 py-4">
+              {/* Printer quick link */}
+              <button
+                onClick={() => { setShowPOSSettings(false); setShowPrinterSettings(true); }}
+                className="w-full flex items-center justify-between p-3 rounded-xl border-2 border-dashed border-primary/30 hover:border-primary hover:bg-primary/5 transition-all group"
+                data-testid="button-open-printer-settings"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="bg-primary/10 p-2 rounded-lg group-hover:bg-primary/20">
+                    <Printer className="w-5 h-5 text-primary" />
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-bold">{tc("إعدادات الطابعة", "Printer Settings")}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {printerMode === 'network'
+                        ? tc("شبكة LAN — ProPos / Epson LAN", "Network LAN — ProPos / Epson LAN")
+                        : printerMode === 'bluetooth'
+                          ? tc("بلوتوث BLE — انقر للإعداد", "Bluetooth BLE — Click to configure")
+                          : printerMode === 'webusb'
+                            ? tc("USB مباشر — متصلة", "Direct USB — Connected")
+                            : tc("متصفح — انقر لإعداد الطابعة", "Browser — Click to configure printer")
+                      }
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`w-2.5 h-2.5 rounded-full ${printerMode === 'network' ? 'bg-blue-500' : printerMode === 'bluetooth' ? 'bg-purple-500' : printerMode === 'webusb' ? 'bg-green-500' : 'bg-gray-300'}`} />
+                  <svg className="w-4 h-4 text-muted-foreground group-hover:text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                </div>
+              </button>
+              <Separator />
+              <div className="flex items-center justify-between">
+                <Label htmlFor="auto-print" className="text-sm font-bold cursor-pointer">{t('pos.auto_print')}</Label>
+                <Switch id="auto-print" checked={autoPrint} onCheckedChange={setAutoPrint} />
+              </div>
+              <button
+                onClick={() => { setShowPOSSettings(false); setShowSoundSettings(true); }}
+                className="w-full flex items-center justify-between p-3 rounded-xl border-2 border-dashed border-primary/30 hover:border-primary hover:bg-primary/5 transition-all group"
+                data-testid="button-open-sound-settings"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="bg-primary/10 p-2 rounded-lg group-hover:bg-primary/20">
+                    <Volume2 className="w-5 h-5 text-primary" />
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-bold">{tc("إعدادات الأصوات", "Sound Settings")}</p>
+                    <p className="text-xs text-muted-foreground">{tc("تخصيص صوت لكل نوع طلب", "Customize sound per order type")}</p>
+                  </div>
+                </div>
+                <svg className="w-4 h-4 text-muted-foreground group-hover:text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+              </button>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="show-vat" className="text-sm font-bold cursor-pointer">{t('pos.show_vat')}</Label>
+                <Switch id="show-vat" checked={showVatLabel} onCheckedChange={setShowVatLabel} />
+              </div>
+              <Separator />
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-bold">{tc("حجم الشاشة (Zoom)","Screen Size (Zoom)")}</Label>
+                  <span className="text-sm font-mono font-bold text-primary">{posZoom}%</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1"
+                    disabled={posZoom <= 30}
+                    onClick={() => setPosZoom(z => Math.max(30, z - 5))}
+                    data-testid="button-zoom-out"
+                  >
+                    <span className="text-lg font-bold">−</span>
+                  </Button>
+                  <div className="flex-1 flex justify-center gap-1">
+                    {[30, 60, 80, 100].map(v => (
+                      <Button
+                        key={v}
+                        variant={posZoom === v ? "default" : "outline"}
+                        size="sm"
+                        className="flex-1 text-xs px-1"
+                        onClick={() => setPosZoom(v)}
+                        data-testid={`button-zoom-${v}`}
+                      >
+                        {v}%
+                      </Button>
+                    ))}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1"
+                    disabled={posZoom >= 100}
+                    onClick={() => setPosZoom(z => Math.min(100, z + 5))}
+                    data-testid="button-zoom-in"
+                  >
+                    <span className="text-lg font-bold">+</span>
+                  </Button>
+                </div>
+                <p className="text-[10px] text-muted-foreground text-center">
+                  {tc("قلل الحجم لتناسب الشاشات الصغيرة دون تشويه","Reduce size to fit small screens without distortion")}
+                </p>
+              </div>
+              <Separator />
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="pos-terminal" className="text-sm font-bold cursor-pointer block">{t('pos.terminal_connection')}</Label>
+                  <p className="text-xs text-muted-foreground mt-1">{posTerminalConnected ? t('pos.connected_status') : t('pos.disconnected_status')}</p>
+                </div>
+                <Switch id="pos-terminal" checked={posTerminalConnected} onCheckedChange={setPosTerminalConnected} />
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* ── Held Orders Dialog ──────────────────────────────────────────── */}
+        <Dialog open={showHeldCarts} onOpenChange={setShowHeldCarts}>
+          <DialogContent className="max-w-md" dir={dir}>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Archive className="w-5 h-5 text-amber-500" />
+                {tc('الطلبات المحجوزة','Held Orders')}
+                <Badge variant="outline">{heldCarts.length}</Badge>
+              </DialogTitle>
+            </DialogHeader>
+            {heldCarts.length === 0 ? (
+              <div className="text-center text-muted-foreground py-8">
+                <Archive className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                <p className="text-sm">{tc('لا توجد طلبات محجوزة','No held orders')}</p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-80 overflow-y-auto">
+                {heldCarts.map(held => (
+                  <div key={held.id} className="rounded-xl border p-3 flex items-center justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-sm truncate">{held.name}</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {held.orderItems.length} {tc('منتج','items')} · {held.totalAmount.toFixed(2)} <SarIcon size={10} />
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">{new Date(held.heldAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}</p>
+                    </div>
+                    <div className="flex gap-1 shrink-0">
+                      <Button size="sm" className="h-8 text-xs" onClick={() => resumeHeldCart(held.id)} data-testid={`button-resume-held-${held.id}`}>
+                        <FolderOpen className="w-3.5 h-3.5 ml-1" />
+                        {tc('استرداد','Resume')}
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-destructive" onClick={() => deleteHeldCart(held.id)} data-testid={`button-delete-held-${held.id}`}>
+                        <Trash2 className="w-3.5 h-3.5" />
                       </Button>
                     </div>
                   </div>
                 ))}
               </div>
             )}
-            <CurbsideOrdersList employeeName={employee?.fullName || ''} />
-          </div>
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
 
-      {/* ─── Refund Dialog ───────────────────────────────────────────────────── */}
-      <RefundDialog
-        open={showRefundDialog}
-        onOpenChange={setShowRefundDialog}
-        branchId={employee?.branchId?.toString()}
-        employeeId={employee?.id?.toString()}
-        employeeName={employee?.fullName}
-        tenantId={employee?.tenantId?.toString()}
-      />
-
-      {/* ─── Printer Settings Dialog ─────────────────────────────────────────── */}
-      <Dialog open={showPrinterSettings} onOpenChange={setShowPrinterSettings}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" dir={dir}>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-right font-bold text-xl">
-              <Printer className="w-5 h-5" />
-              {tc("إعدادات الطابعة", "Printer Settings")}
-            </DialogTitle>
-          </DialogHeader>
-          <PrinterSettingsPanel />
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={showPOSSettings} onOpenChange={setShowPOSSettings}>
-        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto" dir={dir}>
-          <DialogHeader>
-            <DialogTitle className="text-right font-bold text-xl">{t('pos.settings_title')}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-
-            {/* ── Quick Actions ──────────────────────────────────────── */}
-            <div>
-              <p className="text-xs font-bold text-muted-foreground mb-2 px-1">{tc("الأدوات السريعة", "Quick Tools")}</p>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => { setShowPOSSettings(false); setShowTablesDialog(true); }}
-                  className="flex items-center gap-3 p-3 rounded-xl border hover:bg-muted/60 transition-all text-right"
-                  data-testid="button-settings-tables"
-                >
-                  <div className="bg-blue-100 dark:bg-blue-900/30 p-2 rounded-lg shrink-0">
-                    <Grid3X3 className="w-4 h-4 text-blue-600" />
-                  </div>
-                  <span className="text-sm font-bold">{t('pos.tables')}</span>
-                </button>
-
-                <button
-                  onClick={() => { setShowPOSSettings(false); setShowOpenBillsDialog(true); }}
-                  className="relative flex items-center gap-3 p-3 rounded-xl border hover:bg-muted/60 transition-all text-right"
-                  data-testid="button-settings-open-bills"
-                >
-                  <div className="bg-green-100 dark:bg-green-900/30 p-2 rounded-lg shrink-0">
-                    <Receipt className="w-4 h-4 text-green-600" />
-                  </div>
-                  <span className="text-sm font-bold">{t('pos.open_bills')}</span>
-                  {openTableOrders.length > 0 && (
-                    <Badge className="absolute top-1 left-1 px-1.5 min-w-[18px] h-[18px] bg-primary text-primary-foreground text-[9px]">
-                      {openTableOrders.length}
-                    </Badge>
-                  )}
-                </button>
-
-                <button
-                  onClick={() => { setShowPOSSettings(false); setShowCarOrdersPanel(true); }}
-                  className="relative flex items-center gap-3 p-3 rounded-xl border hover:bg-muted/60 transition-all text-right"
-                  data-testid="button-settings-car-orders"
-                >
-                  <div className="bg-amber-100 dark:bg-amber-900/30 p-2 rounded-lg shrink-0">
-                    <Car className="w-4 h-4 text-amber-600" />
-                  </div>
-                  <span className="text-sm font-bold">{tc("طلبات السيارات", "Car Orders")}</span>
-                  {carPreparationAlerts.length > 0 && (
-                    <Badge className="absolute top-1 left-1 px-1.5 min-w-[18px] h-[18px] bg-amber-500 text-white animate-pulse text-[9px]">
-                      {carPreparationAlerts.length}
-                    </Badge>
-                  )}
-                </button>
-
-                <button
-                  onClick={() => { setShowPOSSettings(false); setShowRefundDialog(true); }}
-                  className="flex items-center gap-3 p-3 rounded-xl border hover:bg-red-50 dark:hover:bg-red-950/30 border-red-200 dark:border-red-900/40 transition-all text-right"
-                  data-testid="button-settings-refund"
-                >
-                  <div className="bg-red-100 dark:bg-red-900/30 p-2 rounded-lg shrink-0">
-                    <RotateCcw className="w-4 h-4 text-red-600" />
-                  </div>
-                  <span className="text-sm font-bold text-red-600">{tc("استرجاع طلب", "Refund")}</span>
-                </button>
-
-                <button
-                  onClick={() => { setShowPOSSettings(false); window.open('/customer-display', '_blank'); }}
-                  className="flex items-center gap-3 p-3 rounded-xl border hover:bg-muted/60 transition-all text-right"
-                  data-testid="button-settings-customer-display"
-                >
-                  <div className="bg-purple-100 dark:bg-purple-900/30 p-2 rounded-lg shrink-0">
-                    <SplitSquareVertical className="w-4 h-4 text-purple-600" />
-                  </div>
-                  <span className="text-sm font-bold">{t('pos.customer_display')}</span>
-                </button>
-
-              </div>
-            </div>
-
-            <Separator />
-
-            {/* ── Printer ──────────────────────────────────────────── */}
-            <button
-              onClick={() => { setShowPOSSettings(false); setShowPrinterSettings(true); }}
-              className="w-full flex items-center justify-between p-3 rounded-xl border-2 border-dashed border-primary/30 hover:border-primary hover:bg-primary/5 transition-all group"
-              data-testid="button-open-printer-settings"
-            >
-              <div className="flex items-center gap-3">
-                <div className="bg-primary/10 p-2 rounded-lg group-hover:bg-primary/20">
-                  <Printer className="w-5 h-5 text-primary" />
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-bold">{tc("إعدادات الطابعة", "Printer Settings")}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {printerMode === 'network'
-                      ? tc("شبكة LAN", "Network LAN")
-                      : printerMode === 'bluetooth'
-                        ? tc("بلوتوث BLE", "Bluetooth BLE")
-                        : printerMode === 'webusb'
-                          ? tc("USB مباشر", "Direct USB")
-                          : tc("اضغط للإعداد", "Click to configure")
-                    }
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={`w-2.5 h-2.5 rounded-full ${printerMode === 'network' ? 'bg-blue-500' : printerMode === 'bluetooth' ? 'bg-purple-500' : printerMode === 'webusb' ? 'bg-green-500' : 'bg-gray-300'}`} />
-                <svg className="w-4 h-4 text-muted-foreground group-hover:text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-              </div>
-            </button>
-
-            <Separator />
-
-            {/* ── Toggles ──────────────────────────────────────────── */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="auto-print" className="text-sm font-bold cursor-pointer">{t('pos.auto_print')}</Label>
-                <Switch id="auto-print" checked={autoPrint} onCheckedChange={setAutoPrint} />
-              </div>
-              <div className="flex items-center justify-between">
-                <Label htmlFor="sound-notif" className="text-sm font-bold cursor-pointer">{t('pos.sound_notif')}</Label>
-                <div className="flex items-center gap-2">
-                  {soundEnabled && (
-                    <button
-                      onClick={() => testSound('newOrder', 0.8)}
-                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
-                      data-testid="button-test-sound-settings"
+        {/* ── Per-Item Discount Dialog ────────────────────────────────────── */}
+        {showItemDiscountFor && (() => {
+          const item = orderItems.find(i => i.lineItemId === showItemDiscountFor);
+          if (!item) return null;
+          return (
+            <Dialog open={true} onOpenChange={() => setShowItemDiscountFor(null)}>
+              <DialogContent className="max-w-xs" dir={dir}>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <Percent className="w-4 h-4 text-green-600" />
+                    {tc('خصم على المنتج','Item Discount')}
+                  </DialogTitle>
+                </DialogHeader>
+                <p className="text-sm font-bold text-muted-foreground line-clamp-1">{getItemDisplayName(item.coffeeItem)}</p>
+                <div className="space-y-3">
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm" variant={itemDiscountType === 'percent' ? 'default' : 'outline'}
+                      onClick={() => setItemDiscountType('percent')} className="flex-1 h-8 text-xs"
                     >
-                      <PlayCircle className="w-4 h-4" />
-                      <span>{tc("اختبار","Test")}</span>
-                    </button>
-                  )}
-                  <Switch id="sound-notif" checked={soundEnabled} onCheckedChange={(val) => { setSoundEnabled(val); saveSoundEnabled('pos', val); }} />
-                </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <Label htmlFor="show-vat" className="text-sm font-bold cursor-pointer">{t('pos.show_vat')}</Label>
-                <Switch id="show-vat" checked={showVatLabel} onCheckedChange={setShowVatLabel} />
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="pos-terminal" className="text-sm font-bold cursor-pointer block">{t('pos.terminal_connection')}</Label>
-                  <p className="text-xs text-muted-foreground mt-0.5">{posTerminalConnected ? t('pos.connected_status') : t('pos.disconnected_status')}</p>
-                </div>
-                <Switch id="pos-terminal" checked={posTerminalConnected} onCheckedChange={setPosTerminalConnected} />
-              </div>
-            </div>
-
-            <Separator />
-
-            {/* ── Zoom ─────────────────────────────────────────────── */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-bold">{tc("حجم الشاشة","Screen Zoom")}</Label>
-                <span className="text-sm font-mono font-bold text-primary">{posZoom}%</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" className="flex-1" disabled={posZoom <= 30} onClick={() => setPosZoom(z => Math.max(30, z - 5))} data-testid="button-zoom-out">
-                  <span className="text-lg font-bold">−</span>
-                </Button>
-                <div className="flex-1 flex justify-center gap-1">
-                  {[60, 80, 100].map(v => (
-                    <Button key={v} variant={posZoom === v ? "default" : "outline"} size="sm" className="flex-1 text-xs px-1" onClick={() => setPosZoom(v)} data-testid={`button-zoom-${v}`}>{v}%</Button>
-                  ))}
-                </div>
-                <Button variant="outline" size="sm" className="flex-1" disabled={posZoom >= 100} onClick={() => setPosZoom(z => Math.min(100, z + 5))} data-testid="button-zoom-in">
-                  <span className="text-lg font-bold">+</span>
-                </Button>
-              </div>
-            </div>
-
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* ── Held Orders Dialog ──────────────────────────────────────────── */}
-      <Dialog open={showHeldCarts} onOpenChange={setShowHeldCarts}>
-        <DialogContent className="max-w-md" dir={dir}>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Archive className="w-5 h-5 text-amber-500" />
-              {tc('الطلبات المحجوزة','Held Orders')}
-              <Badge variant="outline">{heldCarts.length}</Badge>
-            </DialogTitle>
-          </DialogHeader>
-          {heldCarts.length === 0 ? (
-            <div className="text-center text-muted-foreground py-8">
-              <Archive className="w-10 h-10 mx-auto mb-3 opacity-30" />
-              <p className="text-sm">{tc('لا توجد طلبات محجوزة','No held orders')}</p>
-            </div>
-          ) : (
-            <div className="space-y-2 max-h-80 overflow-y-auto">
-              {heldCarts.map(held => (
-                <div key={held.id} className="rounded-xl border p-3 flex items-center justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold text-sm truncate">{held.name}</p>
-                    <p className="text-[10px] text-muted-foreground">
-                      {held.orderItems.length} {tc('منتج','items')} · {held.totalAmount.toFixed(2)} <SarIcon size={10} />
-                    </p>
-                    <p className="text-[10px] text-muted-foreground">{new Date(held.heldAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}</p>
-                  </div>
-                  <div className="flex gap-1 shrink-0">
-                    <Button size="sm" className="h-8 text-xs" onClick={() => resumeHeldCart(held.id)} data-testid={`button-resume-held-${held.id}`}>
-                      <FolderOpen className="w-3.5 h-3.5 ml-1" />
-                      {tc('استرداد','Resume')}
+                      <Percent className="w-3 h-3 ml-1" /> {tc('نسبة %','Percent %')}
                     </Button>
-                    <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-destructive" onClick={() => deleteHeldCart(held.id)} data-testid={`button-delete-held-${held.id}`}>
-                      <Trash2 className="w-3.5 h-3.5" />
+                    <Button
+                      size="sm" variant={itemDiscountType === 'amount' ? 'default' : 'outline'}
+                      onClick={() => setItemDiscountType('amount')} className="flex-1 h-8 text-xs"
+                    >
+                      <DollarSign className="w-3 h-3 ml-1" /> {tc('مبلغ ثابت','Fixed SAR')}
                     </Button>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* ── Per-Item Discount Dialog ────────────────────────────────────── */}
-      {showItemDiscountFor && (() => {
-        const item = orderItems.find(i => i.lineItemId === showItemDiscountFor);
-        if (!item) return null;
-        return (
-          <Dialog open={true} onOpenChange={() => setShowItemDiscountFor(null)}>
-            <DialogContent className="max-w-xs" dir={dir}>
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  <Percent className="w-4 h-4 text-green-600" />
-                  {tc('خصم على المنتج','Item Discount')}
-                </DialogTitle>
-              </DialogHeader>
-              <p className="text-sm font-bold text-muted-foreground line-clamp-1">{getItemDisplayName(item.coffeeItem)}</p>
-              <div className="space-y-3">
-                <div className="flex gap-2">
-                  <Button
-                    size="sm" variant={itemDiscountType === 'percent' ? 'default' : 'outline'}
-                    onClick={() => setItemDiscountType('percent')} className="flex-1 h-8 text-xs"
-                  >
-                    <Percent className="w-3 h-3 ml-1" /> {tc('نسبة %','Percent %')}
-                  </Button>
-                  <Button
-                    size="sm" variant={itemDiscountType === 'amount' ? 'default' : 'outline'}
-                    onClick={() => setItemDiscountType('amount')} className="flex-1 h-8 text-xs"
-                  >
-                    <DollarSign className="w-3 h-3 ml-1" /> {tc('مبلغ ثابت','Fixed SAR')}
-                  </Button>
-                </div>
-                <Input
-                  type="number" min={0} step={itemDiscountType === 'percent' ? 1 : 0.01}
-                  max={itemDiscountType === 'percent' ? 100 : getPosItemUnitPrice(item) * item.quantity}
-                  placeholder={itemDiscountType === 'percent' ? tc('الخصم %','Discount %') : tc('مبلغ الخصم','Discount SAR')}
-                  value={itemDiscountInput}
-                  onChange={e => setItemDiscountInput(e.target.value)}
-                  className="h-10 text-center text-base font-bold"
-                  autoFocus
-                  onKeyDown={e => { if (e.key === 'Enter') applyItemDiscount(showItemDiscountFor); if (e.key === 'Escape') setShowItemDiscountFor(null); }}
-                  data-testid="input-item-discount"
-                />
-                <div className="flex gap-2">
-                  <Button className="flex-1" onClick={() => applyItemDiscount(showItemDiscountFor)} data-testid="button-apply-item-discount">
-                    {tc('تطبيق','Apply')}
-                  </Button>
-                  {itemDiscounts[showItemDiscountFor] && (
-                    <Button variant="outline" className="text-destructive" onClick={() => { clearItemDiscount(showItemDiscountFor); setShowItemDiscountFor(null); }}>
-                      {tc('إزالة','Remove')}
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
-        );
-      })()}
-
-      {/* ── Manual Order Discount Dialog ────────────────────────────────── */}
-      <Dialog open={showManualDiscount} onOpenChange={setShowManualDiscount}>
-        <DialogContent className="max-w-xs" dir={dir}>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <DollarSign className="w-4 h-4 text-green-600" />
-              {tc('خصم يدوي على الطلب','Manual Order Discount')}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="flex gap-2">
-              <Button size="sm" variant={manualDiscountType === 'percent' ? 'default' : 'outline'} onClick={() => setManualDiscountType('percent')} className="flex-1 h-8 text-xs">
-                <Percent className="w-3 h-3 ml-1" /> {tc('نسبة %','Percent %')}
-              </Button>
-              <Button size="sm" variant={manualDiscountType === 'amount' ? 'default' : 'outline'} onClick={() => setManualDiscountType('amount')} className="flex-1 h-8 text-xs">
-                <DollarSign className="w-3 h-3 ml-1" /> {tc('مبلغ ثابت','Fixed SAR')}
-              </Button>
-            </div>
-            <Input
-              type="number" min={0} step={manualDiscountType === 'percent' ? 1 : 0.01}
-              max={manualDiscountType === 'percent' ? 100 : finalGrandTotal}
-              placeholder={manualDiscountType === 'percent' ? tc('الخصم %','Discount %') : tc('مبلغ الخصم','Discount SAR')}
-              value={manualDiscountInput}
-              onChange={e => setManualDiscountInput(e.target.value)}
-              className="h-10 text-center text-base font-bold"
-              autoFocus
-              onKeyDown={e => { if (e.key === 'Enter') applyManualDiscount(); if (e.key === 'Escape') setShowManualDiscount(false); }}
-              data-testid="input-manual-discount"
-            />
-            {/* Service charge toggle inside manual discount dialog */}
-            <div className="border rounded-lg p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-muted-foreground">{tc('رسوم الخدمة','Service Charge')}</span>
-                <Switch checked={serviceCharge.enabled} onCheckedChange={v => setServiceCharge(prev => ({...prev, enabled: v}))} />
-              </div>
-              {serviceCharge.enabled && (
-                <div className="flex items-center gap-2">
                   <Input
-                    type="number" min={0} max={serviceCharge.type === 'percent' ? 100 : undefined} step={1}
-                    value={serviceCharge.value}
-                    onChange={e => setServiceCharge(prev => ({...prev, value: parseFloat(e.target.value) || 0}))}
-                    className="h-8 text-sm text-center flex-1"
+                    type="number" min={0} step={itemDiscountType === 'percent' ? 1 : 0.01}
+                    max={itemDiscountType === 'percent' ? 100 : getPosItemUnitPrice(item) * item.quantity}
+                    placeholder={itemDiscountType === 'percent' ? tc('الخصم %','Discount %') : tc('مبلغ الخصم','Discount SAR')}
+                    value={itemDiscountInput}
+                    onChange={e => setItemDiscountInput(e.target.value)}
+                    className="h-10 text-center text-base font-bold"
+                    autoFocus
+                    onKeyDown={e => { if (e.key === 'Enter') applyItemDiscount(showItemDiscountFor); if (e.key === 'Escape') setShowItemDiscountFor(null); }}
+                    data-testid="input-item-discount"
                   />
-                  <Button size="sm" variant={serviceCharge.type === 'percent' ? 'default' : 'outline'} className="h-8 text-xs px-2" onClick={() => setServiceCharge(prev => ({...prev, type: 'percent'}))}>%</Button>
-                  <Button size="sm" variant={serviceCharge.type === 'fixed' ? 'default' : 'outline'} className="h-8 text-xs px-2" onClick={() => setServiceCharge(prev => ({...prev, type: 'fixed'}))}><SarIcon size={12} /></Button>
-                </div>
-              )}
-            </div>
-            <Button className="w-full" onClick={applyManualDiscount} data-testid="button-apply-manual-discount">
-              {tc('تطبيق','Apply')}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* ── Merge Bills Dialog ──────────────────────────────────────────── */}
-      <Dialog open={showMergeBills} onOpenChange={setShowMergeBills}>
-        <DialogContent className="max-w-sm" dir={dir}>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Merge className="w-5 h-5" />
-              {tc('دمج الفواتير','Merge Bills')}
-            </DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">{tc('اختر الطلب الذي تريد دمجه في الطلب الحالي','Choose which order to merge into the current one')}</p>
-          <div className="space-y-2">
-            {cartTabs.filter(t => t.id !== activeTabId).map(tab => {
-              const saved = savedTabsRef.current[tab.id];
-              const items = saved?.orderItems || [];
-              const total = items.reduce((s: number, i: any) => s + getPosItemUnitPriceEarly(i) * i.quantity, 0);
-              return (
-                <div key={tab.id} className="rounded-xl border p-3 flex items-center justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold text-sm">{tab.name}</p>
-                    <p className="text-[10px] text-muted-foreground">{items.length} {tc('منتج','items')} · {total.toFixed(2)} <SarIcon size={10} /></p>
+                  <div className="flex gap-2">
+                    <Button className="flex-1" onClick={() => applyItemDiscount(showItemDiscountFor)} data-testid="button-apply-item-discount">
+                      {tc('تطبيق','Apply')}
+                    </Button>
+                    {itemDiscounts[showItemDiscountFor] && (
+                      <Button variant="outline" className="text-destructive" onClick={() => { clearItemDiscount(showItemDiscountFor); setShowItemDiscountFor(null); }}>
+                        {tc('إزالة','Remove')}
+                      </Button>
+                    )}
                   </div>
-                  <Button size="sm" className="h-8 text-xs" onClick={() => mergeTabIntoActive(tab.id)} data-testid={`button-merge-tab-${tab.id}`}>
-                    <Merge className="w-3.5 h-3.5 ml-1" />
-                    {tc('دمج','Merge')}
-                  </Button>
                 </div>
-              );
-            })}
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
+              </DialogContent>
+            </Dialog>
+          );
+        })()}
+
+        {/* ── Manual Order Discount Dialog ────────────────────────────────── */}
+        <Dialog open={showManualDiscount} onOpenChange={setShowManualDiscount}>
+          <DialogContent className="max-w-xs" dir={dir}>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <DollarSign className="w-4 h-4 text-green-600" />
+                {tc('خصم يدوي على الطلب','Manual Order Discount')}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <Button size="sm" variant={manualDiscountType === 'percent' ? 'default' : 'outline'} onClick={() => setManualDiscountType('percent')} className="flex-1 h-8 text-xs">
+                  <Percent className="w-3 h-3 ml-1" /> {tc('نسبة %','Percent %')}
+                </Button>
+                <Button size="sm" variant={manualDiscountType === 'amount' ? 'default' : 'outline'} onClick={() => setManualDiscountType('amount')} className="flex-1 h-8 text-xs">
+                  <DollarSign className="w-3 h-3 ml-1" /> {tc('مبلغ ثابت','Fixed SAR')}
+                </Button>
+              </div>
+              <Input
+                type="number" min={0} step={manualDiscountType === 'percent' ? 1 : 0.01}
+                max={manualDiscountType === 'percent' ? 100 : finalGrandTotal}
+                placeholder={manualDiscountType === 'percent' ? tc('الخصم %','Discount %') : tc('مبلغ الخصم','Discount SAR')}
+                value={manualDiscountInput}
+                onChange={e => setManualDiscountInput(e.target.value)}
+                className="h-10 text-center text-base font-bold"
+                autoFocus
+                onKeyDown={e => { if (e.key === 'Enter') applyManualDiscount(); if (e.key === 'Escape') setShowManualDiscount(false); }}
+                data-testid="input-manual-discount"
+              />
+              {/* Service charge toggle inside manual discount dialog */}
+              <div className="border rounded-lg p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-muted-foreground">{tc('رسوم الخدمة','Service Charge')}</span>
+                  <Switch checked={serviceCharge.enabled} onCheckedChange={v => setServiceCharge(prev => ({...prev, enabled: v}))} />
+                </div>
+                {serviceCharge.enabled && (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number" min={0} max={serviceCharge.type === 'percent' ? 100 : undefined} step={1}
+                      value={serviceCharge.value}
+                      onChange={e => setServiceCharge(prev => ({...prev, value: parseFloat(e.target.value) || 0}))}
+                      className="h-8 text-sm text-center flex-1"
+                    />
+                    <Button size="sm" variant={serviceCharge.type === 'percent' ? 'default' : 'outline'} className="h-8 text-xs px-2" onClick={() => setServiceCharge(prev => ({...prev, type: 'percent'}))}>%</Button>
+                    <Button size="sm" variant={serviceCharge.type === 'fixed' ? 'default' : 'outline'} className="h-8 text-xs px-2" onClick={() => setServiceCharge(prev => ({...prev, type: 'fixed'}))}><SarIcon size={12} /></Button>
+                  </div>
+                )}
+              </div>
+              <Button className="w-full" onClick={applyManualDiscount} data-testid="button-apply-manual-discount">
+                {tc('تطبيق','Apply')}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* ── Merge Bills Dialog ──────────────────────────────────────────── */}
+        <Dialog open={showMergeBills} onOpenChange={setShowMergeBills}>
+          <DialogContent className="max-w-sm" dir={dir}>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Merge className="w-5 h-5" />
+                {tc('دمج الفواتير','Merge Bills')}
+              </DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">{tc('اختر الطلب الذي تريد دمجه في الطلب الحالي','Choose which order to merge into the current one')}</p>
+            <div className="space-y-2">
+              {cartTabs.filter(t => t.id !== activeTabId).map(tab => {
+                const saved = savedTabsRef.current[tab.id];
+                const items = saved?.orderItems || [];
+                const total = items.reduce((s: number, i: any) => s + getPosItemUnitPriceEarly(i) * i.quantity, 0);
+                return (
+                  <div key={tab.id} className="rounded-xl border p-3 flex items-center justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-sm">{tab.name}</p>
+                      <p className="text-[10px] text-muted-foreground">{items.length} {tc('منتج','items')} · {total.toFixed(2)} <SarIcon size={10} /></p>
+                    </div>
+                    <Button size="sm" className="h-8 text-xs" onClick={() => mergeTabIntoActive(tab.id)} data-testid={`button-merge-tab-${tab.id}`}>
+                      <Merge className="w-3.5 h-3.5 ml-1" />
+                      {tc('دمج','Merge')}
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          </DialogContent>
+        </Dialog>
+        <MobileBottomNav />
+      </div>
     </div>
   );
 }

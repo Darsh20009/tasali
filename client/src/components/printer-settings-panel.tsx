@@ -162,7 +162,9 @@ export default function PrinterSettingsPanel() {
     setLoading(true);
     const s = await getPrinterStatus();
     setStatus(s);
-    setSettings(s.settings);
+    // Re-read settings fresh AFTER the async call so any concurrent
+    // updateSetting() calls made while awaiting aren't overwritten.
+    setSettings(loadPrinterSettings());
     setLoading(false);
   }
 
@@ -383,9 +385,9 @@ export default function PrinterSettingsPanel() {
       const pw = settings.paperWidth;
 
       const escData = await buildReceiptBitmapEscPos({
-        shopName: 'Qirox | كيروكس',
+        shopName: 'تسالي كرومش',
         vatNumber: '---',
-        branchName: 'مرحبا في نظام كيروكس',
+        branchName: 'مرحبا في نظام Qirox Studio',
         orderNumber: 'TEST',
         orderDate: dateStr,
         cashierName: 'النظام',
@@ -1686,6 +1688,37 @@ export default function PrinterSettingsPanel() {
               </SelectContent>
             </Select>
           </div>
+
+          <Separator />
+
+          {/* Arabic Encoding */}
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <Label className="text-sm font-medium">{tc("ترميز العربية", "Arabic Encoding")}</Label>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {tc("UTF-8 للطابعات الحديثة | CP864 لطابعات ProPOS / PP9000", "UTF-8 for modern printers | CP864 for ProPOS / PP9000")}
+              </p>
+            </div>
+            <Select
+              value={settings.arabicEncoding || 'utf8'}
+              onValueChange={(v: any) => updateSetting('arabicEncoding', v)}
+            >
+              <SelectTrigger className="w-36" data-testid="select-arabic-encoding">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="utf8">UTF-8 (حديثة)</SelectItem>
+                <SelectItem value="cp864">CP864 (ProPOS)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {settings.arabicEncoding === 'cp864' && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-xs text-amber-800 space-y-1">
+              <p className="font-semibold">⚠️ وضع CP864 — لطابعات ProPOS PP9000 والطابعات التي تطبع رموز غريبة</p>
+              <p>إذا ظهر النص صحيحاً الآن، ابقَ على هذا الوضع. إذا ظهرت رموز غريبة، جرّب UTF-8.</p>
+            </div>
+          )}
 
           <Separator />
 

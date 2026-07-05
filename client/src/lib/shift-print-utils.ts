@@ -18,7 +18,7 @@ function _receiptProducts(productsByCategory: any[]): string {
   return html;
 }
 
-export function buildShiftPrintFragment(p: any, bizName = 'TASALI QURUMSH'): string {
+export function buildShiftPrintFragment(p: any, bizName = 'تسالي كرومش'): string {
   const fmtT = (iso: string) => new Date(iso).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
   const fmtD = (iso: string) => new Date(iso).toLocaleDateString('ar-SA', { year: 'numeric', month: 'short', day: 'numeric' });
   return `<div style="font-family:Tahoma,Arial,sans-serif;font-size:12px;padding:5px 3px;direction:rtl;color:#000;background:#fff;">
@@ -42,12 +42,12 @@ export function buildShiftPrintFragment(p: any, bizName = 'TASALI QURUMSH'): str
   </div>
   ${_receiptProducts(p.productsByCategory || [])}
   <div style="text-align:center;margin-top:8px;border-top:1px dashed #aaa;padding-top:6px;font-size:10px;color:#666;">
-    تسالي كرومش — ${new Date().toLocaleString('ar-SA')}
+    QIROX STUDIO — ${new Date().toLocaleString('ar-SA')}
   </div>
 </div>`;
 }
 
-export function buildMergedPrintFragment(periods: any[], dateLabel: string, bizName = 'TASALI QURUMSH'): string {
+export function buildMergedPrintFragment(periods: any[], dateLabel: string, bizName = 'تسالي كرومش'): string {
   if (periods.length === 0) return '';
   const totalOrders = periods.reduce((s, p) => s + (p.totalOrders || 0), 0);
   const totalSales  = periods.reduce((s, p) => s + (p.totalSales  || 0), 0);
@@ -96,7 +96,7 @@ export function buildMergedPrintFragment(periods: any[], dateLabel: string, bizN
   </div>
   ${_receiptProducts(mergedProducts)}
   <div style="text-align:center;margin-top:8px;border-top:1px dashed #aaa;padding-top:6px;font-size:10px;color:#666;">
-    تسالي كرومش — ${new Date().toLocaleString('ar-SA')}
+    QIROX STUDIO — ${new Date().toLocaleString('ar-SA')}
   </div>
 </div>`;
 }

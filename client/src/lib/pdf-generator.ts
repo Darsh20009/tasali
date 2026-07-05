@@ -81,7 +81,7 @@ export const generatePDF = async (
 <div class="header">
   <div>
     <h1>TASALI QURUMSH</h1>
-    <p>تجربة قهوة استثنائية</p>
+    <p>تجربة تسالي كرومش</p>
   </div>
   <img src="${qrCodeDataURL}" width="100" height="100" />
 </div>
@@ -108,7 +108,7 @@ export const generatePDF = async (
 <p><strong>التفاصيل:</strong> ${paymentDetails[paymentMethod] || ''}</p>
 <div style="text-align:center;margin-top:30px;border-top:2px solid #D4AF37;padding-top:20px;">
   <p style="color:#B8860B;font-weight:bold;">شكراً لاختياركم TASALI QURUMSH</p>
-  <p style="color:#8B6F47;font-style:italic;">"لكل لحظة قهوة ، لحظة نجاح"</p>
+  <p style="color:#8B6F47;font-style:italic;">"تسالي وكرومش .. لكل لحظة نكهة"</p>
 </div>
 </body></html>`;
 

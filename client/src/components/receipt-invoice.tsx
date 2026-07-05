@@ -4,9 +4,8 @@ import type { Order } from "@shared/schema";
 import { brand } from "@/lib/brand";
 import { useRef, useState, useEffect } from "react";
 import QRCode from "qrcode";
-import { fmtOrderNum } from "@/lib/print-utils";
+import { fmtOrderNum, printHtmlInPage, isAndroidDevice } from "@/lib/print-utils";
 import { useTranslate } from "@/lib/useTranslate";
-import { getInvoiceLogoDataUrl } from "@/lib/invoice-logo";
 
 interface ReceiptInvoiceProps {
   order: Order;
@@ -33,11 +32,6 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
   const invoiceRef = useRef<HTMLDivElement>(null);
   const [trackingQrUrl, setTrackingQrUrl] = useState<string>(precomputedTrackingQr || "");
   const [zatcaQrUrl, setZatcaQrUrl] = useState<string>(precomputedZatcaQr || "");
-  const [logoUrl, setLogoUrl] = useState<string>("/images/logo-bw.png");
-
-  useEffect(() => {
-    getInvoiceLogoDataUrl().then(setLogoUrl);
-  }, []);
 
   const getItemsArray = (): any[] => {
     try {
@@ -67,7 +61,8 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
         setTrackingQrUrl(await QRCode.toDataURL(url, { width: 200, margin: 1, errorCorrectionLevel: "M" }));
       } catch {}
       try {
-        const payload = btoa(`\x01\x10TASALI QURUMSH\x02\x0F${brand.taxNumber || ""}\x03\x14${new Date(order.createdAt).toISOString()}\x04\x08${totalAmount.toFixed(2)}\x05\x08${vat.toFixed(2)}`);
+        const vatNum = brand.taxNumber || "";
+        const payload = btoa(`\x01\x10${brand.shortNameAr}\x02\x0F${vatNum}\x03\x14${new Date(order.createdAt).toISOString()}\x04\x08${totalAmount.toFixed(2)}\x05\x08${vat.toFixed(2)}`);
         setZatcaQrUrl(await QRCode.toDataURL(payload, { width: 180, margin: 1, errorCorrectionLevel: "M" }));
       } catch {}
     })();
@@ -132,12 +127,17 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
 </style></head><body>${clone.outerHTML}</body></html>`;
   };
 
-  // ── Pre-rendered hidden print iframe — kept ready so the click handler
-  //    can call print() synchronously with zero perceived delay. ────────────
+  // ── Pre-rendered hidden print iframe — desktop/iOS only.
+  //    On Android we NEVER create a staged iframe because any iframe in the DOM
+  //    (even hidden at top:-9999px) causes Android Chrome/WebView to recalculate
+  //    the page viewport to match the iframe's narrow paper width, shrinking the
+  //    entire UI. Android uses window.print() via printHtmlInPage() instead.
   const printIframeRef = useRef<HTMLIFrameElement | null>(null);
   const [printReady, setPrintReady] = useState(false);
 
   useEffect(() => {
+    // Skip staged iframe on Android — we use the no-iframe path
+    if (isAndroidDevice) { setPrintReady(true); return; }
     // Wait until both QR codes are generated before staging the iframe
     if (!trackingQrUrl || !zatcaQrUrl || !invoiceRef.current) return;
     if (printIframeRef.current) return; // already staged
@@ -182,9 +182,7 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
       setPrintReady(true);
     })();
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trackingQrUrl, zatcaQrUrl]);
 
@@ -196,17 +194,25 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
     };
   }, []);
 
-  // Synchronous print — uses the pre-staged iframe so the dialog opens
-  // immediately on click. Falls back to on-demand build if not ready yet.
+  // Print handler:
+  //   Android → no-iframe path via printHtmlInPage (avoids viewport shrinkage)
+  //   Desktop/iOS → staged iframe for zero-delay synchronous print
   const printReceipt = async (): Promise<void> => {
+    const html = buildPrintDoc();
+    if (!html) return;
+
+    // Android: inject into main document and call window.print() — no iframe
+    if (isAndroidDevice) {
+      printHtmlInPage(html, '80mm');
+      return;
+    }
+
+    // Desktop / iOS: use staged iframe if ready, else build on demand
     const staged = printIframeRef.current;
     if (staged && staged.contentWindow) {
       try { staged.contentWindow.focus(); staged.contentWindow.print(); } catch {}
       return;
     }
-    // Fallback: not staged yet — build & print on demand
-    const html = buildPrintDoc();
-    if (!html) return;
     const iframe = document.createElement("iframe");
     iframe.setAttribute("aria-hidden", "true");
     iframe.style.cssText =
@@ -229,11 +235,32 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
   };
 
   useEffect(() => {
-    if (variant !== "auto" || !order?.id) return;
+    if (variant !== "auto" || !(order?.id || order?.orderNumber)) return;
     if (!printReady) return;
+    // If a hardware thermal printer is configured, printTaxInvoice() already
+    // handled printing this receipt.  Firing window.print() here too would:
+    //   • produce a duplicate paper receipt for every customer (all devices)
+    //   • freeze the POS UI on Android (synchronous window.print() blocks JS)
+    // Only fall through to browser print when no thermal printer is configured
+    // (i.e., the operator is using a regular desktop printer or "browser" mode).
+    const thermalConfigured = (() => {
+      try {
+        const stored = localStorage.getItem('qirox-printer-settings');
+        if (!stored) return false;
+        const ps = JSON.parse(stored);
+        return Boolean(ps.enabled && ps.mode && ps.mode !== 'browser');
+      } catch { return false; }
+    })();
+    if (thermalConfigured) return;
+    // On Android WebView, window.print() blocks the entire JS thread
+    // synchronously — NEVER call it automatically. The thermal printer is
+    // the only non-blocking print path on Android.  If thermal is not
+    // configured, the cashier must press the print button manually or
+    // configure a thermal printer in settings.
+    if (isAndroidDevice) return;
     const t = setTimeout(() => { printReceipt(); }, 50);
     return () => clearTimeout(t);
-  }, [variant, order?.id, printReady]);
+  }, [variant, order?.id, order?.orderNumber, printReady]);
 
   /* ─── style helpers ─── */
   const cell = (extra?: React.CSSProperties): React.CSSProperties => ({ padding: "3px 0", fontSize: "13px", lineHeight: "1.7", ...extra });
@@ -269,8 +296,8 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
         {/* ── 2. Logo ── */}
         <div style={{ padding: "6px 0 10px", marginBottom: "4px" }}>
           <img
-            src={logoUrl}
-            alt="Tasali Qurumsh"
+            src="/logo.png"
+            alt="تسالي كرومش"
             crossOrigin="anonymous"
             style={{ width: "200px", height: "auto", display: "block", margin: "0 auto" }}
           />
@@ -278,9 +305,9 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
 
         {/* ── 3. Business info ── */}
         <div style={{ textAlign: "center", fontSize: "12px", lineHeight: "1.9", marginBottom: "8px" }}>
-          <div style={{ fontWeight: 900, fontSize: "15px" }}>Tasali Qurumsh</div>
+          <div style={{ fontWeight: 900, fontSize: "15px" }}>تسالي كرومش</div>
+          <div style={{ fontSize: "11px", color: "#444" }}></div>
           {brand.taxNumber && <div style={{ direction: "ltr", fontSize: "11px", color: "#444" }}>الرقم الضريبي: {brand.taxNumber}</div>}
-          <div style={{ fontSize: "11px", color: "#444" }}>101000004295 :رقم الفاتورة</div>
           <div style={{ direction: "ltr", fontSize: "11px", color: "#444" }}>{timeStr} · {dateStr}</div>
           <div style={{ fontWeight: 700, fontSize: "13px", marginTop: "3px", background: "#f0f0f0", padding: "2px 8px", display: "inline-block", borderRadius: "4px" }}>
             {orderTypeLabel}
@@ -382,9 +409,9 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
 
         {/* ── 9. Tagline ── */}
         <div style={{ textAlign: "center", fontSize: "13px", fontWeight: 700, padding: "2px 0 4px" }}>
-          "قهوة تُقال .. وورد يُهدى"
+          "تسالي وكرومش .. لكل لحظة نكهة"
         </div>
-        <div style={{ textAlign: "center", fontSize: "11px", color: "#555", paddingBottom: "8px" }}>Tasali Qurumsh</div>
+        <div style={{ textAlign: "center", fontSize: "11px", color: "#555", paddingBottom: "8px" }}>تسالي كرومش</div>
 
         {/* ── 10. Tracking QR barcode — small on right with text beside it ── */}
         {trackingQrUrl && (
@@ -408,14 +435,14 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
             </div>
             <img src={zatcaQrUrl} alt="ZATCA QR" style={{ width: "120px", height: "120px", display: "inline-block" }} />
             <div style={{ fontSize: "10px", color: "#555", marginTop: "4px", fontFamily: "Arial, sans-serif" }}>
-              فاتورة ضريبية — {brand.nameAr}
+              فاتورة ضريبية
             </div>
           </div>
         )}
 
         {/* ── 12. Powered by ── */}
         <div style={{ borderTop: "1px dashed #ccc", textAlign: "center", padding: "10px 0", marginTop: "4px", fontFamily: "Arial, sans-serif", fontSize: "11px", color: "#555", letterSpacing: "0.3px" }}>
-          Powered by TASALI QURUMSH SYSTEMS
+          Powered by QIROX STUDIO
         </div>
 
         <div style={{ height: "16px" }} />
