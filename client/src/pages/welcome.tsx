@@ -1,7 +1,7 @@
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
-import { Coffee, Star, MapPin, ChevronLeft, ChevronRight, LogOut, Sparkles, User, KeyRound, X as XIcon } from "lucide-react";
+import { UtensilsCrossed, Star, MapPin, ChevronLeft, ChevronRight, LogOut, Sparkles, User, KeyRound, X as XIcon } from "lucide-react";
 import blackroseLogo from "@assets/logo.png";
 import { useCustomer } from "@/contexts/CustomerContext";
 import { useTranslation } from "react-i18next";
@@ -22,7 +22,7 @@ export default function WelcomePage() {
   });
 
   const features = [
-    { icon: Coffee, title: t("welcome.specialty"), desc: t("welcome.specialty_desc"), color: "from-primary to-primary/70" },
+    { icon: UtensilsCrossed, title: t("welcome.specialty"), desc: t("welcome.specialty_desc"), color: "from-primary to-primary/70" },
     { icon: Star, title: t("welcome.luxury"), desc: t("welcome.luxury_desc"), color: "from-accent to-accent/70" },
     { icon: MapPin, title: t("welcome.locations"), desc: t("welcome.locations_desc"), color: "from-primary to-accent" },
   ];
@@ -263,7 +263,7 @@ export default function WelcomePage() {
               className="rounded-2xl overflow-hidden shadow-lg h-48 flex items-center justify-center bg-gradient-to-br from-[#3D1F08] to-[#7D3D0F]"
             >
               <div className="text-center p-4">
-                <Coffee className="w-10 h-10 text-[#D4912A] mx-auto mb-2" />
+                <UtensilsCrossed className="w-10 h-10 text-[#D4912A] mx-auto mb-2" />
                 <p className="text-white font-bold text-lg">تسالي كرومش</p>
                 <p className="text-white/70 text-xs">أشهى التسالي</p>
               </div>
