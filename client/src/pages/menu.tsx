@@ -414,13 +414,13 @@ export default function MenuPage() {
             <div className="flex-1 h-px" style={{ background: `linear-gradient(to right, ${T.gold}20, transparent)` }} />
           </div>
           <div className="flex items-center justify-center gap-5 text-xs" style={{ color: `${T.cream}30` }}>
-            <a href="tel:+966566507666" className="flex items-center gap-1 hover:opacity-70 transition-opacity"
+            <a href="tel:+966537050013" className="flex items-center gap-1 hover:opacity-70 transition-opacity"
               data-testid="link-footer-call">
               <Phone className="w-3 h-3" style={{ color: T.gold + "60" }} />
               <span dir="ltr">+966 56 650 7666</span>
             </a>
             <span style={{ color: `${T.cream}15` }}>•</span>
-            <a href="https://maps.app.goo.gl/zhHFfQVjWRxVKEBn6?g_st=ic" target="_blank" rel="noopener noreferrer"
+            <a href="https://maps.app.goo.gl/7uPbvnuDCaHhqhai9" target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-1 hover:opacity-70 transition-opacity"
               data-testid="link-footer-maps">
               <MapPin className="w-3 h-3" style={{ color: T.gold + "60" }} />
@@ -839,7 +839,7 @@ function ItemDetailModal({ item, dir, lang, tc, maxSales, onClose }: {
       <div className="fixed bottom-0 inset-x-0 p-4"
         style={{ background: `linear-gradient(to top, ${T.bg} 70%, transparent)` }}>
         <motion.a
-          href="tel:+966566507666"
+          href="tel:+966537050013"
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0,  opacity: 1 }}
           transition={{ delay: 0.4 }}

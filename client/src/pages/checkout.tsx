@@ -1091,7 +1091,7 @@ export default function CheckoutPage() {
     };
 
     const handleNavigateToBranch = () => {
-      window.open("https://maps.app.goo.gl/zhHFfQVjWRxVKEBn6?g_st=ic", "_blank");
+      window.open("https://maps.app.goo.gl/7uPbvnuDCaHhqhai9", "_blank");
     };
 
     const handleWhatsAppReservation = () => {
@@ -1112,7 +1112,7 @@ export default function CheckoutPage() {
       const msg = encodeURIComponent(
         `🗓️ طلب تأكيد حجز\n\nرقم الطلب: ${orderNum}\n\n${itemsText}${resLine}\n\nالإجمالي: ${orderTotal.toFixed(2)} ر.س\n\nالاسم: ${customerName || orderDetails?.customerName || '—'}\nالجوال: ${customerPhone || orderDetails?.customerPhone || '—'}\n\nأرجو التأكيد على هذا الحجز`
       );
-      window.open(`https://wa.me/${phone || '966566507666'}?text=${msg}`, '_blank');
+      window.open(`https://wa.me/${phone || '966537050013'}?text=${msg}`, '_blank');
     };
 
     return (
@@ -1252,7 +1252,7 @@ export default function CheckoutPage() {
           <div className="bg-white dark:bg-card rounded-2xl shadow-sm border border-border overflow-hidden">
             <div className="flex items-center divide-x divide-x-reverse divide-border">
               <a
-                href="tel:+966566507666"
+                href="tel:+966537050013"
                 className="flex-1 flex flex-col items-center gap-1.5 py-4 px-2 hover:bg-muted/50 transition-colors"
                 data-testid="link-call-cafe"
               >
@@ -1263,7 +1263,7 @@ export default function CheckoutPage() {
                 <span className="text-[10px] text-muted-foreground ltr:direction-ltr" dir="ltr">+966 56 650 7666</span>
               </a>
               <a
-                href="https://maps.app.goo.gl/zhHFfQVjWRxVKEBn6?g_st=ic"
+                href="https://maps.app.goo.gl/7uPbvnuDCaHhqhai9"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex-1 flex flex-col items-center gap-1.5 py-4 px-2 hover:bg-muted/50 transition-colors"
