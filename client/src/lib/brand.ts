@@ -86,6 +86,10 @@ export const brand = {
   //  CONTACT & SOCIAL
   // ───────────────────────────────────────────────────────────────────────
 
+  phone: "0537050013",
+  phoneHref: "tel:0537050013",
+  mapsUrl: "https://maps.app.goo.gl/AR47rGKS5QpWpRjv8",
+
   website: "tasaliqurmash.com.sa",
   websiteUrl: "https://www.tasaliqurmash.com.sa",
   emailNoReply: "noreply@tasaliqurmash.com.sa",

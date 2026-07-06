@@ -4,14 +4,45 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
   Coffee, Flame, Snowflake, Star, Cake, Utensils, Sparkles,
-  Languages, Phone, MapPin, Clock, Search, X, ChevronDown,
-  User, ArrowLeft,
+  Languages, Phone, MapPin, Clock, Search, X,
+  User, ArrowLeft, ChevronRight, Beef,
 } from "lucide-react";
 import tasaliLogo from "@assets/logo.png";
+import brand from "@/lib/brand";
 import type { CoffeeItem, IProductAddon } from "@shared/schema";
 import { motion, AnimatePresence, useScroll, useTransform } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import SarIcon from "@/components/sar-icon";
+
+/* ────────────────────────────────────────────────
+   RESTAURANT THEME — Warm Off-White
+──────────────────────────────────────────────── */
+const T = {
+  bg:           "#FAF8F5",
+  bgDeep:       "#F3EEE8",
+  card:         "#FFFFFF",
+  cardBorder:   "rgba(180,140,90,0.12)",
+  cardShadow:   "0 2px 12px rgba(100,60,20,0.08), 0 1px 3px rgba(100,60,20,0.05)",
+  cardShadowHover: "0 8px 32px rgba(100,60,20,0.14), 0 2px 8px rgba(100,60,20,0.08)",
+  primary:      "#7D3D0F",
+  primaryLight: "#A0521A",
+  gold:         "#C17A2A",
+  goldLight:    "#D4912A",
+  text:         "#1C0F06",
+  textMuted:    "#8B6550",
+  textLight:    "#B89A80",
+  cream:        "#F5EAD8",
+  creamDeep:    "#EDE0CA",
+  border:       "rgba(180,130,80,0.15)",
+  headerBg:     "rgba(250,248,245,0.95)",
+  catActive:    "#7D3D0F",
+  catInactive:  "#F0E8DC",
+};
+
+const PHONE        = brand.phone;
+const PHONE_HREF   = brand.phoneHref;
+const MAPS_URL     = brand.mapsUrl;
+const QIROX_URL    = "https://qiroxstudio.online";
 
 interface MenuCategory {
   id: string;
@@ -21,22 +52,6 @@ interface MenuCategory {
   department?: "drinks" | "food";
   orderIndex: number;
 }
-
-/* ────────────────────────────────────────────────
-   THEME TOKENS
-──────────────────────────────────────────────── */
-const T = {
-  bg:        "#0d0603",
-  card:      "#1a0c05",
-  cardBorder:"rgba(212,145,42,0.12)",
-  gold:      "#D4912A",
-  goldLight: "#E8B060",
-  cream:     "#F5E8D5",
-  brown:     "#7D3D0F",
-  brownDeep: "#3D1A0A",
-  glass:     "rgba(255,255,255,0.04)",
-  glassBorder:"rgba(255,255,255,0.08)",
-};
 
 export default function MenuPage() {
   const tc = useTranslate();
@@ -48,23 +63,13 @@ export default function MenuPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
   const [selectedItem, setSelectedItem] = useState<CoffeeItem | null>(null);
-  const heroRef = useRef<HTMLDivElement>(null);
-  const { scrollY } = useScroll();
-  const heroOpacity = useTransform(scrollY, [0, 220], [1, 0]);
-  const heroScale  = useTransform(scrollY, [0, 220], [1, 0.92]);
 
-  /* ── Data fetching ── */
-  const { data: coffeeItems = [], isLoading } = useQuery<CoffeeItem[]>({
-    queryKey: ["/api/coffee-items"],
-  });
-  const { data: dynamicCategories = [] } = useQuery<MenuCategory[]>({
-    queryKey: ["/api/menu-categories"],
-  });
-  const { data: businessConfig } = useQuery<any>({
-    queryKey: ["/api/business-config"],
-  });
+  /* ── Data ── */
+  const { data: coffeeItems = [], isLoading } = useQuery<CoffeeItem[]>({ queryKey: ["/api/coffee-items"] });
+  const { data: dynamicCategories = [] } = useQuery<MenuCategory[]>({ queryKey: ["/api/menu-categories"] });
+  const { data: businessConfig } = useQuery<any>({ queryKey: ["/api/business-config"] });
 
-  /* ── Store open logic ── */
+  /* ── Store open ── */
   const storeOpen = useMemo(() => {
     if (!businessConfig) return true;
     if (businessConfig.isEmergencyClosed) return false;
@@ -79,33 +84,31 @@ export default function MenuPage() {
       hour: "2-digit", minute: "2-digit", hour12: false, weekday: "long",
     }).formatToParts(now);
     const currentDay = parts.find(p => p.type === "weekday")?.value.toLowerCase() || "monday";
-    const h  = parseInt(parts.find(p => p.type === "hour")?.value   || "0");
-    const m  = parseInt(parts.find(p => p.type === "minute")?.value || "0");
+    const h = parseInt(parts.find(p => p.type === "hour")?.value || "0");
+    const m = parseInt(parts.find(p => p.type === "minute")?.value || "0");
     const now_m = h * 60 + m;
     const hours = storeHours[currentDay];
     if (!hours?.isOpen) return false;
     if (hours.isAlwaysOpen) return true;
-    const [oh, om] = (hours.open  || "06:00").split(":").map(Number);
+    const [oh, om] = (hours.open || "06:00").split(":").map(Number);
     const [ch, cm] = (hours.close || "03:00").split(":").map(Number);
     const o_m = oh * 60 + om, c_m = ch * 60 + cm;
-    return c_m <= o_m
-      ? now_m >= o_m || now_m <= c_m
-      : now_m >= o_m && now_m <= c_m;
+    return c_m <= o_m ? now_m >= o_m || now_m <= c_m : now_m >= o_m && now_m <= c_m;
   }, [businessConfig]);
 
   /* ── Categories ── */
-  const iconMap: Record<string, any> = { Coffee, Flame, Snowflake, Star, Cake, Utensils, Sparkles };
+  const iconMap: Record<string, any> = { Coffee, Flame, Snowflake, Star, Cake, Utensils, Sparkles, Beef };
   const categories = useMemo(() => [
-    { id: "all", nameAr: "الكل", nameEn: "All", icon: Coffee },
+    { id: "all", nameAr: "الكل", nameEn: "All", icon: Utensils },
     ...dynamicCategories.map(c => ({
       id: c.id,
       nameAr: c.nameAr,
       nameEn: c.nameEn || c.nameAr,
-      icon: iconMap[c.icon || "Coffee"] || Coffee,
+      icon: iconMap[c.icon || "Utensils"] || Utensils,
     })),
   ], [dynamicCategories]);
 
-  /* ── Grouping & filtering ── */
+  /* ── Items ── */
   const groupedItems = useMemo(() =>
     coffeeItems.reduce((acc: Record<string, CoffeeItem[]>, item) => {
       const key = `${item.category}::${(item as any).groupId || (item as any).id || item.nameAr}`;
@@ -115,9 +118,7 @@ export default function MenuPage() {
     }, {}),
   [coffeeItems]);
 
-  const representativeItems = useMemo(() =>
-    Object.values(groupedItems).map(g => g[0]),
-  [groupedItems]);
+  const representativeItems = useMemo(() => Object.values(groupedItems).map(g => g[0]), [groupedItems]);
 
   const maxSales = useMemo(() =>
     Math.max(0, ...coffeeItems.map(i => (i as any).salesCount || 0)),
@@ -126,8 +127,8 @@ export default function MenuPage() {
   const filteredItems = useMemo(() =>
     representativeItems
       .filter(item => {
-        const cat   = selectedCategory === "all" || item.category === selectedCategory;
-        const name  = i18n.language === "ar" ? item.nameAr : (item as any).nameEn || item.nameAr;
+        const cat = selectedCategory === "all" || item.category === selectedCategory;
+        const name = i18n.language === "ar" ? item.nameAr : (item as any).nameEn || item.nameAr;
         const match = name.toLowerCase().includes(searchQuery.toLowerCase());
         return cat && match;
       })
@@ -137,124 +138,125 @@ export default function MenuPage() {
   /* ── Loading ── */
   if (isLoading) {
     return (
-      <div dir={dir} className="min-h-screen flex flex-col items-center justify-center gap-6"
+      <div dir={dir} className="min-h-screen flex flex-col items-center justify-center gap-4"
         style={{ background: T.bg }}>
         <motion.div
           animate={{ rotate: 360 }}
-          transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+          transition={{ duration: 1.8, repeat: Infinity, ease: "linear" }}
+          className="w-14 h-14 rounded-2xl overflow-hidden border-2"
+          style={{ borderColor: T.gold }}
         >
-          <Coffee className="w-10 h-10" style={{ color: T.gold }} />
+          <img src={tasaliLogo} alt="تسالي كرومش" className="w-full h-full object-cover" />
         </motion.div>
-        <motion.p
-          initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-          className="text-sm font-bold tracking-widest uppercase"
-          style={{ color: T.gold, opacity: 0.6 }}
-        >
-          Tasali Qurumsh
-        </motion.p>
+        <p className="text-sm font-bold tracking-widest" style={{ color: T.textMuted }}>
+          تسالي كرومش
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen select-none" dir={dir} style={{ background: T.bg, fontFamily: "'IBM Plex Sans Arabic','Tajawal',sans-serif" }}>
+    <div className="min-h-screen select-none" dir={dir}
+      style={{ background: T.bg, fontFamily: "'IBM Plex Sans Arabic','Tajawal',sans-serif", color: T.text }}>
 
       {/* ══════════════════════════════════════════════
-          TOP NAV — floating glass bar
+          HEADER — warm white sticky bar
       ══════════════════════════════════════════════ */}
-      <header className="fixed top-0 inset-x-0 z-50 flex items-center justify-between px-4 h-14"
+      <header className="fixed top-0 inset-x-0 z-50"
         style={{
-          background: "rgba(13,6,3,0.80)",
+          background: T.headerBg,
           backdropFilter: "blur(20px)",
           WebkitBackdropFilter: "blur(20px)",
-          borderBottom: `1px solid ${T.glassBorder}`,
+          borderBottom: `1px solid ${T.border}`,
+          boxShadow: "0 1px 12px rgba(100,60,20,0.08)",
         }}>
-        {/* Logo + Name */}
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl overflow-hidden border flex-shrink-0"
-            style={{ borderColor: `${T.gold}30` }}>
-            <img src={tasaliLogo} alt="تسالي كرومش" className="w-full h-full object-cover" />
-          </div>
-          <div className="leading-none">
-            <p className="text-white font-black text-sm">تسالي كرومش</p>
-            <p className="font-bold tracking-widest text-[9px]" style={{ color: T.gold }}>TASALI QURUMSH</p>
-          </div>
-        </div>
-
-        {/* Right controls */}
-        <div className="flex items-center gap-2">
-          {/* Store badge */}
-          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border ${
-            storeOpen
-              ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
-              : "text-red-400 border-red-500/30 bg-red-500/10"
-          }`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${storeOpen ? "bg-emerald-400 animate-pulse" : "bg-red-400"}`} />
-            {storeOpen ? tc("مفتوح", "Open") : tc("مغلق", "Closed")}
+        <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto">
+          {/* Logo */}
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl overflow-hidden border-2 flex-shrink-0"
+              style={{ borderColor: `${T.gold}50` }}>
+              <img src={tasaliLogo} alt="تسالي كرومش" className="w-full h-full object-cover" />
+            </div>
+            <div className="leading-none">
+              <p className="font-black text-sm" style={{ color: T.primary }}>تسالي كرومش</p>
+              <p className="text-[9px] font-bold tracking-widest uppercase" style={{ color: T.gold }}>TASALI QURUMSH</p>
+            </div>
           </div>
 
-          {/* Search toggle */}
-          <button
-            onClick={() => setShowSearch(v => !v)}
-            className="w-9 h-9 rounded-xl flex items-center justify-center transition-all"
-            style={{ background: showSearch ? T.gold : T.glass, border: `1px solid ${T.glassBorder}` }}
-            data-testid="button-toggle-search"
-          >
-            {showSearch
-              ? <X className="w-4 h-4 text-white" />
-              : <Search className="w-4 h-4" style={{ color: T.cream }} />
-            }
-          </button>
+          {/* Controls */}
+          <div className="flex items-center gap-2">
+            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border ${
+              storeOpen
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : "border-red-200 bg-red-50 text-red-700"
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${storeOpen ? "bg-emerald-500 animate-pulse" : "bg-red-400"}`} />
+              {storeOpen ? tc("مفتوح", "Open") : tc("مغلق", "Closed")}
+            </div>
 
-          {/* Language */}
-          <button
-            onClick={() => i18n.changeLanguage(i18n.language === "ar" ? "en" : "ar")}
-            className="w-9 h-9 rounded-xl flex items-center justify-center transition-all"
-            style={{ background: T.glass, border: `1px solid ${T.glassBorder}` }}
-            data-testid="button-toggle-language"
-          >
-            <Languages className="w-4 h-4" style={{ color: T.cream }} />
-          </button>
+            <button
+              onClick={() => setShowSearch(v => !v)}
+              className="w-9 h-9 rounded-xl flex items-center justify-center border transition-all"
+              style={{
+                background: showSearch ? T.primary : T.card,
+                borderColor: showSearch ? T.primary : T.border,
+              }}
+              data-testid="button-toggle-search"
+            >
+              {showSearch
+                ? <X className="w-4 h-4 text-white" />
+                : <Search className="w-4 h-4" style={{ color: T.textMuted }} />
+              }
+            </button>
 
-          {/* Profile */}
-          <button
-            onClick={() => setLocation("/auth")}
-            className="w-9 h-9 rounded-xl flex items-center justify-center transition-all"
-            style={{ background: T.glass, border: `1px solid ${T.glassBorder}` }}
-            data-testid="button-profile"
-          >
-            <User className="w-4 h-4" style={{ color: T.cream }} />
-          </button>
+            <button
+              onClick={() => i18n.changeLanguage(i18n.language === "ar" ? "en" : "ar")}
+              className="w-9 h-9 rounded-xl flex items-center justify-center border transition-all"
+              style={{ background: T.card, borderColor: T.border }}
+              data-testid="button-toggle-language"
+            >
+              <Languages className="w-4 h-4" style={{ color: T.textMuted }} />
+            </button>
+
+            <button
+              onClick={() => setLocation("/auth")}
+              className="w-9 h-9 rounded-xl flex items-center justify-center border transition-all"
+              style={{ background: T.card, borderColor: T.border }}
+              data-testid="button-profile"
+            >
+              <User className="w-4 h-4" style={{ color: T.textMuted }} />
+            </button>
+          </div>
         </div>
       </header>
 
       {/* ══════════════════════════════════════════════
-          SEARCH BAR — slides down
+          SEARCH BAR
       ══════════════════════════════════════════════ */}
       <AnimatePresence>
         {showSearch && (
           <motion.div
-            initial={{ y: -20, opacity: 0 }}
-            animate={{ y: 0,   opacity: 1 }}
-            exit={{   y: -20, opacity: 0 }}
+            initial={{ y: -16, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -16, opacity: 0 }}
             transition={{ type: "spring", stiffness: 400, damping: 30 }}
-            className="fixed top-14 inset-x-0 z-40 px-4 py-2"
-            style={{ background: "rgba(13,6,3,0.95)", backdropFilter: "blur(20px)" }}
+            className="fixed top-14 inset-x-0 z-40 px-4 py-2 border-b"
+            style={{ background: T.headerBg, backdropFilter: "blur(20px)", borderColor: T.border }}
           >
-            <div className="relative max-w-lg mx-auto">
-              <Search className={`absolute ${dir === "rtl" ? "right-4" : "left-4"} top-1/2 -translate-y-1/2 w-4 h-4`}
-                style={{ color: `${T.gold}80` }} />
+            <div className="relative max-w-2xl mx-auto">
+              <Search className={`absolute ${dir === "rtl" ? "right-3.5" : "left-3.5"} top-1/2 -translate-y-1/2 w-4 h-4`}
+                style={{ color: T.textLight }} />
               <input
                 autoFocus
                 type="text"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                placeholder={tc("ابحث عن منتج...", "Search products...")}
-                className={`w-full h-11 ${dir === "rtl" ? "pr-11 pl-4" : "pl-11 pr-4"} rounded-2xl text-sm outline-none`}
+                placeholder={tc("ابحث في قائمة الطعام...", "Search the menu...")}
+                className={`w-full h-10 ${dir === "rtl" ? "pr-10 pl-4" : "pl-10 pr-4"} rounded-xl text-sm outline-none border`}
                 style={{
                   background: T.card,
-                  border: `1px solid ${T.cardBorder}`,
-                  color: T.cream,
+                  borderColor: T.border,
+                  color: T.text,
                 }}
                 data-testid="input-search"
               />
@@ -264,135 +266,126 @@ export default function MenuPage() {
       </AnimatePresence>
 
       {/* ══════════════════════════════════════════════
-          HERO SECTION — cinematic brand
+          HERO — restaurant brand header
       ══════════════════════════════════════════════ */}
-      <div ref={heroRef} className="relative pt-14 overflow-hidden" style={{ height: "70vw", maxHeight: 340, minHeight: 240 }}>
-        {/* Background gradient orbs */}
-        <div className="absolute inset-0" style={{
-          background: `radial-gradient(ellipse 80% 80% at 50% 0%, ${T.brown}55 0%, transparent 70%),
-                       radial-gradient(ellipse 50% 60% at 85% 50%, ${T.gold}18 0%, transparent 60%),
-                       radial-gradient(ellipse 50% 60% at 15% 60%, ${T.brownDeep}80 0%, transparent 60%)`,
-        }} />
+      <div className="pt-14 relative overflow-hidden"
+        style={{ background: `linear-gradient(160deg, ${T.cream} 0%, ${T.bg} 100%)` }}>
+        {/* Decorative pattern */}
+        <div className="absolute inset-0 opacity-[0.04]"
+          style={{
+            backgroundImage: `radial-gradient(circle, ${T.primary} 1px, transparent 1px)`,
+            backgroundSize: "24px 24px",
+          }} />
 
-        {/* Noise texture overlay */}
-        <div className="absolute inset-0 opacity-30"
-          style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.15'/%3E%3C/svg%3E\")" }} />
-
-        {/* Hero content */}
-        <motion.div
-          style={{ opacity: heroOpacity, scale: heroScale }}
-          className="relative z-10 flex flex-col items-center justify-center h-full px-6 text-center"
-        >
+        <div className="relative max-w-2xl mx-auto px-4 py-6 flex items-center gap-5">
+          {/* Logo */}
           <motion.div
-            initial={{ scale: 0.7, opacity: 0 }}
+            initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-            className="w-20 h-20 md:w-24 md:h-24 rounded-3xl overflow-hidden mb-4 shadow-2xl"
-            style={{ border: `2px solid ${T.gold}50`, boxShadow: `0 0 40px ${T.gold}20, 0 20px 60px ${T.brownDeep}` }}
+            transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+            className="w-20 h-20 rounded-2xl overflow-hidden border-2 flex-shrink-0 shadow-lg"
+            style={{ borderColor: `${T.gold}60`, boxShadow: `0 8px 24px ${T.gold}20` }}
           >
-            <img src={tasaliLogo} alt="تسالي كرومش"
-              className="w-full h-full object-cover"
-              style={{ background: T.brownDeep }} />
+            <img src={tasaliLogo} alt="تسالي كرومش" className="w-full h-full object-cover" />
           </motion.div>
 
-          <motion.h1
-            initial={{ y: 24, opacity: 0 }}
-            animate={{ y: 0,  opacity: 1 }}
-            transition={{ duration: 0.6, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
-            className="text-3xl md:text-4xl font-black text-white mb-1"
-            style={{ textShadow: `0 4px 24px ${T.brownDeep}` }}
-          >
-            تسالي كرومش
-          </motion.h1>
-
-          <motion.p
-            initial={{ y: 16, opacity: 0 }}
-            animate={{ y: 0,  opacity: 1 }}
-            transition={{ duration: 0.5, delay: 0.25 }}
-            className="text-xs font-black tracking-[0.3em] uppercase mb-3"
-            style={{ color: T.gold }}
-          >
-            TASALI QURUMSH
-          </motion.p>
-
+          {/* Text */}
           <motion.div
-            initial={{ y: 12, opacity: 0 }}
-            animate={{ y: 0,  opacity: 1 }}
-            transition={{ duration: 0.5, delay: 0.35 }}
-            className="flex items-center gap-4 text-xs"
-            style={{ color: `${T.cream}70` }}
+            initial={{ x: dir === "rtl" ? 20 : -20, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            transition={{ duration: 0.5, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
+            className="flex-1 min-w-0"
           >
-            <span className="flex items-center gap-1">
-              <MapPin className="w-3 h-3" style={{ color: T.gold }} />
-              {tc("الرياض، السعودية", "Riyadh, Saudi Arabia")}
-            </span>
-            {!storeOpen && (
-              <span className="flex items-center gap-1 text-red-400">
-                <Clock className="w-3 h-3" />
-                {tc("مغلق الآن", "Closed Now")}
-              </span>
-            )}
-          </motion.div>
-        </motion.div>
+            <p className="text-xs font-black tracking-[0.25em] uppercase mb-1" style={{ color: T.gold }}>
+              {tc("قائمة الطعام", "Our Menu")}
+            </p>
+            <h1 className="text-2xl font-black leading-tight" style={{ color: T.primary }}>
+              تسالي كرومش
+            </h1>
+            <p className="text-xs mt-0.5 font-medium" style={{ color: T.textMuted }}>
+              TASALI QURUMSH
+            </p>
 
-        {/* Bottom fade */}
-        <div className="absolute bottom-0 inset-x-0 h-16"
-          style={{ background: `linear-gradient(to bottom, transparent, ${T.bg})` }} />
+            {/* Info row */}
+            <div className="flex flex-wrap items-center gap-3 mt-2.5 text-xs" style={{ color: T.textMuted }}>
+              <a href={MAPS_URL} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-1 hover:opacity-70 transition-opacity"
+                data-testid="link-hero-maps">
+                <MapPin className="w-3 h-3 flex-shrink-0" style={{ color: T.gold }} />
+                <span>{tc("عرض الموقع", "View Location")}</span>
+              </a>
+              <a href={PHONE_HREF}
+                className="flex items-center gap-1 hover:opacity-70 transition-opacity"
+                data-testid="link-hero-phone">
+                <Phone className="w-3 h-3 flex-shrink-0" style={{ color: T.gold }} />
+                <span dir="ltr">{PHONE}</span>
+              </a>
+              {!storeOpen && (
+                <span className="flex items-center gap-1 text-red-500 font-semibold">
+                  <Clock className="w-3 h-3" />
+                  {tc("مغلق الآن", "Closed Now")}
+                </span>
+              )}
+            </div>
+          </motion.div>
+        </div>
       </div>
 
       {/* ══════════════════════════════════════════════
-          CATEGORY TABS — sticky below hero
+          CATEGORY TABS
       ══════════════════════════════════════════════ */}
       <div className="sticky z-30" style={{ top: showSearch ? "88px" : "56px" }}>
-        <div className="px-4 py-2.5" style={{ background: `${T.bg}ee`, backdropFilter: "blur(16px)", borderBottom: `1px solid ${T.glassBorder}` }}>
-          <div className="flex gap-2 overflow-x-auto no-scrollbar max-w-2xl mx-auto">
-            {categories.map(cat => {
-              const Icon = cat.icon;
-              const active = selectedCategory === cat.id;
-              return (
-                <motion.button
-                  key={cat.id}
-                  onClick={() => setSelectedCategory(cat.id)}
-                  whileTap={{ scale: 0.93 }}
-                  className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all"
-                  style={{
-                    background: active ? T.gold : T.glass,
-                    border: `1px solid ${active ? T.gold : T.glassBorder}`,
-                    color: active ? "#fff" : `${T.cream}80`,
-                    boxShadow: active ? `0 0 20px ${T.gold}40` : "none",
-                  }}
-                  data-testid={`button-category-${cat.id}`}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                  {i18n.language === "ar" ? cat.nameAr : cat.nameEn}
-                </motion.button>
-              );
-            })}
+        <div className="border-b" style={{ background: T.headerBg, backdropFilter: "blur(16px)", borderColor: T.border }}>
+          <div className="px-3 py-2.5 max-w-2xl mx-auto">
+            <div className="flex gap-2 overflow-x-auto no-scrollbar">
+              {categories.map(cat => {
+                const Icon = cat.icon;
+                const active = selectedCategory === cat.id;
+                return (
+                  <motion.button
+                    key={cat.id}
+                    onClick={() => setSelectedCategory(cat.id)}
+                    whileTap={{ scale: 0.94 }}
+                    className="flex-shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[13px] font-bold transition-all border"
+                    style={{
+                      background: active ? T.catActive : T.catInactive,
+                      borderColor: active ? T.catActive : "transparent",
+                      color: active ? "#fff" : T.textMuted,
+                      boxShadow: active ? `0 2px 10px ${T.primary}30` : "none",
+                    }}
+                    data-testid={`button-category-${cat.id}`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    {i18n.language === "ar" ? cat.nameAr : cat.nameEn}
+                  </motion.button>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>
 
       {/* ══════════════════════════════════════════════
-          PRODUCTS — creative masonry-style grid
+          PRODUCTS GRID
       ══════════════════════════════════════════════ */}
-      <div className="max-w-2xl mx-auto px-3 pt-4 pb-28 space-y-3">
+      <div className="max-w-2xl mx-auto px-3 pt-5 pb-28">
 
-        {/* Count label */}
-        <div className="flex items-center justify-between px-1">
-          <p className="text-xs font-bold" style={{ color: `${T.cream}40` }}>
-            {filteredItems.length} {tc("منتج", "products")}
+        {/* Count row */}
+        <div className="flex items-center justify-between mb-4 px-1">
+          <p className="text-xs font-bold" style={{ color: T.textLight }}>
+            {filteredItems.length} {tc("صنف", "items")}
           </p>
-          <div className="h-px flex-1 mx-3" style={{ background: `linear-gradient(to ${dir === "rtl" ? "left" : "right"}, ${T.gold}30, transparent)` }} />
-          <p className="text-xs font-bold" style={{ color: `${T.gold}70` }}>
-            {tc("قائمة الطعام", "Our Menu")}
-          </p>
+          <div className="flex items-center gap-1.5 text-xs font-bold" style={{ color: T.gold }}>
+            <Star className="w-3 h-3" />
+            {tc("أصنافنا المميزة", "Our Specialties")}
+          </div>
         </div>
 
         {filteredItems.length === 0 ? (
-          <div className="text-center py-20">
-            <Coffee className="w-12 h-12 mx-auto mb-4 opacity-20" style={{ color: T.gold }} />
-            <p className="font-bold" style={{ color: `${T.cream}40` }}>
-              {tc("لا توجد منتجات", "No products found")}
+          <div className="text-center py-24">
+            <Utensils className="w-12 h-12 mx-auto mb-4" style={{ color: T.textLight }} />
+            <p className="font-bold text-sm" style={{ color: T.textMuted }}>
+              {tc("لا توجد أصناف في هذه الفئة", "No items in this category")}
             </p>
           </div>
         ) : (
@@ -407,41 +400,47 @@ export default function MenuPage() {
         )}
 
         {/* Footer */}
-        <div className="pt-8 text-center space-y-3">
-          <div className="flex items-center justify-center gap-1 mx-auto" style={{ color: `${T.cream}25` }}>
-            <div className="flex-1 h-px" style={{ background: `linear-gradient(to left, ${T.gold}20, transparent)` }} />
-            <Star className="w-3 h-3 mx-2" style={{ color: T.gold + "50" }} />
-            <div className="flex-1 h-px" style={{ background: `linear-gradient(to right, ${T.gold}20, transparent)` }} />
+        <div className="pt-10 pb-4">
+          {/* Divider */}
+          <div className="flex items-center gap-3 mb-6">
+            <div className="flex-1 h-px" style={{ background: T.border }} />
+            <div className="w-1.5 h-1.5 rounded-full" style={{ background: T.gold }} />
+            <div className="flex-1 h-px" style={{ background: T.border }} />
           </div>
-          <div className="flex items-center justify-center gap-5 text-xs" style={{ color: `${T.cream}30` }}>
-            <a href="tel:+966537050013" className="flex items-center gap-1 hover:opacity-70 transition-opacity"
+
+          {/* Links */}
+          <div className="flex items-center justify-center gap-6 text-xs mb-4" style={{ color: T.textMuted }}>
+            <a href={PHONE_HREF}
+              className="flex items-center gap-1.5 hover:opacity-70 transition-opacity font-medium"
               data-testid="link-footer-call">
-              <Phone className="w-3 h-3" style={{ color: T.gold + "60" }} />
-              <span dir="ltr">+966 56 650 7666</span>
+              <Phone className="w-3.5 h-3.5" style={{ color: T.gold }} />
+              <span dir="ltr">{PHONE}</span>
             </a>
-            <span style={{ color: `${T.cream}15` }}>•</span>
-            <a href="https://maps.app.goo.gl/7uPbvnuDCaHhqhai9" target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-1 hover:opacity-70 transition-opacity"
+            <a href={MAPS_URL} target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1.5 hover:opacity-70 transition-opacity font-medium"
               data-testid="link-footer-maps">
-              <MapPin className="w-3 h-3" style={{ color: T.gold + "60" }} />
-              {tc("الموقع", "Location")}
+              <MapPin className="w-3.5 h-3.5" style={{ color: T.gold }} />
+              {tc("موقعنا", "Location")}
             </a>
           </div>
-          <p className="text-[10px]" style={{ color: `${T.cream}20` }}>
+
+          <p className="text-center text-[11px] mb-4" style={{ color: T.textLight }}>
             {tc("جميع الأسعار شاملة ضريبة القيمة المضافة ١٥٪", "All prices include 15% VAT")}
           </p>
-          <a href="https://qiroxstudio.online" target="_blank" rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-[10px] hover:opacity-80 transition-opacity"
-            style={{ color: `${T.gold}40` }}
-            data-testid="link-qirox-studio">
-            صنع بواسطة <span className="font-black tracking-widest">QIROX STUDIO</span>
-          </a>
+
+          <div className="text-center">
+            <a href={QIROX_URL} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-[11px] font-bold hover:opacity-80 transition-opacity"
+              style={{ color: T.textLight }}
+              data-testid="link-qirox-studio">
+              Powered by <span className="font-black tracking-wider" style={{ color: T.gold }}>QIROX STUDIO</span>
+            </a>
+          </div>
         </div>
       </div>
 
-
       {/* ══════════════════════════════════════════════
-          ITEM DETAIL MODAL — full screen immersive
+          ITEM DETAIL MODAL
       ══════════════════════════════════════════════ */}
       <AnimatePresence>
         {selectedItem && (
@@ -460,7 +459,7 @@ export default function MenuPage() {
 }
 
 /* ══════════════════════════════════════════════════════════
-   PRODUCT GRID — creative alternating layout
+   PRODUCT GRID — 2-col cards with featured hero cards
 ══════════════════════════════════════════════════════════ */
 function ProductGrid({ items, maxSales, dir, onSelect, lang, tc }: {
   items: CoffeeItem[];
@@ -470,127 +469,152 @@ function ProductGrid({ items, maxSales, dir, onSelect, lang, tc }: {
   onSelect: (item: CoffeeItem) => void;
   tc: (ar: string, en: string) => string;
 }) {
+  // Every 5th card is a featured full-width hero
+  const featuredIndexes = new Set(items.map((_, i) => i).filter(i => i % 5 === 0));
+
   return (
     <div className="space-y-3">
       {items.map((item, index) => {
-        const isFeatured = index % 7 === 0; // Every 7th item is a hero card
-        const name     = lang === "ar" ? item.nameAr : (item as any).nameEn || item.nameAr;
-        const nameAlt  = lang === "ar" ? (item as any).nameEn : item.nameAr;
-        const price    = typeof item.price === "number" ? item.price : parseFloat(String(item.price) || "0");
-        const sales    = (item as any).salesCount || 0;
-        const isBest   = sales > 0 && maxSales > 0 && sales >= maxSales * 0.6;
-        const isNew    = (item as any).isNewProduct === 1;
-        const avail    = item.isAvailable !== 0;
-        const desc     = (item as any).description || (item as any).descriptionAr || "";
+        const name    = lang === "ar" ? item.nameAr : (item as any).nameEn || item.nameAr;
+        const nameAlt = lang === "ar" ? (item as any).nameEn : item.nameAr;
+        const price   = typeof item.price === "number" ? item.price : parseFloat(String(item.price) || "0");
+        const sales   = (item as any).salesCount || 0;
+        const isBest  = sales > 0 && maxSales > 0 && sales >= maxSales * 0.6;
+        const isNew   = (item as any).isNewProduct === 1;
+        const avail   = item.isAvailable !== 0;
+        const desc    = (item as any).description || (item as any).descriptionAr || "";
 
-        if (isFeatured) {
+        if (featuredIndexes.has(index)) {
+          // ── Featured hero card ──
           return (
             <motion.button
               key={(item as any).id || index}
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: Math.min(index * 0.03, 0.5) }}
+              transition={{ duration: 0.4, delay: Math.min(index * 0.04, 0.5) }}
+              whileHover={{ y: -2 }}
               onClick={() => onSelect(item)}
-              className="w-full text-start relative overflow-hidden rounded-3xl group active:scale-[0.99] transition-transform"
+              className="w-full text-start rounded-2xl overflow-hidden group"
               style={{
                 background: T.card,
                 border: `1px solid ${T.cardBorder}`,
-                boxShadow: `0 4px 24px rgba(0,0,0,0.4)`,
-                minHeight: 200,
+                boxShadow: T.cardShadow,
               }}
-              data-testid={`card-hero-product-${(item as any).id}`}
+              data-testid={`card-featured-${(item as any).id}`}
             >
-              {/* Background image */}
-              {item.imageUrl && (
-                <div className="absolute inset-0">
+              {/* Image */}
+              <div className="relative overflow-hidden" style={{ height: 200 }}>
+                {item.imageUrl ? (
                   <img src={item.imageUrl} alt={name}
-                    className="w-full h-full object-cover opacity-40 group-hover:opacity-55 group-hover:scale-105 transition-all duration-700"
-                    onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                    onError={e => {
+                      const img = e.target as HTMLImageElement;
+                      img.style.display = "none";
+                    }}
                   />
-                  <div className="absolute inset-0"
-                    style={{ background: `linear-gradient(to ${dir === "rtl" ? "left" : "right"}, ${T.brownDeep}f0 40%, ${T.brownDeep}50 100%)` }} />
-                </div>
-              )}
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center"
+                    style={{ background: `linear-gradient(135deg, ${T.cream}, ${T.creamDeep})` }}>
+                    <img src={tasaliLogo} alt={name} className="w-16 h-16 object-contain opacity-30" />
+                  </div>
+                )}
+                {/* Bottom gradient */}
+                <div className="absolute inset-x-0 bottom-0 h-20"
+                  style={{ background: `linear-gradient(to top, rgba(0,0,0,0.55) 0%, transparent 100%)` }} />
 
-              {/* Content */}
-              <div className="relative z-10 p-5 flex flex-col justify-end h-full" style={{ minHeight: 200 }}>
-                {/* Badges */}
-                <div className="flex gap-2 mb-auto">
+                {/* Badges top */}
+                <div className={`absolute top-3 ${dir === "rtl" ? "right-3" : "left-3"} flex gap-1.5`}>
                   {isBest && (
-                    <span className="text-[10px] font-black px-2.5 py-1 rounded-full"
+                    <span className="text-[10px] font-black px-2.5 py-1 rounded-full shadow-sm"
                       style={{ background: T.gold, color: "#fff" }}>
                       ⭐ {tc("الأكثر طلباً", "Best Seller")}
                     </span>
                   )}
                   {isNew && (
-                    <span className="text-[10px] font-black px-2.5 py-1 rounded-full"
-                      style={{ background: "#16a34a", color: "#fff" }}>
+                    <span className="text-[10px] font-black px-2.5 py-1 rounded-full shadow-sm bg-emerald-500 text-white">
                       ✨ {tc("جديد", "New")}
-                    </span>
-                  )}
-                  {!avail && (
-                    <span className="text-[10px] font-black px-2.5 py-1 rounded-full"
-                      style={{ background: "rgba(0,0,0,0.6)", color: "rgba(255,255,255,0.6)" }}>
-                      {tc("غير متوفر", "Unavailable")}
                     </span>
                   )}
                 </div>
 
-                <div className="mt-10 space-y-1">
-                  <p className="text-xs font-bold tracking-widest uppercase opacity-60" style={{ color: T.gold }}>
-                    {tc("منتج مميز", "Featured")}
-                  </p>
-                  <h2 className="text-2xl font-black text-white leading-snug">{name}</h2>
-                  {nameAlt && <p className="text-sm opacity-50 text-white">{nameAlt}</p>}
-                  {desc && <p className="text-xs opacity-40 text-white line-clamp-2 mt-1">{desc}</p>}
-                  <div className="flex items-baseline gap-1 mt-2">
-                    <span className="text-2xl font-black" style={{ color: T.gold }}>
-                      {isNaN(price) ? "—" : price.toFixed(2)}
-                    </span>
-                    <span className="text-sm opacity-70" style={{ color: T.gold }}>
-                      <SarIcon />
+                {/* Price overlay */}
+                <div className={`absolute bottom-3 ${dir === "rtl" ? "left-3" : "right-3"} flex items-baseline gap-1`}>
+                  <span className="text-xl font-black text-white drop-shadow-sm">
+                    {isNaN(price) ? "—" : price.toFixed(2)}
+                  </span>
+                  <span className="text-xs text-white/80 font-bold"><SarIcon /></span>
+                </div>
+
+                {/* Unavailable */}
+                {!avail && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+                    <span className="text-sm font-bold text-white border border-white/30 px-4 py-2 rounded-xl backdrop-blur">
+                      {tc("غير متوفر", "Unavailable")}
                     </span>
                   </div>
+                )}
+              </div>
+
+              {/* Text */}
+              <div className="px-4 py-3 flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-black tracking-widest uppercase mb-0.5" style={{ color: T.gold }}>
+                    {tc("مميز", "Featured")}
+                  </p>
+                  <h2 className="font-black text-lg leading-snug truncate" style={{ color: T.text }}>{name}</h2>
+                  {nameAlt && nameAlt !== name && (
+                    <p className="text-xs mt-0.5 truncate" style={{ color: T.textLight }}>{nameAlt}</p>
+                  )}
+                  {desc && (
+                    <p className="text-xs mt-1 line-clamp-2 leading-relaxed" style={{ color: T.textMuted }}>{desc}</p>
+                  )}
                 </div>
+                <ChevronRight className="w-4 h-4 flex-shrink-0 mt-1 opacity-30" style={{
+                  transform: dir === "rtl" ? "rotate(180deg)" : undefined,
+                }} />
               </div>
             </motion.button>
           );
         }
 
-        // Regular 2-column grid — rendered in pairs
-        return null;
+        return null; // Regular items handled below
       })}
 
-      {/* 2-column grid for non-featured items */}
+      {/* 2-column grid for regular items */}
       {(() => {
-        const regular = items.filter((_, i) => i % 7 !== 0);
+        const regular = items.filter((_, i) => !featuredIndexes.has(i));
         const pairs: CoffeeItem[][] = [];
         for (let i = 0; i < regular.length; i += 2) pairs.push(regular.slice(i, i + 2));
         return pairs.map((pair, pi) => (
           <div key={pi} className="grid grid-cols-2 gap-3">
             {pair.map((item, qi) => {
-              const name    = lang === "ar" ? item.nameAr : (item as any).nameEn || item.nameAr;
-              const price   = typeof item.price === "number" ? item.price : parseFloat(String(item.price) || "0");
-              const sales   = (item as any).salesCount || 0;
-              const isBest  = sales > 0 && maxSales > 0 && sales >= maxSales * 0.6;
-              const isNew   = (item as any).isNewProduct === 1;
-              const avail   = item.isAvailable !== 0;
+              const name   = lang === "ar" ? item.nameAr : (item as any).nameEn || item.nameAr;
+              const price  = typeof item.price === "number" ? item.price : parseFloat(String(item.price) || "0");
+              const sales  = (item as any).salesCount || 0;
+              const isBest = sales > 0 && maxSales > 0 && sales >= maxSales * 0.6;
+              const isNew  = (item as any).isNewProduct === 1;
+              const avail  = item.isAvailable !== 0;
               return (
                 <motion.button
                   key={(item as any).id || qi}
-                  initial={{ opacity: 0, y: 16 }}
+                  initial={{ opacity: 0, y: 14 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.35, delay: Math.min((pi * 2 + qi) * 0.04, 0.6) }}
+                  transition={{ duration: 0.35, delay: Math.min((pi * 2 + qi) * 0.05, 0.6) }}
+                  whileHover={{ y: -3, boxShadow: T.cardShadowHover }}
                   onClick={() => onSelect(item)}
-                  className="text-start overflow-hidden rounded-2xl group active:scale-[0.97] transition-transform relative"
-                  style={{ background: T.card, border: `1px solid ${T.cardBorder}` }}
+                  className="text-start overflow-hidden rounded-2xl group"
+                  style={{
+                    background: T.card,
+                    border: `1px solid ${T.cardBorder}`,
+                    boxShadow: T.cardShadow,
+                  }}
                   data-testid={`card-product-${(item as any).id}`}
                 >
                   {/* Image */}
-                  <div className="relative overflow-hidden" style={{ aspectRatio: "3/4" }}>
+                  <div className="relative overflow-hidden" style={{ aspectRatio: "1/1" }}>
                     {item.imageUrl ? (
                       <img src={item.imageUrl} alt={name}
-                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-600"
                         onError={e => {
                           const img = e.target as HTMLImageElement;
                           img.style.display = "none";
@@ -599,51 +623,45 @@ function ProductGrid({ items, maxSales, dir, onSelect, lang, tc }: {
                       />
                     ) : null}
                     <div className={`${item.imageUrl ? "hidden" : ""} w-full h-full flex items-center justify-center`}
-                      style={{ background: `linear-gradient(135deg, ${T.brownDeep}, ${T.card})` }}>
-                      <img src={tasaliLogo} alt={name} className="w-12 h-12 object-contain opacity-20" />
+                      style={{ background: `linear-gradient(135deg, ${T.cream}, ${T.creamDeep})` }}>
+                      <img src={tasaliLogo} alt={name} className="w-10 h-10 object-contain opacity-25" />
                     </div>
-
-                    {/* Gradient overlay */}
-                    <div className="absolute inset-0"
-                      style={{ background: `linear-gradient(to top, ${T.card} 0%, transparent 50%)` }} />
 
                     {/* Badges */}
                     {(isBest || isNew) && (
                       <div className={`absolute top-2 ${dir === "rtl" ? "right-2" : "left-2"} flex flex-col gap-1`}>
                         {isBest && (
-                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full shadow-sm whitespace-nowrap"
                             style={{ background: T.gold, color: "#fff" }}>
                             ⭐ {tc("الأكثر", "Best")}
                           </span>
                         )}
                         {isNew && (
-                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full whitespace-nowrap"
-                            style={{ background: "#16a34a", color: "#fff" }}>
+                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full shadow-sm whitespace-nowrap bg-emerald-500 text-white">
                             ✨ {tc("جديد", "New")}
                           </span>
                         )}
                       </div>
                     )}
 
-                    {/* Unavailable overlay */}
+                    {/* Unavailable */}
                     {!avail && (
-                      <div className="absolute inset-0 flex items-center justify-center"
-                        style={{ background: "rgba(0,0,0,0.65)" }}>
-                        <span className="text-[11px] font-bold text-white/70 border border-white/20 px-2 py-1 rounded-lg backdrop-blur">
-                          {tc("غير متوفر", "Unavailable")}
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                        <span className="text-[11px] font-bold text-white border border-white/30 px-2 py-1 rounded-lg">
+                          {tc("نفذ", "Sold Out")}
                         </span>
                       </div>
                     )}
                   </div>
 
                   {/* Info */}
-                  <div className="p-3 space-y-1">
-                    <h3 className="font-black text-white text-sm leading-snug line-clamp-2">{name}</h3>
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-base font-black" style={{ color: T.gold }}>
+                  <div className="p-2.5 space-y-0.5">
+                    <h3 className="font-black text-[13px] leading-snug line-clamp-2" style={{ color: T.text }}>{name}</h3>
+                    <div className="flex items-baseline gap-1 pt-0.5">
+                      <span className="text-sm font-black" style={{ color: T.gold }}>
                         {isNaN(price) ? "—" : price.toFixed(2)}
                       </span>
-                      <span className="text-[11px] opacity-70" style={{ color: T.gold }}><SarIcon /></span>
+                      <span className="text-[10px] font-bold" style={{ color: T.gold }}><SarIcon /></span>
                     </div>
                   </div>
                 </motion.button>
@@ -657,7 +675,7 @@ function ProductGrid({ items, maxSales, dir, onSelect, lang, tc }: {
 }
 
 /* ══════════════════════════════════════════════════════════
-   ITEM DETAIL MODAL — cinematic full-screen
+   ITEM DETAIL MODAL — immersive overlay
 ══════════════════════════════════════════════════════════ */
 function ItemDetailModal({ item, dir, lang, tc, maxSales, onClose }: {
   item: CoffeeItem;
@@ -677,6 +695,12 @@ function ItemDetailModal({ item, dir, lang, tc, maxSales, onClose }: {
   const desc    = (item as any).description || (item as any).descriptionAr || (item as any).descriptionEn || "";
   const category = (item as any).categoryNameAr || (item as any).category || "";
 
+  // Lock scroll
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = ""; };
+  }, []);
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -686,56 +710,49 @@ function ItemDetailModal({ item, dir, lang, tc, maxSales, onClose }: {
       style={{ background: T.bg }}
       dir={dir}
     >
-      {/* Image — top half */}
-      <div className="relative flex-shrink-0" style={{ height: "55vw", maxHeight: 320, minHeight: 220 }}>
+      {/* Image — top section */}
+      <div className="relative flex-shrink-0 overflow-hidden bg-black" style={{ height: "55vw", maxHeight: 320, minHeight: 220 }}>
         {item.imageUrl ? (
           <motion.img
             src={item.imageUrl}
             alt={name}
-            initial={{ scale: 1.08 }}
+            initial={{ scale: 1.06 }}
             animate={{ scale: 1 }}
             transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
             className="w-full h-full object-cover"
-            onError={e => {
-              (e.target as HTMLImageElement).style.display = "none";
-            }}
+            onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center"
-            style={{ background: `linear-gradient(135deg, ${T.brownDeep}, ${T.card})` }}>
-            <img src={tasaliLogo} alt={name} className="w-24 h-24 object-contain opacity-20" />
+            style={{ background: `linear-gradient(135deg, ${T.cream}, ${T.creamDeep})` }}>
+            <img src={tasaliLogo} alt={name} className="w-24 h-24 object-contain opacity-30" />
           </div>
         )}
+        <div className="absolute inset-x-0 bottom-0 h-20"
+          style={{ background: `linear-gradient(to top, ${T.bg}, transparent)` }} />
+        <div className="absolute inset-x-0 top-0 h-14"
+          style={{ background: `linear-gradient(to bottom, rgba(0,0,0,0.35), transparent)` }} />
 
-        {/* Bottom fade */}
-        <div className="absolute inset-x-0 bottom-0 h-24"
-          style={{ background: `linear-gradient(to bottom, transparent, ${T.bg})` }} />
-
-        {/* Top fade */}
-        <div className="absolute inset-x-0 top-0 h-16"
-          style={{ background: `linear-gradient(to top, transparent, rgba(0,0,0,0.5))` }} />
-
-        {/* Close button */}
+        {/* Close */}
         <motion.button
-          initial={{ opacity: 0, scale: 0.8 }}
+          initial={{ opacity: 0, scale: 0.85 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.2 }}
           onClick={onClose}
           className="absolute top-4 flex items-center justify-center w-10 h-10 rounded-2xl backdrop-blur"
           style={{
             [dir === "rtl" ? "right" : "left"]: "1rem",
-            background: "rgba(0,0,0,0.6)",
-            border: "1px solid rgba(255,255,255,0.15)",
+            background: "rgba(0,0,0,0.45)",
+            border: "1px solid rgba(255,255,255,0.2)",
           }}
           data-testid="button-close-item-modal"
         >
           <ArrowLeft className={`w-5 h-5 text-white ${dir === "rtl" ? "rotate-180" : ""}`} />
         </motion.button>
 
-        {/* Unavailable overlay */}
+        {/* Unavailable */}
         {!avail && (
-          <div className="absolute inset-0 flex items-center justify-center"
-            style={{ background: "rgba(0,0,0,0.6)" }}>
+          <div className="absolute inset-0 flex items-center justify-center bg-black/60">
             <span className="text-white font-bold text-lg border border-white/30 px-6 py-3 rounded-2xl backdrop-blur">
               {tc("غير متوفر حالياً", "Currently Unavailable")}
             </span>
@@ -743,12 +760,13 @@ function ItemDetailModal({ item, dir, lang, tc, maxSales, onClose }: {
         )}
       </div>
 
-      {/* Content — bottom half */}
+      {/* Content */}
       <motion.div
-        initial={{ y: 40, opacity: 0 }}
-        animate={{ y: 0,  opacity: 1 }}
-        transition={{ duration: 0.5, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
-        className="flex-1 overflow-y-auto px-5 pt-4 pb-32 space-y-4"
+        initial={{ y: 30, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.45, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
+        className="flex-1 overflow-y-auto px-5 pt-3 pb-32 space-y-4"
+        style={{ color: T.text }}
       >
         {/* Badges */}
         {(isBest || isNew) && (
@@ -760,100 +778,96 @@ function ItemDetailModal({ item, dir, lang, tc, maxSales, onClose }: {
               </span>
             )}
             {isNew && (
-              <span className="text-[11px] font-black px-3 py-1 rounded-full"
-                style={{ background: "#16a34a", color: "#fff" }}>
+              <span className="text-[11px] font-black px-3 py-1 rounded-full bg-emerald-500 text-white">
                 ✨ {tc("جديد", "New")}
               </span>
             )}
           </div>
         )}
 
-        {/* Category chip */}
+        {/* Category */}
         {category && (
-          <p className="text-xs font-bold tracking-widest uppercase" style={{ color: `${T.gold}70` }}>
+          <p className="text-xs font-black tracking-widest uppercase" style={{ color: T.gold }}>
             {category}
           </p>
         )}
 
         {/* Name */}
         <div>
-          <h2 className="text-3xl font-black text-white leading-tight">{name}</h2>
+          <h2 className="text-3xl font-black leading-tight" style={{ color: T.text }}>{name}</h2>
           {nameAlt && nameAlt !== name && (
-            <p className="text-base mt-1 font-medium" style={{ color: `${T.cream}50` }}>{nameAlt}</p>
+            <p className="text-base mt-1 font-medium" style={{ color: T.textMuted }}>{nameAlt}</p>
           )}
         </div>
 
         {/* Description */}
         {desc && (
-          <p className="text-sm leading-relaxed" style={{ color: `${T.cream}60` }}>{desc}</p>
+          <p className="text-sm leading-relaxed" style={{ color: T.textMuted }}>{desc}</p>
         )}
 
         {/* Divider */}
-        <div className="h-px" style={{ background: `linear-gradient(to right, ${T.gold}30, transparent)` }} />
+        <div className="h-px" style={{ background: T.border }} />
 
         {/* Price block */}
-        <div className="flex items-center justify-between rounded-2xl p-4"
-          style={{ background: T.glass, border: `1px solid ${T.cardBorder}` }}>
+        <div className="flex items-center justify-between rounded-2xl p-4 border"
+          style={{ background: T.cream, borderColor: T.cardBorder }}>
           <div>
-            <p className="text-xs font-bold mb-1" style={{ color: `${T.cream}40` }}>
+            <p className="text-xs font-bold mb-1" style={{ color: T.textLight }}>
               {tc("السعر شامل الضريبة", "Price incl. VAT")}
             </p>
             <div className="flex items-baseline gap-1.5">
               <span className="text-4xl font-black" style={{ color: T.gold }}>
                 {isNaN(price) ? "—" : price.toFixed(2)}
               </span>
-              <span className="text-lg font-bold" style={{ color: `${T.gold}80` }}>
+              <span className="text-lg font-bold" style={{ color: T.gold }}>
                 <SarIcon />
               </span>
             </div>
           </div>
-          <div className="text-right">
-            <p className="text-[10px] font-bold tracking-widest mb-1" style={{ color: `${T.cream}30` }}>
+          <div className={dir === "rtl" ? "text-left" : "text-right"}>
+            <p className="text-[10px] font-black tracking-widest mb-1" style={{ color: T.textLight }}>
               {tc("مشمول", "INCLUDED")}
             </p>
-            <p className="text-xs font-bold" style={{ color: `${T.cream}50` }}>
+            <p className="text-xs font-bold" style={{ color: T.textMuted }}>
               {tc("ض.ق.م ١٥٪", "VAT 15%")}
             </p>
           </div>
         </div>
 
-        {/* Sales info */}
+        {/* Sales */}
         {sales > 0 && (
           <div className="flex items-center gap-2">
-            <div className="flex -space-x-1.5 rtl:space-x-reverse">
+            <div className="flex gap-0.5">
               {[...Array(Math.min(5, Math.ceil(sales / 10)))].map((_, i) => (
-                <div key={i} className="w-5 h-5 rounded-full border-2 flex items-center justify-center text-[8px]"
-                  style={{ background: T.brownDeep, borderColor: T.gold, color: T.gold }}>
-                  ★
-                </div>
+                <Star key={i} className="w-3.5 h-3.5 fill-current" style={{ color: T.gold }} />
               ))}
             </div>
-            <p className="text-xs font-bold" style={{ color: `${T.cream}40` }}>
+            <p className="text-xs font-bold" style={{ color: T.textMuted }}>
               {tc(`طُلب ${sales} مرة`, `Ordered ${sales} times`)}
             </p>
           </div>
         )}
       </motion.div>
 
-      {/* Bottom action — call to order */}
-      <div className="fixed bottom-0 inset-x-0 p-4"
+      {/* Bottom CTA */}
+      <div className="fixed bottom-0 inset-x-0 p-4 pointer-events-none"
         style={{ background: `linear-gradient(to top, ${T.bg} 70%, transparent)` }}>
         <motion.a
-          href="tel:+966537050013"
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0,  opacity: 1 }}
-          transition={{ delay: 0.4 }}
-          className="flex items-center justify-center gap-3 w-full py-4 rounded-2xl font-black text-white text-sm shadow-2xl"
+          href={PHONE_HREF}
+          initial={{ y: 16, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ delay: 0.35 }}
+          className="flex items-center justify-center gap-2.5 w-full py-4 rounded-2xl font-black text-white text-sm pointer-events-auto"
           style={{
-            background: `linear-gradient(135deg, ${T.brown}, ${T.gold})`,
-            boxShadow: `0 8px 32px ${T.gold}30`,
+            background: `linear-gradient(135deg, ${T.primary}, ${T.gold})`,
+            boxShadow: `0 8px 24px ${T.gold}35`,
             maxWidth: 480,
             margin: "0 auto",
           }}
           data-testid="button-call-to-order-modal"
         >
           <Phone className="w-4 h-4" />
-          {tc("اتصل للطلب الآن", "Call to Order Now")}
+          {tc("اتصل للطلب الآن", "Call to Order Now")} — {PHONE}
         </motion.a>
       </div>
     </motion.div>
