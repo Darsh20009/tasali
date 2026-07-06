@@ -1787,9 +1787,9 @@ export async function printAllReceipts(data: TaxInvoiceData & { deliveryType?: s
       const result = await thermalPrint(escData, '', printerSettings.paperWidth);
       console.log('[PrintAllReceipts] Result:', result.mode, result.success);
 
-      if (result.mode === 'webusb' || result.mode === 'network') {
+      if (result.success) {
         // Hardware print succeeded — handle kitchen copy if needed
-        if (result.mode === 'webusb' && printerSettings.autoKitchenCopy) {
+        if ((result.mode === 'webusb' || result.mode === 'bluetooth') && printerSettings.autoKitchenCopy) {
           await new Promise(r => setTimeout(r, 1200));
           const kitchenEsc = await buildEscPosKitchenTicketBitmap({
             orderNumber: data.orderNumber,

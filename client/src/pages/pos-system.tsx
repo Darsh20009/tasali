@@ -3415,7 +3415,7 @@ export default function PosSystem() {
                 </div>
               )}
 
-              <div className="flex gap-2">
+              <div className="flex gap-2 pb-[58px] md:pb-0">
                 <Button
                   className="flex-1 h-11 sm:h-13 text-sm sm:text-base font-black rounded-xl shadow-lg shadow-primary/20 gap-2"
                   disabled={orderItems.length === 0 || syncing}
