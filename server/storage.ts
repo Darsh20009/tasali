@@ -532,7 +532,11 @@ export class DBStorage implements IStorage {
   }
 
   async getEmployee(id: string): Promise<Employee | undefined> {
-    const employee = await EmployeeModel.findById(id).lean();
+    // Try by nanoid 'id' field first, then by MongoDB _id
+    let employee = await EmployeeModel.findOne({ id }).lean() as any;
+    if (!employee && id.match(/^[0-9a-fA-F]{24}$/)) {
+      employee = await EmployeeModel.findById(id).lean() as any;
+    }
     if (!employee) return undefined;
     const result: any = {
       ...employee,
@@ -1468,8 +1472,8 @@ export class DBStorage implements IStorage {
     return item ? serializeDoc(item) : undefined;
   }
 
-  async getRawItemByCode(sku: string): Promise<RawItem | undefined> {
-    const item = await RawItemModel.findOne({ sku }).lean();
+  async getRawItemByCode(code: string): Promise<RawItem | undefined> {
+    const item = await RawItemModel.findOne({ code }).lean();
     return item ? serializeDoc(item) : undefined;
   }
 

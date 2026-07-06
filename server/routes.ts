@@ -5897,28 +5897,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Validate required fields
+      if (!bodyData.username?.trim()) {
+        return res.status(400).json({ error: "اسم المستخدم مطلوب" });
+      }
+      if (!bodyData.fullName?.trim()) {
+        return res.status(400).json({ error: "الاسم الكامل مطلوب" });
+      }
+      if (!bodyData.jobTitle?.trim()) {
+        return res.status(400).json({ error: "المسمى الوظيفي مطلوب" });
+      }
+
       // Check if username already exists
       const existing = await storage.getEmployeeByUsername(bodyData.username);
       if (existing) {
-        return res.status(400).json({ error: "Username already exists" });
+        return res.status(400).json({ error: "اسم المستخدم موجود مسبقاً" });
       }
 
-      // Directly create using Model for robustness
-      const newEmployee = await EmployeeModel.create({
+      // Check phone uniqueness only if phone is provided
+      if (bodyData.phone?.trim()) {
+        const existingPhone = await EmployeeModel.findOne({ phone: bodyData.phone.trim() }).lean();
+        if (existingPhone) {
+          return res.status(400).json({ error: "رقم الهاتف مستخدم مسبقاً" });
+        }
+      }
+
+      // Use storage.createEmployee to get proper password hashing
+      const newEmployee = await storage.createEmployee({
         ...bodyData,
+        username: bodyData.username.trim(),
+        fullName: bodyData.fullName.trim(),
+        phone: bodyData.phone?.trim() || `auto-${nanoid(8)}`,
         permissions: bodyData.permissions || [],
         allowedPages: bodyData.allowedPages || [],
-        tenantId: tenantId as any,
-        id: nanoid(),
-        isActivated: bodyData.password ? 1 : 0,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      });
+        tenantId,
+      } as any);
 
-      const employee = serializeDoc(newEmployee);
-      
       // Don't send password back
-      const { password: _, ...employeeData } = employee;
+      const { password: _, ...employeeData } = newEmployee as any;
       res.status(201).json(employeeData);
     } catch (error) {
       console.error("Error creating employee:", error);
@@ -14354,13 +14370,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Enrich each item with total currentStock summed from all branch stocks
-      const { BranchStockModel } = await import("@shared/schema");
-      const allBranchStocks = await BranchStockModel.find({}).lean();
+      let allBranchStocks: any[] = [];
+      try {
+        const { BranchStockModel } = await import("@shared/schema");
+        allBranchStocks = await BranchStockModel.find({}).lean() as any[];
+      } catch (_) {
+        // BranchStock collection may not exist yet — proceed with empty stocks
+      }
       const enriched = items.map(item => {
         const totalStock = allBranchStocks
           .filter((s: any) => s.rawItemId === item.id)
           .reduce((sum: number, s: any) => sum + (s.currentQuantity || 0), 0);
-        return { ...item, currentStock: totalStock };
+        // Use stored currentStock if no branch stock records exist yet
+        return { ...item, currentStock: totalStock || (item as any).currentStock || 0 };
       });
       
       res.json(enriched);
