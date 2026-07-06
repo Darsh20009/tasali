@@ -121,7 +121,8 @@ async function connectDatabase() {
       if (!qiroxExists) {
         const bcryptQ = await import("bcryptjs");
         const { v4: uuidQ } = await import("uuid");
-        const qiroxPassword = process.env.QIROX_ADMIN_PASSWORD || "qirox";
+        const { randomBytes } = await import("crypto");
+        const qiroxPassword = process.env.QIROX_ADMIN_PASSWORD || randomBytes(16).toString("hex");
         const hashedQ = await bcryptQ.hash(qiroxPassword, 12);
         await EmpModelQ.create({
           id: uuidQ(),
@@ -135,6 +136,9 @@ async function connectDatabase() {
           isActivated: 1,
           isActive: 1,
         });
+        if (!process.env.QIROX_ADMIN_PASSWORD) {
+          console.warn(`⚠️  Ghost admin created with random password. Set QIROX_ADMIN_PASSWORD before first boot to control this credential.`);
+        }
         console.log("✅ Ghost admin initialized");
       }
     } catch (err) { console.error("Ghost admin sync error:", err); }
