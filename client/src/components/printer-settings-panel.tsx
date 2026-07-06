@@ -1691,6 +1691,7 @@ export default function PrinterSettingsPanel() {
               <SelectContent>
                 <SelectItem value="utf8">UTF-8 (حديثة)</SelectItem>
                 <SelectItem value="cp864">CP864 (ProPOS)</SelectItem>
+                <SelectItem value="image">🖼️ صورة (TAPOS / صينية)</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -1699,6 +1700,12 @@ export default function PrinterSettingsPanel() {
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-xs text-amber-800 space-y-1">
               <p className="font-semibold">⚠️ وضع CP864 — لطابعات ProPOS PP9000 والطابعات التي تطبع رموز غريبة</p>
               <p>إذا ظهر النص صحيحاً الآن، ابقَ على هذا الوضع. إذا ظهرت رموز غريبة، جرّب UTF-8.</p>
+            </div>
+          )}
+          {settings.arabicEncoding === 'image' && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-2.5 text-xs text-blue-800 space-y-1">
+              <p className="font-semibold">🖼️ وضع الصورة — مناسب لطابعات TAPOS والطابعات الصينية</p>
+              <p>تُطبع الفاتورة كصورة بدلاً من نص — يحل مشكلة الأحرف المشوّهة مع أي طابعة بغض النظر عن نوع الترميز.</p>
             </div>
           )}
 

@@ -84,8 +84,8 @@ export interface PrinterSettings {
   // The relay agent is a small Node.js server running on the local network.
   // Download: /print-relay.js  — run with: node print-relay.js
   relayAgentUrl?: string; // e.g. "http://192.168.8.10:8089"
-  /** ترميز العربية: utf8 للطابعات الحديثة (Xprinter/Epson) | cp864 لطابعات ProPOS/CP864 القديمة */
-  arabicEncoding?: 'utf8' | 'cp864';
+  /** ترميز العربية: utf8 للطابعات الحديثة | cp864 لطابعات ProPOS | image لطابعات TAPOS والصينية */
+  arabicEncoding?: 'utf8' | 'cp864' | 'image';
   /** الرابط العام للمتجر (يُستخدم لباركود تتبع الطلب)
    *  مثال: https://tasaliqurmash.com.sa
    *  إذا تُرك فارغاً يستخدم window.location.origin */
@@ -586,8 +586,8 @@ export interface EscPosReceiptData {
   paperWidth: '58mm' | '80mm';
   feedLines?: number;
   skipCut?: boolean; // if true, skip feed+cut at end (so caller can append more data)
-  /** ترميز العربية — utf8 (افتراضي) أو cp864 لطابعات ProPOS/Xprinter القديمة */
-  arabicEncoding?: 'utf8' | 'cp864';
+  /** ترميز العربية — utf8 (افتراضي) أو cp864 لطابعات ProPOS أو image لطابعات TAPOS/الصينية */
+  arabicEncoding?: 'utf8' | 'cp864' | 'image';
 }
 
 export function buildEscPosReceipt(data: EscPosReceiptData): Uint8Array {

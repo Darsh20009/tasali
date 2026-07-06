@@ -1742,7 +1742,7 @@ export async function printCashierReceipt(data: TaxInvoiceData & { deliveryType?
 export async function printAllReceipts(data: TaxInvoiceData & { deliveryType?: string; deliveryTypeAr?: string }): Promise<void> {
   // Try thermal printer (WebUSB) first
   try {
-    const { loadPrinterSettings, buildEscPosReceipt, buildEscPosKitchenTicketBitmap, thermalPrint } = await import('./thermal-printer');
+    const { loadPrinterSettings, buildEscPosReceipt, buildReceiptBitmapEscPos, buildEscPosKitchenTicketBitmap, thermalPrint } = await import('./thermal-printer');
     const printerSettings = loadPrinterSettings();
 
     if (printerSettings.enabled && printerSettings.autoPrint) {
@@ -1754,33 +1754,62 @@ export async function printAllReceipts(data: TaxInvoiceData & { deliveryType?: s
 
       const orderTypeLabel = data.orderTypeName || (data.orderType === 'dine_in' ? 'محلي' : data.orderType === 'takeaway' ? 'سفري' : data.orderType === 'delivery' ? 'توصيل' : data.deliveryTypeAr || '');
 
-      // Build ESC/POS receipt
-      const escData = buildEscPosReceipt({
-        shopName: COMPANY_NAME,
-        vatNumber: data.vatNumber || VAT_NUMBER,
-        branchName: data.branchName,
-        address: data.branchAddress,
-        orderNumber: data.orderNumber,
-        date: dateStr,
-        cashierName: data.employeeName,
-        customerName: data.customerName !== 'عميل نقدي' ? data.customerName : undefined,
-        tableNumber: data.tableNumber,
-        orderType: orderTypeLabel || undefined,
-        items: data.items.map(item => ({
-          name: item.coffeeItem.nameAr,
-          qty: item.quantity,
-          price: parseNumber(item.coffeeItem.price),
-          addons: getItemAddons(item).map((a: any) => a.nameAr),
-        })),
-        subtotal: subtotalBeforeTax,
-        vat: vatAmount,
-        total: totalAmount,
-        discount: data.invoiceDiscount ? parseNumber(data.invoiceDiscount) : undefined,
-        paymentMethod: data.paymentMethod,
-        paperWidth: printerSettings.paperWidth,
-        feedLines: printerSettings.feedLines,
-        arabicEncoding: printerSettings.arabicEncoding,
-      });
+      // Build ESC/POS receipt — image mode for TAPOS/Chinese printers (no encoding issues)
+      let escData: Uint8Array;
+      if (printerSettings.arabicEncoding === 'image') {
+        escData = await buildReceiptBitmapEscPos({
+          shopName: COMPANY_NAME,
+          vatNumber: data.vatNumber || VAT_NUMBER,
+          branchName: data.branchName,
+          orderNumber: data.orderNumber,
+          orderDate: dateStr,
+          cashierName: data.employeeName,
+          customerName: data.customerName !== 'عميل نقدي' ? data.customerName : undefined,
+          tableNumber: data.tableNumber,
+          orderType: orderTypeLabel || undefined,
+          items: data.items.map(item => ({
+            name: item.coffeeItem.nameAr,
+            nameEn: (item.coffeeItem as any).nameEn,
+            qty: item.quantity,
+            price: parseNumber(item.coffeeItem.price),
+            addons: getItemAddons(item).map((a: any) => a.nameAr),
+          })),
+          subtotal: subtotalBeforeTax,
+          vat: vatAmount,
+          total: totalAmount,
+          discount: data.invoiceDiscount ? parseNumber(data.invoiceDiscount) : undefined,
+          paymentMethod: data.paymentMethod,
+          paperWidth: printerSettings.paperWidth,
+          feedLines: printerSettings.feedLines,
+        });
+      } else {
+        escData = buildEscPosReceipt({
+          shopName: COMPANY_NAME,
+          vatNumber: data.vatNumber || VAT_NUMBER,
+          branchName: data.branchName,
+          address: data.branchAddress,
+          orderNumber: data.orderNumber,
+          date: dateStr,
+          cashierName: data.employeeName,
+          customerName: data.customerName !== 'عميل نقدي' ? data.customerName : undefined,
+          tableNumber: data.tableNumber,
+          orderType: orderTypeLabel || undefined,
+          items: data.items.map(item => ({
+            name: item.coffeeItem.nameAr,
+            qty: item.quantity,
+            price: parseNumber(item.coffeeItem.price),
+            addons: getItemAddons(item).map((a: any) => a.nameAr),
+          })),
+          subtotal: subtotalBeforeTax,
+          vat: vatAmount,
+          total: totalAmount,
+          discount: data.invoiceDiscount ? parseNumber(data.invoiceDiscount) : undefined,
+          paymentMethod: data.paymentMethod,
+          paperWidth: printerSettings.paperWidth,
+          feedLines: printerSettings.feedLines,
+          arabicEncoding: printerSettings.arabicEncoding,
+        });
+      }
 
       // pass empty fallbackHtml so browser fallback does nothing here —
       // we handle browser printing separately with the new format below
