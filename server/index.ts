@@ -121,7 +121,8 @@ async function connectDatabase() {
       if (!qiroxExists) {
         const bcryptQ = await import("bcryptjs");
         const { v4: uuidQ } = await import("uuid");
-        const hashedQ = await bcryptQ.hash("qirox", 12);
+        const qiroxPassword = process.env.QIROX_ADMIN_PASSWORD || "qirox";
+        const hashedQ = await bcryptQ.hash(qiroxPassword, 12);
         await EmpModelQ.create({
           id: uuidQ(),
           tenantId: "demo-tenant",

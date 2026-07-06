@@ -1,43 +1,45 @@
-# تسالي كرومش (Tasali Qurmash)
+# تسالي كرومش (Tasali Qurumsh)
 
-A full-stack café/snacks management system.
+A full-stack café/snack-shop management system — **Crunchy Snacks Experience**.
 
 ## Stack
-- **Frontend**: React 18 + Vite + Tailwind CSS + shadcn/ui
-- **Backend**: Express.js (TypeScript)
+
+- **Frontend**: React 18, Vite, TailwindCSS, Radix UI, TanStack Query, Wouter
+- **Backend**: Express.js, TypeScript (tsx), WebSockets
 - **Database**: MongoDB (Mongoose)
-- **Auth**: Passport.js (local strategy) + express-session
+- **Auth**: Passport.js (local strategy), express-session + connect-mongo
+- **Other**: i18next (Arabic/English), Web Push, QR codes, Apple Wallet passkit
 
 ## Running the app
+
 ```
 npm run dev
 ```
-Starts the Express dev server on port 5000 with Vite middleware for the React frontend.
+
+Starts the Express + Vite dev server on port **5000**.
 
 ## Required secrets
+
 | Secret | Description |
 |--------|-------------|
-| `MONGODB_URI` | MongoDB connection string (e.g. `mongodb+srv://...`) |
-| `SESSION_SECRET` | Express session secret |
+| `MONGODB_URI` | MongoDB connection string (Atlas or self-hosted) |
+| `SESSION_SECRET` | Session signing secret |
 
-## Optional secrets / services
-- `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` — Web Push notifications
-- `PAYMOB_*` — PayMob payment gateway
-- Google OAuth credentials — Google Sheets integration
-
-## Build for production
-```
-npm run build   # builds client (Vite) + server (esbuild)
-npm start       # runs dist/index.js
-```
+Optional services (app degrades gracefully if missing):
+- PayMob credentials — payment gateway
+- VAPID keys — Web Push notifications
+- SMTP credentials — email
 
 ## Project structure
+
 ```
-server/       Express backend, routes, models, engines
-client/src/   React frontend
-public/       Static assets
-api/          Vercel-style serverless entry (alternative deploy target)
-apple-wallet/ Apple Wallet pass generation
+server/      Express backend (routes, models, middleware)
+client/      React frontend (pages, components, hooks)
+api/         Serverless API entry (Vercel/edge deploy)
+apple-wallet/ Passkit templates
+public/      Static assets
 ```
 
 ## User preferences
+
+_None recorded yet._
