@@ -769,7 +769,7 @@ export default function PrinterSettingsPanel() {
                 <li>{tc("أعد تشغيل المتصفح واضغط 'اختر الطابعة (USB)' مجدداً", "Restart browser and click 'Select Printer (USB)' again")}</li>
               </ol>
               <p className="font-semibold text-red-700">
-                {tc("أو بدلاً عن ذلك: بدّل وضع الطباعة إلى 'شبكة LAN' أو 'وكيل محلي' — أسهل وأكثر استقراراً.", "Or: Switch print mode to 'LAN Network' or 'Local Relay' — easier and more stable.")}
+                {tc("أو بدلاً عن ذلك: بدّل نوع الطابعة إلى 'بلوتوث' إذا كانت طابعتك تدعمه.", "Or: Switch printer type to 'Bluetooth' if your printer supports it.")}
               </p>
             </div>
           )}
@@ -948,42 +948,24 @@ export default function PrinterSettingsPanel() {
           {/* Print Mode */}
           <div className="flex items-center justify-between gap-4">
             <div>
-              <Label className="text-sm font-medium">{tc("وضع الطباعة", "Print Mode")}</Label>
+              <Label className="text-sm font-medium">{tc("نوع الطابعة", "Printer Type")}</Label>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {settings.mode === 'queue'
-                  ? tc("طابور سحابي — الأفضل لتاب سينس وأندرويد", "Cloud Queue — Best for Tab Sense & Android")
-                  : settings.mode === 'network'
-                    ? tc("طابعة شبكية (LAN/WiFi) — ProPos، Epson، Xprinter", "Network printer (LAN/WiFi) — ProPos, Epson, Xprinter")
-                    : settings.mode === 'bluetooth'
-                      ? tc("طابعة بلوتوث (BLE) — Xprinter BT، MUNBYN، Rongta", "Bluetooth printer (BLE) — Xprinter BT, MUNBYN, Rongta")
-                      : settings.mode === 'webusb'
-                        ? tc("اتصال USB مباشر — بدون نوافذ طباعة", "Direct USB — no print dialogs")
-                        : tc("طباعة عبر المتصفح — تظهر نافذة الطباعة", "Browser print — dialog will appear")
+                {settings.mode === 'bluetooth'
+                  ? tc("طابعة بلوتوث (BLE) — Xprinter BT، MUNBYN، TA-900UB", "Bluetooth printer (BLE) — Xprinter BT, MUNBYN, TA-900UB")
+                  : tc("اتصال USB مباشر — بدون نوافذ طباعة", "Direct USB — no print dialogs")
                 }
               </p>
             </div>
-            <Select value={settings.mode} onValueChange={(v: any) => { updateSetting('mode', v); setRelayStatus(null); setNetworkStatus(null); }}>
+            <Select value={settings.mode === 'bluetooth' ? 'bluetooth' : 'webusb'} onValueChange={(v: any) => { updateSetting('mode', v); setRelayStatus(null); setNetworkStatus(null); }}>
               <SelectTrigger className="w-40" data-testid="select-print-mode">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="queue">
-                  <span className="flex items-center gap-1"><Network className="w-3 h-3 text-green-600" /> {tc("طابور سحابي ⭐", "Cloud Queue ⭐")}</span>
-                </SelectItem>
-                <SelectItem value="relay">
-                  <span className="flex items-center gap-1"><Network className="w-3 h-3 text-violet-600" /> {tc("وكيل محلي", "Local Relay")}</span>
-                </SelectItem>
-                <SelectItem value="network">
-                  <span className="flex items-center gap-1"><Network className="w-3 h-3" /> {tc("شبكة LAN", "Network LAN")}</span>
-                </SelectItem>
                 <SelectItem value="bluetooth">
                   <span className="flex items-center gap-1"><Bluetooth className="w-3 h-3" /> {tc("بلوتوث", "Bluetooth")}</span>
                 </SelectItem>
                 <SelectItem value="webusb">
-                  <span className="flex items-center gap-1"><Usb className="w-3 h-3" /> USB</span>
-                </SelectItem>
-                <SelectItem value="browser">
-                  <span className="flex items-center gap-1"><Wifi className="w-3 h-3" /> {tc("متصفح", "Browser")}</span>
+                  <span className="flex items-center gap-1"><Usb className="w-3 h-3" /> {tc("سلكي (USB)", "Wired (USB)")}</span>
                 </SelectItem>
               </SelectContent>
             </Select>
