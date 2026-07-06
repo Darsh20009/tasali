@@ -530,6 +530,15 @@ export async function printShiftThermal(p: {
     paperWidth: ps.paperWidth as '58mm' | '80mm',
   };
 
+  // Bluetooth printers cannot render Arabic via ESC/POS text — use Canvas bitmap directly
+  if (ps.mode === 'bluetooth') {
+    const canvas = await buildShiftReportCanvas(opts);
+    const { receiptPngToEscPos } = await import('./thermal-printer');
+    const escData = await receiptPngToEscPos(canvas.toDataURL('image/png'), ps.paperWidth as '58mm' | '80mm');
+    await thermalPrint(escData, '', ps.paperWidth as '58mm' | '80mm');
+    return;
+  }
+
   const escData = await buildShiftReportEscPos(opts);
   const result = await thermalPrint(escData, '', ps.paperWidth as '58mm' | '80mm');
 
@@ -581,7 +590,15 @@ export async function printRefundThermal(opts: {
   // Try hardware thermal first
   if (ps.enabled && ps.mode !== 'browser') {
     try {
-      const escData = await buildRefundEscPos(refundOpts);
+      let escData: Uint8Array;
+      if (ps.mode === 'bluetooth') {
+        // Bluetooth printers cannot render Arabic via ESC/POS text — use Canvas bitmap
+        const canvas = await buildRefundCanvas(refundOpts);
+        const { receiptPngToEscPos } = await import('./thermal-printer');
+        escData = await receiptPngToEscPos(canvas.toDataURL('image/png'), ps.paperWidth as '58mm' | '80mm');
+      } else {
+        escData = await buildRefundEscPos(refundOpts);
+      }
       const result = await thermalPrint(escData, '', ps.paperWidth as '58mm' | '80mm');
       if (result.success) return;
     } catch (e) {
@@ -1755,8 +1772,10 @@ export async function printAllReceipts(data: TaxInvoiceData & { deliveryType?: s
       const orderTypeLabel = data.orderTypeName || (data.orderType === 'dine_in' ? 'محلي' : data.orderType === 'takeaway' ? 'سفري' : data.orderType === 'delivery' ? 'توصيل' : data.deliveryTypeAr || '');
 
       // Build ESC/POS receipt — image mode for TAPOS/Chinese printers (no encoding issues)
+      // Also force image mode for Bluetooth — BLE thermal printers cannot render Arabic via ESC/POS charset commands
+      const effectiveArabicEncoding = (printerSettings.mode === 'bluetooth' || printerSettings.arabicEncoding === 'image') ? 'image' : printerSettings.arabicEncoding;
       let escData: Uint8Array;
-      if (printerSettings.arabicEncoding === 'image') {
+      if (effectiveArabicEncoding === 'image') {
         escData = await buildReceiptBitmapEscPos({
           shopName: COMPANY_NAME,
           vatNumber: data.vatNumber || VAT_NUMBER,

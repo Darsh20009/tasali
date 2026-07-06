@@ -272,7 +272,8 @@ export default function PrinterSettingsPanel() {
     setBtStatus(null);
     try {
       const deviceName = await connectBluetoothPrinter();
-      savePrinterSettings({ mode: 'bluetooth', bluetoothDeviceName: deviceName });
+      // Force image encoding for Bluetooth — BLE thermal printers cannot render Arabic via ESC/POS charset commands
+      savePrinterSettings({ mode: 'bluetooth', bluetoothDeviceName: deviceName, arabicEncoding: 'image' });
       setSettings(loadPrinterSettings());
       const state = getBluetoothState();
       setBtState(state);
