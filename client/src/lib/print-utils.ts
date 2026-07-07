@@ -1800,6 +1800,7 @@ export async function printAllReceipts(data: TaxInvoiceData & { deliveryType?: s
           paymentMethod: data.paymentMethod,
           paperWidth: printerSettings.paperWidth,
           feedLines: printerSettings.feedLines,
+          logoDataUrl: '/logo.png',
         });
       } else {
         escData = buildEscPosReceipt({
