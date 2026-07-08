@@ -1,7 +1,7 @@
 import { useLocation } from 'wouter';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { LayoutDashboard, Users, FileText, Settings, LogOut, Bell, Code2, GitBranch, Mail, Coffee, BookOpen, Star, ClipboardList } from 'lucide-react';
+import { LayoutDashboard, Users, FileText, Settings, LogOut, Bell, Code2, GitBranch, Mail, Coffee, BookOpen, Star, ClipboardList, CreditCard, UserSearch, Receipt, Layers, Rocket, Activity } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import staffLogo from "@assets/employee-logo.png";
 import { brand } from "@/lib/brand";
@@ -40,7 +40,11 @@ export function AdminSidebar() {
       items: [
         { label: isAr ? 'الموظفون' : 'Employees', icon: Users, path: '/admin/employees', isNotifications: false },
         { label: isAr ? 'الفروع' : 'Branches', icon: GitBranch, path: '/admin/branches', isNotifications: false },
+        { label: isAr ? 'العملاء' : 'Customers', icon: UserSearch, path: '/admin/customers', isNotifications: false },
+        { label: isAr ? 'الإضافات' : 'Product Addons', icon: Layers, path: '/admin/product-addons', isNotifications: false },
         { label: isAr ? 'التقارير' : 'Reports', icon: FileText, path: '/admin/reports', isNotifications: false },
+        { label: isAr ? 'سجل المدفوعات' : 'Payment Logs', icon: Receipt, path: '/admin/payment-logs', isNotifications: false },
+        { label: isAr ? 'نشر التطبيق' : 'App Publishing', icon: Rocket, path: '/admin/app-publishing', isNotifications: false },
       ]
     },
     {

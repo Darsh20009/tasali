@@ -162,6 +162,32 @@ const DriveThroughPage = lazy(() => import("@/pages/drive-through"));
 const TahalyliPage = lazy(() => import("@/pages/tahalyli"));
 const CurbsidePage = lazy(() => import("@/pages/curbside"));
 const GeneralCheckin = lazy(() => import("@/pages/general-checkin"));
+const AdminCustomers = lazy(() => import("@/pages/admin-customers"));
+const AdminPaymentLogs = lazy(() => import("@/pages/admin-payment-logs"));
+const AdminProductAddons = lazy(() => import("@/pages/admin-product-addons"));
+const AdminAppPublishing = lazy(() => import("@/pages/admin-app-publishing"));
+const AccountingSmart = lazy(() => import("@/pages/accounting-smart"));
+const AccountingSmartDashboard = lazy(() => import("@/pages/accounting-smart-dashboard"));
+const DeliveryZoneSettings = lazy(() => import("@/pages/delivery-zone-settings"));
+const IngredientsRecipesInventory = lazy(() => import("@/pages/ingredients-recipes-inventory"));
+const InventoryDashboard = lazy(() => import("@/pages/inventory-dashboard"));
+const InventorySmartDashboard = lazy(() => import("@/pages/inventory-smart-dashboard"));
+const ManagerStatistics = lazy(() => import("@/pages/manager-statistics"));
+const OnboardingPage = lazy(() => import("@/pages/onboarding"));
+const OsAccountingDashboard = lazy(() => import("@/pages/os-accounting-dashboard"));
+const OsInventoryManagement = lazy(() => import("@/pages/os-inventory-management"));
+const OsRecipeManagement = lazy(() => import("@/pages/os-recipe-management"));
+const OsRolesManagement = lazy(() => import("@/pages/os-roles-management"));
+const OsStockManagement = lazy(() => import("@/pages/os-stock-management"));
+const PaymentTracking = lazy(() => import("@/pages/payment-tracking"));
+const ProductAnalytics = lazy(() => import("@/pages/product-analytics"));
+const ProductReports = lazy(() => import("@/pages/product-reports"));
+const RecipesManagement = lazy(() => import("@/pages/recipes-management"));
+const ReportsPage = lazy(() => import("@/pages/reports"));
+const StockMovements = lazy(() => import("@/pages/stock-movements"));
+const SystemDiagnostics = lazy(() => import("@/pages/system-diagnostics"));
+const TablePay = lazy(() => import("@/pages/table-pay"));
+const UnifiedInventoryRecipes = lazy(() => import("@/pages/unified-inventory-recipes"));
 import blackroseLogo from "@assets/logo.png";
 import blackroseLogoStaff from "@assets/logo.png";
 import { brand } from "@/lib/brand";
@@ -423,6 +449,45 @@ function AppRouter() {
 
       {/* Customer Delivery Tracking */}
       <Route path="/delivery/track/:orderId"><DeliveryTracking /></Route>
+
+      {/* ── New pages ported from source ── */}
+      <Route path="/onboarding"><OnboardingPage /></Route>
+      <Route path="/table-pay/:tableId"><AuthGuard userType="customer"><TablePay /></AuthGuard></Route>
+
+      {/* Admin new pages */}
+      <Route path="/admin/customers"><AuthGuard userType="manager" allowedRoles={["owner", "admin", "manager"]}><AdminLayout><AdminCustomers /></AdminLayout></AuthGuard></Route>
+      <Route path="/admin/payment-logs"><AuthGuard userType="manager" allowedRoles={["owner", "admin"]}><AdminLayout><AdminPaymentLogs /></AdminLayout></AuthGuard></Route>
+      <Route path="/admin/product-addons"><AuthGuard userType="manager" allowedRoles={["owner", "admin", "manager"]}><AdminLayout><AdminProductAddons /></AdminLayout></AuthGuard></Route>
+      <Route path="/admin/app-publishing"><AuthGuard userType="manager" allowedRoles={["owner", "admin"]}><AdminLayout><AdminAppPublishing /></AdminLayout></AuthGuard></Route>
+
+      {/* Manager new pages */}
+      <Route path="/manager/statistics"><AuthGuard userType="manager"><ManagerStatistics /></AuthGuard></Route>
+      <Route path="/manager/product-analytics"><AuthGuard userType="manager"><ProductAnalytics /></AuthGuard></Route>
+      <Route path="/manager/product-reports"><AuthGuard userType="manager"><ProductReports /></AuthGuard></Route>
+      <Route path="/manager/reports"><AuthGuard userType="manager"><ReportsPage /></AuthGuard></Route>
+      <Route path="/manager/payment-tracking"><AuthGuard userType="manager"><PaymentTracking /></AuthGuard></Route>
+      <Route path="/manager/system-diagnostics"><AuthGuard userType="manager" allowedRoles={["owner", "admin"]}><SystemDiagnostics /></AuthGuard></Route>
+      <Route path="/manager/delivery/zones"><AuthGuard userType="manager"><DeliveryZoneSettings /></AuthGuard></Route>
+
+      {/* Accounting smart */}
+      <Route path="/manager/accounting/smart"><AuthGuard userType="manager"><AccountingSmart /></AuthGuard></Route>
+      <Route path="/manager/accounting/smart-dashboard"><AuthGuard userType="manager"><AccountingSmartDashboard /></AuthGuard></Route>
+
+      {/* Inventory new pages */}
+      <Route path="/manager/inventory/dashboard"><AuthGuard userType="manager"><InventoryDashboard /></AuthGuard></Route>
+      <Route path="/manager/inventory/smart-dashboard"><AuthGuard userType="manager"><InventorySmartDashboard /></AuthGuard></Route>
+      <Route path="/manager/inventory/recipes-management"><AuthGuard userType="manager"><RecipesManagement /></AuthGuard></Route>
+      <Route path="/manager/inventory/stock-movements"><AuthGuard userType="manager"><StockMovements /></AuthGuard></Route>
+      <Route path="/manager/inventory/ingredients-recipes"><AuthGuard userType="manager"><IngredientsRecipesInventory /></AuthGuard></Route>
+      <Route path="/manager/inventory/unified"><AuthGuard userType="manager"><UnifiedInventoryRecipes /></AuthGuard></Route>
+
+      {/* OS (Owner/Admin) pages */}
+      <Route path="/os/accounting"><AuthGuard userType="manager" allowedRoles={["owner", "admin"]}><OsAccountingDashboard /></AuthGuard></Route>
+      <Route path="/os/inventory"><AuthGuard userType="manager" allowedRoles={["owner", "admin"]}><OsInventoryManagement /></AuthGuard></Route>
+      <Route path="/os/recipes"><AuthGuard userType="manager" allowedRoles={["owner", "admin"]}><OsRecipeManagement /></AuthGuard></Route>
+      <Route path="/os/roles"><AuthGuard userType="manager" allowedRoles={["owner", "admin"]}><OsRolesManagement /></AuthGuard></Route>
+      <Route path="/os/stock"><AuthGuard userType="manager" allowedRoles={["owner", "admin"]}><OsStockManagement /></AuthGuard></Route>
+
       <Route component={RouterFallback} />
     </Switch>
   );

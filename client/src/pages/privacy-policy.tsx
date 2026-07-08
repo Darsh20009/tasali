@@ -15,7 +15,7 @@ export default function PrivacyPolicy() {
         <div className="space-y-8">
           <div className="text-center border-b pb-8">
             <h1 className="text-3xl font-bold mb-2">سياسة الخصوصية</h1>
-            <p className="text-muted-foreground text-sm">Privacy Policy — TASALI QURUMSH</p>
+            <p className="text-muted-foreground text-sm">Privacy Policy — تسالي كرومش</p>
             <p className="text-xs text-muted-foreground mt-1">آخر تحديث: مايو 2026</p>
           </div>
 
@@ -24,7 +24,7 @@ export default function PrivacyPolicy() {
             <section>
               <h2 className="text-lg font-semibold mb-2">١. المقدمة</h2>
               <p>
-                مرحباً بك في تطبيق TASALI QURUMSH. نحن نحترم خصوصيتك ونلتزم بحماية بياناتك الشخصية.
+                مرحباً بك في تطبيق تسالي كرومش. نحن نحترم خصوصيتك ونلتزم بحماية بياناتك الشخصية.
                 تصف هذه السياسة كيفية جمع معلوماتك واستخدامها وحمايتها عند استخدام تطبيقنا وموقعنا الإلكتروني.
               </p>
             </section>
@@ -104,9 +104,9 @@ export default function PrivacyPolicy() {
                 لأي استفسار حول سياسة الخصوصية أو بياناتك:
               </p>
               <div className="mt-2 p-3 bg-muted rounded-lg text-muted-foreground">
-                <p>TASALI QURUMSH</p>
+                <p>تسالي كرومش</p>
                 <p>البريد الإلكتروني: <a href="mailto:cafe@qiroxstudio.online" className="text-primary underline">cafe@qiroxstudio.online</a></p>
-                <p>الموقع: <a href="https://www.tasaliqurmash.com.sa" className="text-primary underline">www.tasaliqurmash.com.sa</a></p>
+                <p>الموقع: <a href="https://www.cluny.cafe" className="text-primary underline">www.cluny.cafe</a></p>
               </div>
             </section>
           </div>
@@ -116,7 +116,7 @@ export default function PrivacyPolicy() {
             <h2 className="text-xl font-bold mb-4 text-center">Privacy Policy (English)</h2>
             <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
               <p>
-                <strong className="text-foreground">1. Introduction.</strong> TASALI QURUMSH ("we", "us") respects your privacy.
+                <strong className="text-foreground">1. Introduction.</strong> تسالي كرومش ("we", "us") respects your privacy.
                 This policy explains how we collect, use, and protect your personal information when you use our app or website.
               </p>
               <p>
@@ -145,14 +145,14 @@ export default function PrivacyPolicy() {
                 by contacting us at <a href="mailto:cafe@qiroxstudio.online" className="text-primary underline">cafe@qiroxstudio.online</a>.
               </p>
               <p>
-                <strong className="text-foreground">8. Contact.</strong> TASALI QURUMSH ·{" "}
+                <strong className="text-foreground">8. Contact.</strong> تسالي كرومش ·{" "}
                 <a href="mailto:cafe@qiroxstudio.online" className="text-primary underline">cafe@qiroxstudio.online</a>
               </p>
             </div>
           </div>
 
           <div className="text-center text-xs text-muted-foreground border-t pt-6">
-            © 2026 TASALI QURUMSH — جميع الحقوق محفوظة
+            © 2026 تسالي كرومش — جميع الحقوق محفوظة
           </div>
         </div>
       </div>

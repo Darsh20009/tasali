@@ -60,10 +60,16 @@ const NAV_GROUPS: { label: string; labelEn: string; color: string; items: NavIte
       { label: "الجرد الذكي", labelEn: "Smart Stocktake", icon: ClipboardList, path: "/manager/inventory/stocktake", color: "#059669" },
       { label: "ذكاء المخزون AI", labelEn: "Inventory AI", icon: Sparkles, path: "/manager/inventory/ai", color: "#7c3aed" },
       { label: "نظرة المخزون", labelEn: "Inventory", icon: Warehouse, path: "/manager/inventory", color: "#f59e0b" },
+      { label: "لوحة المخزون", labelEn: "Inventory Dashboard", icon: BarChart3, path: "/manager/inventory/dashboard", color: "#f59e0b" },
+      { label: "لوحة المخزون الذكية", labelEn: "Smart Inv. Dashboard", icon: Sparkles, path: "/manager/inventory/smart-dashboard", color: "#fbbf24" },
       { label: "المواد الخام", labelEn: "Raw Items", icon: Box, path: "/manager/inventory/raw-items", color: "#fbbf24" },
       { label: "الوصفات", labelEn: "Recipes", icon: FlaskConical, path: "/manager/inventory/recipes", color: "#f97316" },
+      { label: "إدارة الوصفات", labelEn: "Recipes Mgmt", icon: ChefHat, path: "/manager/inventory/recipes-management", color: "#fb923c" },
+      { label: "المخزون والوصفات الموحد", labelEn: "Unified Inv & Recipes", icon: ArrowRightLeft, path: "/manager/inventory/unified", color: "#fbbf24" },
       { label: "المشتريات", labelEn: "Purchases", icon: Receipt, path: "/manager/inventory/purchases", color: "#fb923c" },
       { label: "حركات المخزون", labelEn: "Movements", icon: ArrowRightLeft, path: "/manager/inventory/movements", color: "#fcd34d" },
+      { label: "حركات المخزون التفصيلية", labelEn: "Stock Movements", icon: ArrowRightLeft, path: "/manager/inventory/stock-movements", color: "#fcd34d" },
+      { label: "المواد والوصفات والمخزون", labelEn: "Ingredients & Recipes", icon: FlaskConical, path: "/manager/inventory/ingredients-recipes", color: "#f97316" },
       { label: "نقل بين الفروع", labelEn: "Transfers", icon: Truck, path: "/manager/inventory/transfers", color: "#fde68a" },
       { label: "تنبيهات المخزون", labelEn: "Alerts", icon: Bell, path: "/manager/inventory/alerts", color: "#ef4444", badge: "!" },
     ]
@@ -72,6 +78,9 @@ const NAV_GROUPS: { label: string; labelEn: string; color: string; items: NavIte
     label: "المالية", labelEn: "Finance", color: "#8b5cf6",
     items: [
       { label: "المحاسبة", labelEn: "Accounting", icon: Wallet, path: "/manager/accounting", color: "#8b5cf6" },
+      { label: "المحاسبة الذكية", labelEn: "Smart Accounting", icon: Sparkles, path: "/manager/accounting/smart", color: "#a78bfa" },
+      { label: "لوحة المحاسبة الذكية", labelEn: "Smart Acc. Dashboard", icon: BarChart3, path: "/manager/accounting/smart-dashboard", color: "#c4b5fd" },
+      { label: "تتبع المدفوعات", labelEn: "Payment Tracking", icon: Receipt, path: "/manager/payment-tracking", color: "#7c3aed" },
       { label: "ZATCA فاتورة", labelEn: "ZATCA", icon: Shield, path: "/manager/zatca", color: "#a78bfa", roles: ["admin", "owner"] },
       { label: "ERP المحاسبة", labelEn: "ERP Accounting", icon: BookOpen, path: "/erp/accounting", color: "#c4b5fd", roles: ["admin", "owner"] },
     ]
@@ -89,6 +98,7 @@ const NAV_GROUPS: { label: string; labelEn: string; color: string; items: NavIte
     items: [
       { label: "إدارة التوصيل", labelEn: "Delivery", icon: Truck, path: "/manager/delivery", color: "#06b6d4" },
       { label: "السائقون", labelEn: "Drivers", icon: MapPin, path: "/manager/drivers", color: "#22d3ee" },
+      { label: "مناطق التوصيل", labelEn: "Delivery Zones", icon: MapPin, path: "/manager/delivery/zones", color: "#0ea5e9" },
     ]
   },
   {
@@ -107,6 +117,9 @@ const NAV_GROUPS: { label: string; labelEn: string; color: string; items: NavIte
     items: [
       { label: "تحاليلي اليومي", labelEn: "My Daily Analytics", icon: TrendingUp, path: "/manager/tahalyli", color: "#f59e0b", badge: "✨" },
       { label: "التقارير", labelEn: "Reports", icon: FileText, path: "/admin/reports", color: "#14b8a6" },
+      { label: "تقارير المنتجات", labelEn: "Product Reports", icon: FileText, path: "/manager/product-reports", color: "#2dd4bf" },
+      { label: "تحليلات المنتجات", labelEn: "Product Analytics", icon: BarChart3, path: "/manager/product-analytics", color: "#14b8a6" },
+      { label: "الإحصائيات الدقيقة", labelEn: "Detailed Statistics", icon: TrendingUp, path: "/manager/statistics", color: "#10b981" },
       { label: "التقارير الموحدة", labelEn: "Unified Reports", icon: Building2, path: "/manager/unified-reports", color: "#2dd4bf" },
       { label: "تحليلات BI", labelEn: "BI Analytics", icon: Brain, path: "/manager/bi-analytics", color: "#99f6e4" },
       { label: "سجل الأحداث", labelEn: "Audit Logs", icon: ShieldCheck, path: "/manager/audit-logs", color: "#6366f1", roles: ["owner", "admin", "manager"] },
