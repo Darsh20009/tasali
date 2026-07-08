@@ -835,13 +835,16 @@ export async function buildReceiptCanvas(opts: ReceiptBitmapOpts): Promise<HTMLC
   const FS = opts.paperWidth === '58mm' ? 24 : 30;  // base font size (enlarged per request)
 
   // ── Helper: load an image from dataUrl ───────────────────────────────────
+  // crossOrigin='anonymous' is required so Canvas.toDataURL() does not throw
+  // a SecurityError when the image is drawn (canvas taint prevention).
   const loadImg = (src: string): Promise<HTMLImageElement> =>
     new Promise(res => {
       const img = new Image();
+      img.crossOrigin = 'anonymous';
       if (img.complete && img.naturalWidth > 0) { res(img); return; }
       img.onload = () => res(img);
       img.onerror = () => res(img);
-      setTimeout(() => res(img), 1500);
+      setTimeout(() => res(img), 3000);   // increased from 1500 ms for large logos
       img.src = src;
     });
 
