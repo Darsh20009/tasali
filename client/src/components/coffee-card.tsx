@@ -112,7 +112,7 @@ function CoffeeCard({ item, variants = [] }: CoffeeCardProps) {
           <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10"></div>
           <img 
             src={selectedVariant.imageUrl ? (selectedVariant.imageUrl.startsWith('/') ? selectedVariant.imageUrl : `/${selectedVariant.imageUrl}`) : getCoffeeImage(selectedVariant.id)}
-            alt={selectedVariant.nameAr}
+            alt={tc(selectedVariant.nameAr, selectedVariant.nameEn || selectedVariant.nameAr)}
             className="w-full h-40 sm:h-48 md:h-52 object-cover transition-all duration-700 group-hover:scale-110 brightness-95 group-hover:brightness-105"
             loading="lazy"
             onError={(e) => {
@@ -165,7 +165,7 @@ function CoffeeCard({ item, variants = [] }: CoffeeCardProps) {
                 <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                   <Button variant="ghost" className="h-auto p-0 hover:bg-transparent group/title">
                     <h4 className="font-amiri text-base sm:text-lg md:text-xl font-bold text-primary mb-1 golden-gradient flex items-center gap-1">
-                      {selectedVariant.nameAr}
+                      {tc(selectedVariant.nameAr, selectedVariant.nameEn || selectedVariant.nameAr)}
                       <ChevronDown className="w-4 h-4 transition-transform group-hover/title:translate-y-0.5" />
                     </h4>
                   </Button>
@@ -180,7 +180,7 @@ function CoffeeCard({ item, variants = [] }: CoffeeCardProps) {
                       }}
                       className="flex justify-between items-center"
                     >
-                      <span>{v.nameAr}</span>
+                      <span>{tc(v.nameAr, v.nameEn || v.nameAr)}</span>
                       {selectedVariant.id === v.id && <Check className="w-4 h-4 ml-2" />}
                     </DropdownMenuItem>
                   ))}
@@ -188,7 +188,7 @@ function CoffeeCard({ item, variants = [] }: CoffeeCardProps) {
               </DropdownMenu>
             ) : (
               <h4 className="font-amiri text-base sm:text-lg md:text-xl font-bold text-primary mb-1 golden-gradient">
-                {selectedVariant.nameAr}
+                {tc(selectedVariant.nameAr, selectedVariant.nameEn || selectedVariant.nameAr)}
               </h4>
             )}
 

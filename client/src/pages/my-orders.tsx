@@ -131,7 +131,8 @@ function MiniPushBanner({ customerId, t }: { customerId: string; t: any }) {
 export default function MyOrders() {
  const [, setLocation] = useLocation();
  const { customer } = useCustomer();
- const { t } = useTranslation();
+ const { t, i18n } = useTranslation();
+ const isAr = i18n.language === 'ar';
  const { toast } = useToast();
  const [reviewedOrders, setReviewedOrders] = useState<Set<string>>(new Set());
  const [activeReview, setActiveReview] = useState<string | null>(null);
@@ -339,7 +340,7 @@ export default function MyOrders() {
                         {Array.isArray(order.items) ? order.items.map((item: any, i: number) => (
                           <div key={i} className="flex justify-between text-sm bg-background p-2 rounded-lg">
                             <span className="text-accent font-cairo">
-                              {item.nameAr || item.name} × {item.quantity}
+                              {isAr ? (item.nameAr || item.name) : (item.nameEn || item.nameAr || item.name)} × {item.quantity}
                             </span>
                             <span className="text-accent font-bold">
                               {(parseFloat(item.price || "0") * (item.quantity || 1)).toFixed(2)} <SarIcon />

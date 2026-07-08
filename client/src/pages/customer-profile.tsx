@@ -16,7 +16,8 @@ import SarIcon from "@/components/sar-icon";
 
 export default function CustomerProfilePage() {
   const [, setLocation] = useLocation();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const isAr = i18n.language === 'ar';
   const { toast } = useToast();
   const { customer, logout } = useCustomer();
   const [profile, setProfile] = useState<CustomerProfile | null>(null);
@@ -244,7 +245,7 @@ export default function CustomerProfilePage() {
                     <div className="space-y-1.5">
                       {(Array.isArray(order.items) ? order.items : []).map((item: any, idx: number) => (
                         <div key={idx} className="flex justify-between text-sm text-foreground">
-                          <span>{item.nameAr || item.coffeeItem?.nameAr || t("profile.product")} × {item.quantity}</span>
+                          <span>{isAr ? (item.nameAr || item.coffeeItem?.nameAr || t("profile.product")) : (item.nameEn || item.coffeeItem?.nameEn || item.nameAr || item.coffeeItem?.nameAr || t("profile.product"))} × {item.quantity}</span>
                           <span className="text-muted-foreground">{(Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2)} <SarIcon /></span>
                         </div>
                       ))}
