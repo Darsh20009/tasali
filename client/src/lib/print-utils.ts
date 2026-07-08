@@ -879,7 +879,7 @@ async function _buildFastCustomerEscPos(
     splitPayment: data.splitPayment,
     paymentMethod: payLabel,
     ...(data.cashReceived ? { cashReceived: data.cashReceived } : {}),
-    logoDataUrl: '/logo.png',
+    logoDataUrl: '/logo-print.png',
     trackingQrDataUrl: trackingQr || undefined,
     zatcaQrDataUrl: zatcaQr || undefined,
     paperWidth,
@@ -1800,7 +1800,7 @@ export async function printAllReceipts(data: TaxInvoiceData & { deliveryType?: s
           paymentMethod: data.paymentMethod,
           paperWidth: printerSettings.paperWidth,
           feedLines: printerSettings.feedLines,
-          logoDataUrl: '/logo.png',
+          logoDataUrl: '/logo-print.png',
         });
       } else {
         escData = buildEscPosReceipt({
