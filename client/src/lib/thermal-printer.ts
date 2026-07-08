@@ -127,7 +127,14 @@ export function loadPrinterSettings(): PrinterSettings {
       if (saved.mode === 'browser' && !saved._modeExplicitlySet) {
         saved.mode = 'network';
       }
-      return { ...DEFAULT_SETTINGS, ...saved };
+      const settings = { ...DEFAULT_SETTINGS, ...saved };
+      // BLE thermal printers (TAPOS, Chinese) cannot render Arabic via ESC/POS charset
+      // commands — always force bitmap/image mode so Arabic is rendered by the browser
+      // canvas engine and sent as a raster image.
+      if (settings.mode === 'bluetooth') {
+        settings.arabicEncoding = 'image';
+      }
+      return settings;
     }
   } catch {}
   return { ...DEFAULT_SETTINGS };
@@ -2443,7 +2450,18 @@ export async function bluetoothPrint(escData: Uint8Array): Promise<PrintResult> 
   try {
     const char = await _ensureBtConnected();
     const useWriteWithoutResponse = char.properties.writeWithoutResponse && !char.properties.write;
-    const CHUNK = 512;
+
+    // BLE MTU: use writeWithoutResponse for speed when available.
+    // For TAPOS/Chinese BLE printers the safe chunk size is 100 bytes with a 30 ms
+    // inter-chunk delay — large enough to be fast, small enough to avoid buffer overruns.
+    // writeValue (with acknowledgment) can use larger chunks because the ACK acts as
+    // natural throttle; writeWithoutResponse needs explicit pacing.
+    const CHUNK = useWriteWithoutResponse ? 100 : 200;
+    const DELAY_MS = useWriteWithoutResponse ? 30 : 0;
+
+    // Small initial pause to let the printer wake its BLE stack
+    await new Promise(r => setTimeout(r, 50));
+
     for (let i = 0; i < escData.length; i += CHUNK) {
       const chunk = escData.slice(i, i + CHUNK);
       if (useWriteWithoutResponse) {
@@ -2451,8 +2469,7 @@ export async function bluetoothPrint(escData: Uint8Array): Promise<PrintResult> 
       } else {
         await char.writeValue(chunk);
       }
-      // Small delay between chunks to avoid buffer overflow
-      if (i + CHUNK < escData.length) await new Promise(r => setTimeout(r, 20));
+      if (DELAY_MS > 0 && i + CHUNK < escData.length) await new Promise(r => setTimeout(r, DELAY_MS));
     }
     return { success: true, mode: 'bluetooth' };
   } catch (err: any) {
