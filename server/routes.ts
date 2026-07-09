@@ -19809,7 +19809,7 @@ ${topItems.map((item, i) => `  ${i + 1}. ${item[0]}: ${item[1].count} طلب (${
 ${businessContext}
 
 قواعد الإجابة:
-- أجب دائماً بالعربية ما لم يسألك المستخدم بالإنجليزية
+- أجب بنفس لغة المستخدم: إذا كتب عربي أجب عربي، إذا كتب إنجليزي أجب إنجليزي
 - كن موجزاً ومفيداً وعملياً
 - استخدم الأرقام والبيانات المتاحة في إجاباتك
 - قدم توصيات قابلة للتنفيذ
@@ -19821,24 +19821,28 @@ ${businessContext}
         { role: "user", content: message },
       ];
 
-      const aiKey = process.env.OPENAI_API_KEY;
-      if (!aiKey) return res.status(200).json({ response: "مساعد الذكاء الاصطناعي غير مفعّل — يرجى ضبط مفتاح OPENAI_API_KEY.", configured: false });
+      const aiKey = process.env.MOONSHOOT_API_KEY || process.env.KIMI_API_KEY || process.env.OPENAI_API_KEY;
+      if (!aiKey) return res.status(200).json({ response: "مساعد الذكاء الاصطناعي غير مفعّل — يرجى ضبط مفتاح MOONSHOOT_API_KEY.", configured: false });
 
-      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      const useMoonshot = !!(process.env.MOONSHOOT_API_KEY || process.env.KIMI_API_KEY);
+      const aiEndpoint = useMoonshot ? "https://api.moonshot.ai/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
+      const aiModel = useMoonshot ? "moonshot-v1-32k" : "gpt-4o-mini";
+
+      const response = await fetch(aiEndpoint, {
         method: "POST",
         headers: { "Authorization": `Bearer ${aiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "gpt-4o-mini", messages, max_tokens: 1000, temperature: 0.7 }),
+        body: JSON.stringify({ model: aiModel, messages, max_tokens: 1000, temperature: 0.7 }),
       });
 
       if (!response.ok) {
         const errText = await response.text();
-        console.error("OpenAI chat error:", errText);
-        return res.status(500).json({ error: "فشل الاتصال بـ OpenAI" });
+        console.error("AI chat error:", errText);
+        return res.status(500).json({ error: "فشل الاتصال بخدمة الذكاء الاصطناعي" });
       }
 
       const data = await response.json() as any;
       const reply = data.choices?.[0]?.message?.content || "";
-      res.json({ reply, model: "openai/gpt-4o-mini" });
+      res.json({ reply, model: useMoonshot ? `moonshot/${aiModel}` : `openai/${aiModel}` });
     } catch (error: any) {
       console.error("AI chat error:", error);
       res.status(500).json({ error: error.message || "خطأ في الذكاء الاصطناعي" });
@@ -22549,10 +22553,10 @@ ${existingIngredients ? `المكونات الحالية: ${existingIngredients}
 3. توقع النفاد: أي المواد ستنفد خلال أسبوع؟
 4. توصيات الشراء: ماذا يجب شراؤه الآن؟`) + `\n\n📦 بيانات المخزون:\n${stockSummary}\n\n🔍 فروقات آخر جرد:\n${stocktakeDiffs || 'لا يوجد جرد حديث'}`;
 
-      const apiKey = process.env.KIMI_API_KEY || process.env.OPENAI_API_KEY;
+      const apiKey = process.env.MOONSHOOT_API_KEY || process.env.KIMI_API_KEY || process.env.OPENAI_API_KEY;
       if (!apiKey) return res.status(500).json({ error: "AI key not configured" });
-      const aiEndpoint = process.env.KIMI_API_KEY ? "https://api.moonshot.ai/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
-      const aiModel = process.env.KIMI_API_KEY ? "moonshot-v1-32k" : "gpt-4o-mini";
+      const aiEndpoint = ( process.env.MOONSHOOT_API_KEY || process.env.KIMI_API_KEY) ? "https://api.moonshot.ai/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
+      const aiModel = ( process.env.MOONSHOOT_API_KEY || process.env.KIMI_API_KEY) ? "moonshot-v1-32k" : "gpt-4o-mini";
 
       const history = req.body.history || [];
       const response = await fetch(aiEndpoint, {
@@ -22629,10 +22633,10 @@ ${existingIngredients ? `المكونات الحالية: ${existingIngredients}
       const question = req.body.question || "حلل وضع الأعمال الحالي";
       const fullMessage = `${contextData}\n\n❓ السؤال: ${question}`;
 
-      const apiKey = process.env.KIMI_API_KEY || process.env.OPENAI_API_KEY;
+      const apiKey = process.env.MOONSHOOT_API_KEY || process.env.KIMI_API_KEY || process.env.OPENAI_API_KEY;
       if (!apiKey) return res.status(500).json({ error: "AI key not configured" });
-      const aiEndpoint = process.env.KIMI_API_KEY ? "https://api.moonshot.ai/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
-      const aiModel = process.env.KIMI_API_KEY ? "moonshot-v1-32k" : "gpt-4o-mini";
+      const aiEndpoint = ( process.env.MOONSHOOT_API_KEY || process.env.KIMI_API_KEY) ? "https://api.moonshot.ai/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
+      const aiModel = ( process.env.MOONSHOOT_API_KEY || process.env.KIMI_API_KEY) ? "moonshot-v1-32k" : "gpt-4o-mini";
 
       const response = await fetch(aiEndpoint, {
         method: "POST",
@@ -22855,10 +22859,10 @@ ${existingIngredients ? `المكونات الحالية: ${existingIngredients}
   // POST /api/ai/brand-chat — employee brand AI assistant (Kimi AI)
   app.post("/api/ai/brand-chat", requireAuth, async (req: AuthRequest, res) => {
     try {
-      const kimiKey = process.env.KIMI_API_KEY || process.env.OPENAI_API_KEY;
+      const kimiKey = process.env.MOONSHOOT_API_KEY || process.env.KIMI_API_KEY || process.env.OPENAI_API_KEY;
       if (!kimiKey) return res.status(503).json({ error: "AI not configured" });
-      const kimiEndpoint = process.env.KIMI_API_KEY ? "https://api.moonshot.ai/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
-      const kimiModel = process.env.KIMI_API_KEY ? "moonshot-v1-8k" : "gpt-4o-mini";
+      const kimiEndpoint = ( process.env.MOONSHOOT_API_KEY || process.env.KIMI_API_KEY) ? "https://api.moonshot.ai/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
+      const kimiModel = ( process.env.MOONSHOOT_API_KEY || process.env.KIMI_API_KEY) ? "moonshot-v1-8k" : "gpt-4o-mini";
 
       const { message, history = [] } = req.body;
       if (!message) return res.status(400).json({ error: "message required" });
@@ -22919,10 +22923,10 @@ ${items.map((i: any) => `• ${i.nameAr}${i.nameEn ? ` (${i.nameEn})` : ""}: ${i
   // POST /api/ai/accounting-audit — manager accounting AI (Kimi AI)
   app.post("/api/ai/accounting-audit", requireAuth, requireManager, async (req: AuthRequest, res) => {
     try {
-      const kimiKey = process.env.KIMI_API_KEY || process.env.OPENAI_API_KEY;
+      const kimiKey = process.env.MOONSHOOT_API_KEY || process.env.KIMI_API_KEY || process.env.OPENAI_API_KEY;
       if (!kimiKey) return res.status(503).json({ error: "AI not configured" });
-      const kimiEndpoint = process.env.KIMI_API_KEY ? "https://api.moonshot.ai/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
-      const kimiModel = process.env.KIMI_API_KEY ? "moonshot-v1-32k" : "gpt-4o-mini";
+      const kimiEndpoint = ( process.env.MOONSHOOT_API_KEY || process.env.KIMI_API_KEY) ? "https://api.moonshot.ai/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
+      const kimiModel = ( process.env.MOONSHOOT_API_KEY || process.env.KIMI_API_KEY) ? "moonshot-v1-32k" : "gpt-4o-mini";
 
       const { question, period = "month" } = req.body;
       const tenantId = (req as any).tenantId || "demo-tenant";
@@ -23033,10 +23037,10 @@ ${revenueLines}
       const netSales = totalSales - vatAmount;
       const dateStr = new Date().toLocaleDateString("ar-SA", { timeZone: "Asia/Riyadh" });
 
-      const apiKey = process.env.KIMI_API_KEY || process.env.OPENAI_API_KEY;
+      const apiKey = process.env.MOONSHOOT_API_KEY || process.env.KIMI_API_KEY || process.env.OPENAI_API_KEY;
       if (!apiKey) return res.status(503).json({ error: "AI not configured" });
-      const aiEndpoint = process.env.KIMI_API_KEY ? "https://api.moonshot.ai/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
-      const aiModel = process.env.KIMI_API_KEY ? "moonshot-v1-32k" : "gpt-4o-mini";
+      const aiEndpoint = ( process.env.MOONSHOOT_API_KEY || process.env.KIMI_API_KEY) ? "https://api.moonshot.ai/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
+      const aiModel = ( process.env.MOONSHOOT_API_KEY || process.env.KIMI_API_KEY) ? "moonshot-v1-32k" : "gpt-4o-mini";
 
       const prompt = `أنت محاسب قانوني متخصص في مطاعم وكافيهات السعودية. 
 اكتب القيود المحاسبية اليومية بشكل كامل بناءً على البيانات التالية ليوم ${dateStr}:
@@ -23118,10 +23122,10 @@ ${revenueLines}
       const presentCount = (attendance as any[]).filter((a: any) => a.checkIn).length;
       const dateStr = new Date().toLocaleDateString("ar-SA", { timeZone: "Asia/Riyadh" });
 
-      const apiKey = process.env.KIMI_API_KEY || process.env.OPENAI_API_KEY;
+      const apiKey = process.env.MOONSHOOT_API_KEY || process.env.KIMI_API_KEY || process.env.OPENAI_API_KEY;
       if (!apiKey) return res.status(503).json({ error: "AI not configured" });
-      const aiEndpoint = process.env.KIMI_API_KEY ? "https://api.moonshot.ai/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
-      const aiModel = process.env.KIMI_API_KEY ? "moonshot-v1-32k" : "gpt-4o-mini";
+      const aiEndpoint = ( process.env.MOONSHOOT_API_KEY || process.env.KIMI_API_KEY) ? "https://api.moonshot.ai/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
+      const aiModel = ( process.env.MOONSHOOT_API_KEY || process.env.KIMI_API_KEY) ? "moonshot-v1-32k" : "gpt-4o-mini";
 
       const prompt = `أنت مستشار أعمال ذكي. اكتب تقرير يومي شامل ومختصر لمدير الكافيه ليوم ${dateStr}.
 
