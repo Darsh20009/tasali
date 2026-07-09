@@ -3,7 +3,7 @@ interface SarIconProps {
   size?: number;
 }
 
-export default function SarIcon({ className = "", size = 14 }: SarIconProps) {
+export function SarIcon({ className = "", size = 14 }: SarIconProps) {
   return (
     <span
       aria-label="ريال سعودي"
@@ -14,3 +14,5 @@ export default function SarIcon({ className = "", size = 14 }: SarIconProps) {
     </span>
   );
 }
+
+export default SarIcon;

@@ -1,38 +1,45 @@
-# Tasali Qurumsh — Café/POS Management System
+# Tasali Qurumsh — Café Management System
 
 ## Overview
-Full-stack café management and point-of-sale system. React (Vite) frontend + Express backend + MongoDB via Mongoose. Supports multi-branch operations, menu management, inventory, recipe costing, accounting, loyalty, and more.
+Full-stack café/restaurant management platform (QIROX CAFE Engine). Built with React + Express + MongoDB + TypeScript.
 
-## Stack
-- **Frontend**: React 18, Vite, TailwindCSS, shadcn/ui, TanStack Query, Wouter
-- **Backend**: Express, Mongoose (MongoDB), TypeScript (`tsx` in dev)
-- **Session store**: connect-mongo (MongoDB-backed sessions)
-- **Real-time**: WebSocket (`/ws/orders`)
+- **Frontend**: React 18, Vite, Tailwind CSS, Radix UI, i18next (Arabic/English)
+- **Backend**: Express.js, Mongoose/MongoDB, Passport.js auth, WebSocket
+- **Language**: TypeScript (strict mode)
 
-## How to Run
+## How to run
 ```
-npm run dev          # development (port 5000)
-npm run build        # production build
-npm start            # serve production build
+npm run dev
 ```
+Starts the Express server (port 5000) which also serves the Vite dev frontend.
 
-The workflow "Start application" runs `npm run dev` and exposes port 5000.
-
-## Required Secrets
+## Required secrets
 | Secret | Description |
 |--------|-------------|
 | `MONGODB_URI` | MongoDB Atlas connection string |
 | `SESSION_SECRET` | Express session secret |
 
-## Optional Secrets / Env Vars
-| Key | Description |
-|-----|-------------|
-| `OWNER_INITIAL_PASSWORD` | Seed the initial owner account password |
-| `QIROX_ADMIN_PASSWORD` | Qirox super-admin password (default: `qirox`) |
-| `PAYMOB_SECRET_KEY` / `PAYMOB_PUBLIC_KEY` / `PAYMOB_HMAC_SECRET` | PayMob payment gateway |
+## Optional secrets (features disabled if absent)
+| Secret | Description |
+|--------|-------------|
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Web Push notifications |
+| `PAYMOB_*` | PayMob payment gateway |
+| `GOOGLE_*` | Google Sheets / OAuth |
 
-## Project Status
-~80% complete. Core business logic done (recipe engine, inventory, accounting, 14+ API routes). Phase 5 (Dashboard UI + tests) is pending.
+## Project status
+- **Phases 0–4** complete: architecture, recipe engine, inventory engine, accounting engine, 14 REST API routes
+- **Phase 5** pending: Dashboard UI pages (recipe management, inventory dashboard, accounting dashboard, reports, stock movements log)
+- **Phase 6** pending: CSV/PDF exports
+- **Phase 7** pending: Tests
 
-## User Preferences
-- Keep existing project structure and stack.
+## Key directories
+```
+server/          — Express backend, engines, routes
+client/src/      — React frontend pages and components
+shared/          — Shared TypeScript types and Zod schemas
+public/          — Static assets
+Documentation/   — Architecture, API specs, domain models
+```
+
+## User preferences
+- Keep existing project structure and stack
