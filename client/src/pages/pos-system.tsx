@@ -3740,7 +3740,7 @@ export default function PosSystem() {
                           <div className="mb-3">
                             {(Array.isArray(order.items) ? order.items : []).map((item: any, idx: number) => (
                               <div key={idx} className="flex justify-between text-xs py-0.5">
-                                <span>{item.name || item.nameAr || item.coffeeItem?.nameAr} x{item.quantity}</span>
+                                <span>{i18n.language === 'ar' ? (item.nameAr || item.coffeeItem?.nameAr || item.name) : (item.nameEn || item.coffeeItem?.nameEn || item.nameAr || item.coffeeItem?.nameAr || item.name)} x{item.quantity}</span>
                                 <span className="text-muted-foreground">{Number(item.price || item.unitPrice || 0).toFixed(2)}</span>
                               </div>
                             ))}
@@ -3884,9 +3884,9 @@ export default function PosSystem() {
                     >
                       {/* Name */}
                       <div className="flex-1 min-w-0">
-                        <p className="font-bold text-sm leading-snug">{item.coffeeItem.nameAr}</p>
-                        {item.coffeeItem.nameEn && (
-                          <p className="text-xs text-muted-foreground">{item.coffeeItem.nameEn}</p>
+                        <p className="font-bold text-sm leading-snug">{getItemDisplayName(item.coffeeItem)}</p>
+                        {item.coffeeItem.nameEn && item.coffeeItem.nameAr && item.coffeeItem.nameEn !== item.coffeeItem.nameAr && (
+                          <p className="text-xs text-muted-foreground">{i18n.language === 'ar' ? item.coffeeItem.nameEn : item.coffeeItem.nameAr}</p>
                         )}
                         {item.selectedSize && (
                           <p className="text-[10px] text-blue-600 mt-0.5">الحجم: {item.selectedSize}</p>
@@ -3895,7 +3895,7 @@ export default function PosSystem() {
                           <div className="flex flex-wrap gap-1 mt-1">
                             {itemAddons.map((a: any, i: number) => (
                               <span key={i} className="text-[10px] bg-muted px-1.5 py-0.5 rounded-full text-muted-foreground">
-                                +{a.nameAr || a.name}
+                                +{i18n.language === 'ar' ? (a.nameAr || a.name) : (a.nameEn || a.nameAr || a.name)}
                               </span>
                             ))}
                           </div>
@@ -4098,7 +4098,7 @@ export default function PosSystem() {
                           {lastOrder.items?.slice(0, 5).map((item: any, i: number) => (
                             <div key={i} className="flex justify-between text-sm">
                               <span className="text-muted-foreground">{item.quantity}×</span>
-                              <span className="flex-1 text-right mr-2">{item.coffeeItem?.nameAr || item.name}</span>
+                              <span className="flex-1 text-right mr-2">{i18n.language === 'ar' ? (item.coffeeItem?.nameAr || item.name) : (item.coffeeItem?.nameEn || item.coffeeItem?.nameAr || item.name)}</span>
                             </div>
                           ))}
                           {(lastOrder.items?.length ?? 0) > 5 && (
@@ -4527,7 +4527,7 @@ export default function PosSystem() {
                           <div className="border-t pt-2">
                             {orderItems.slice(0, 5).map((item: any, idx: number) => (
                               <div key={idx} className="flex justify-between text-xs py-0.5">
-                                <span>{item.name || item.nameAr || item.coffeeItem?.nameAr} x{item.quantity || 1}</span>
+                                <span>{i18n.language === 'ar' ? (item.nameAr || item.coffeeItem?.nameAr || item.name) : (item.nameEn || item.coffeeItem?.nameEn || item.nameAr || item.coffeeItem?.nameAr || item.name)} x{item.quantity || 1}</span>
                                 <span className="text-muted-foreground">{Number(item.price || item.unitPrice || 0).toFixed(2)}</span>
                               </div>
                             ))}
@@ -4652,7 +4652,7 @@ export default function PosSystem() {
                       </div>
                       <div className="text-xs text-gray-500">
                         {(order.items || []).map((item: any, i: number) => (
-                          <span key={i}>{item.coffeeItem?.nameAr || item.nameAr} ×{item.quantity}{i < order.items.length - 1 ? '، ' : ''}</span>
+                          <span key={i}>{i18n.language === 'ar' ? (item.coffeeItem?.nameAr || item.nameAr) : (item.coffeeItem?.nameEn || item.coffeeItem?.nameAr || item.nameEn || item.nameAr)} ×{item.quantity}{i < order.items.length - 1 ? '، ' : ''}</span>
                         ))}
                       </div>
                       <div className="flex items-center justify-between">
@@ -5088,7 +5088,7 @@ function CurbsideOrdersList({ employeeName }: { employeeName: string }) {
           </div>
           <div className="text-xs text-gray-500 leading-relaxed">
             {(order.items || []).map((item: any, i: number) => (
-              <span key={i}>{item.coffeeItem?.nameAr || item.nameAr || ''} ×{item.quantity || 1}{i < (order.items?.length || 0) - 1 ? '، ' : ''}</span>
+              <span key={i}>{i18n.language === 'ar' ? (item.coffeeItem?.nameAr || item.nameAr || '') : (item.coffeeItem?.nameEn || item.coffeeItem?.nameAr || item.nameEn || item.nameAr || '')} ×{item.quantity || 1}{i < (order.items?.length || 0) - 1 ? '، ' : ''}</span>
             ))}
           </div>
           <div className="flex items-center justify-between">
