@@ -2021,45 +2021,69 @@ export default function PosSystem() {
               </div>
             </div>
             
-            <div className="flex items-center gap-2 sm:hidden">
-              <Button 
-                variant="outline" 
+            <div className="flex items-center gap-1.5 sm:hidden">
+              <Button
+                variant="outline"
                 size="sm"
                 onClick={() => setShowOrdersPanel(true)}
-                className="relative"
+                className="relative h-8 w-8 p-0"
                 data-testid="button-mobile-orders"
               >
                 <ClipboardList className="w-4 h-4" />
                 {newOrdersCount > 0 && (
-                  <Badge className="absolute -top-2 -right-2 px-1.5 min-w-[18px] h-[18px] bg-red-500 animate-pulse">
+                  <Badge className="absolute -top-2 -right-2 px-1 min-w-[16px] h-[16px] text-[9px] bg-red-500 animate-pulse">
                     {newOrdersCount}
                   </Badge>
                 )}
               </Button>
-              <Button 
-                variant="ghost" 
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowTablesDialog(true)}
+                className="relative h-8 w-8 p-0"
+                data-testid="button-mobile-tables"
+              >
+                <Grid3X3 className="w-4 h-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowOpenBillsDialog(true)}
+                className="relative h-8 w-8 p-0"
+                data-testid="button-mobile-open-bills"
+              >
+                <Receipt className="w-4 h-4" />
+                {openTableOrders.length > 0 && (
+                  <Badge className="absolute -top-2 -right-2 px-1 min-w-[16px] h-[16px] text-[9px] bg-primary text-primary-foreground">
+                    {openTableOrders.length}
+                  </Badge>
+                )}
+              </Button>
+              <Button
+                variant="ghost"
                 size="sm"
                 onClick={() => setShowPrinterSettings(true)}
-                className="relative"
+                className="relative h-8 w-8 p-0"
                 data-testid="button-mobile-printer-settings"
-                title={tc("إعدادات الطابعة", "Printer Settings")}
               >
                 <Printer className="w-4 h-4" />
                 <span className={`absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full ${printerMode === 'network' ? 'bg-blue-500' : printerMode === 'bluetooth' ? 'bg-purple-500' : printerMode === 'webusb' ? 'bg-green-500' : 'bg-gray-400'}`} />
               </Button>
-              <Button 
-                variant="ghost" 
+              <Button
+                variant="ghost"
                 size="sm"
                 onClick={() => setShowPOSSettings(true)}
+                className="h-8 w-8 p-0"
                 data-testid="button-mobile-settings"
               >
                 <Settings className="w-4 h-4" />
               </Button>
               {splitViewMode && (
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   size="sm"
                   onClick={() => setSplitViewMode(false)}
+                  className="h-8 w-8 p-0"
                   data-testid="button-mobile-back"
                 >
                   <ArrowRight className="w-4 h-4" />
