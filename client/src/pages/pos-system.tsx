@@ -5063,6 +5063,7 @@ export default function PosSystem() {
 
 // ─── Curbside Orders List (sub-component for Car Orders Panel) ────────────────
 function CurbsideOrdersList({ employeeName }: { employeeName: string }) {
+  const { i18n } = useTranslation();
   const { data: curbsideOrders, isLoading } = useQuery<any[]>({
     queryKey: ["/api/orders/curbside"],
     refetchInterval: 30000,

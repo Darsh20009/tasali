@@ -57,6 +57,8 @@ interface AddonFormData {
   price: number;
   isAvailable: number;
   isSingleSelect: boolean;
+  selectionType?: "single" | "multiple";
+  maxQuantity: number;
   orderIndex: number;
   menuCategory: string;
 }
@@ -69,6 +71,8 @@ const emptyForm = (): AddonFormData => ({
   price: 0,
   isAvailable: 1,
   isSingleSelect: false,
+  selectionType: "multiple",
+  maxQuantity: 1,
   orderIndex: 0,
   menuCategory: "",
 });
@@ -128,7 +132,7 @@ export default function AdminProductAddons() {
   const toggleSingleSelect = (addon: IProductAddon) => {
     updateMutation.mutate({
       id: (addon as any).id,
-      data: { isSingleSelect: !(addon as any).isSingleSelect } as any,
+      data: { selectionType: addon.selectionType === "single" ? "multiple" : "single" } as any,
     });
   };
 
@@ -152,7 +156,9 @@ export default function AdminProductAddons() {
       category: (addon as any).category || "other",
       price: addon.price,
       isAvailable: addon.isAvailable,
-      isSingleSelect: (addon as any).isSingleSelect || false,
+       isSingleSelect: addon.selectionType === "single" || (addon as any).isSingleSelect === true,
+       selectionType: addon.selectionType || ((addon as any).isSingleSelect ? "single" : "multiple"),
+       maxQuantity: addon.maxQuantity || 1,
       orderIndex: addon.orderIndex || 0,
       menuCategory: (addon as any).menuCategory || "",
     });
@@ -185,8 +191,8 @@ export default function AdminProductAddons() {
   });
 
   return (
-    <div className="min-h-screen bg-[#0d0a08] p-6 text-white" dir="rtl">
-      <div className="max-w-5xl mx-auto space-y-6">
+    <div className="min-h-screen bg-[#0d0a08] p-3 sm:p-6 text-white" dir="rtl">
+      <div className="max-w-5xl mx-auto space-y-4 sm:space-y-6">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => window.history.back()} data-testid="button-back">
             <ArrowRight className="w-5 h-5" />
@@ -242,7 +248,7 @@ export default function AdminProductAddons() {
             {Object.entries(grouped).map(([cat, items]) => {
               const catInfo = CATEGORIES.find(c => c.value === cat);
               const catColor = CATEGORY_COLORS[cat] || CATEGORY_COLORS.other;
-              const anySingleSelect = items.some((a: any) => a.isSingleSelect);
+              const anySingleSelect = items.some((a: any) => a.selectionType === "single" || a.isSingleSelect === true);
               const isDefaultSingleSelect = SINGLE_SELECT_BY_DEFAULT.includes(cat);
               return (
                 <div key={cat} className="space-y-2">
@@ -263,7 +269,7 @@ export default function AdminProductAddons() {
                     {items.map((addon: any, idx) => (
                       <div
                         key={addon.id}
-                        className={`flex items-center gap-3 px-4 py-3 ${idx > 0 ? "border-t border-white/5" : ""} ${addon.isAvailable === 0 ? "opacity-50" : ""}`}
+                        className={`flex flex-wrap sm:flex-nowrap items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 ${idx > 0 ? "border-t border-white/5" : ""} ${addon.isAvailable === 0 ? "opacity-50" : ""}`}
                         data-testid={`addon-row-${addon.id}`}
                       >
                         <div className="flex-1 min-w-0">
@@ -279,7 +285,7 @@ export default function AdminProductAddons() {
                         <div className="flex items-center gap-1 shrink-0">
                           <span className="text-xs text-gray-400 ml-1">اختر واحد</span>
                           <Switch
-                            checked={addon.isSingleSelect === true || SINGLE_SELECT_BY_DEFAULT.includes(addon.category)}
+                           checked={addon.selectionType === "single" || addon.isSingleSelect === true || SINGLE_SELECT_BY_DEFAULT.includes(addon.category)}
                             disabled={SINGLE_SELECT_BY_DEFAULT.includes(addon.category) || updateMutation.isPending}
                             onCheckedChange={() => !SINGLE_SELECT_BY_DEFAULT.includes(addon.category) && toggleSingleSelect(addon)}
                             data-testid={`switch-single-select-${addon.id}`}
@@ -331,7 +337,7 @@ export default function AdminProductAddons() {
           </DialogHeader>
           {editingAddon && (
             <div className="space-y-4 py-2">
-              <div className="space-y-1.5">
+                    <div className="space-y-1.5">
                 <Label>الاسم بالعربي *</Label>
                 <Input
                   value={editingAddon.nameAr}
@@ -401,11 +407,23 @@ export default function AdminProductAddons() {
                   </p>
                 </div>
                 <Switch
-                  checked={editingAddon.isSingleSelect || SINGLE_SELECT_BY_DEFAULT.includes(editingAddon.category)}
+                  checked={editingAddon.selectionType === "single" || editingAddon.isSingleSelect || SINGLE_SELECT_BY_DEFAULT.includes(editingAddon.category)}
                   disabled={SINGLE_SELECT_BY_DEFAULT.includes(editingAddon.category)}
-                  onCheckedChange={val => setEditingAddon({ ...editingAddon, isSingleSelect: val })}
+                  onCheckedChange={val => setEditingAddon({ ...editingAddon, isSingleSelect: val, selectionType: val ? "single" : "multiple" })}
                   data-testid="switch-form-single-select"
                 />
+              </div>
+              <div className="space-y-1.5">
+                <Label>الحد الأقصى للكمية</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={editingAddon.maxQuantity}
+                  onChange={e => setEditingAddon({ ...editingAddon, maxQuantity: Math.max(1, parseInt(e.target.value) || 1) })}
+                  className="bg-[#0d0a08] border-primary/20"
+                  data-testid="input-addon-max-quantity"
+                />
+                <p className="text-xs text-gray-400">مثال: 3 للسماح بثلاثة شوتات من نفس الإضافة.</p>
               </div>
               <div className="flex items-center justify-between rounded-lg border border-white/10 px-4 py-3">
                 <p className="font-medium text-sm">متاح للعملاء</p>

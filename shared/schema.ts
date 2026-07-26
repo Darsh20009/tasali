@@ -204,6 +204,7 @@ export interface IProductAddon extends Document {
   saveCarInfo?: number;
   menuCategory?: string; // Optional: limits this addon to a specific menu category (empty = all categories)
   selectionType?: 'single' | 'multiple'; // 'single' = radio (only one per group), 'multiple' = checkbox (default)
+  maxQuantity?: number;
   createdAt: Date;
 }
 
@@ -228,6 +229,7 @@ const ProductAddonSchema = new Schema<IProductAddon>({
   linkedRawItemId: { type: String },
   menuCategory: { type: String, default: '' }, // Optional: limits addon to a specific menu category
   selectionType: { type: String, enum: ['single', 'multiple'], default: 'multiple' },
+  maxQuantity: { type: Number, default: 1, min: 1 },
   createdAt: { type: Date, default: Date.now },
 }, { timestamps: false });
 
@@ -3771,6 +3773,8 @@ export const insertProductAddonSchema = z.object({
   inventoryRawItemId: z.string().optional(),
   linkedRawItemId: z.string().optional(),
   menuCategory: z.string().optional(),
+  selectionType: z.enum(['single', 'multiple']).optional(),
+  maxQuantity: z.number().int().min(1).optional(),
 });
 
 export type ProductAddon = IProductAddon;

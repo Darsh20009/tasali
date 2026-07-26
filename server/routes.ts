@@ -39,6 +39,8 @@ import {
   CustomBannerModel,
   PromoOfferModel,
   MenuCategoryModel,
+  RevenueModel,
+  AttendanceModel,
   AccountModel,
   JournalEntryModel,
   ExpenseErpModel,
@@ -16627,6 +16629,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ==========================================
   
   // Get all product addons
+  app.get("/api/product-addons-all", requireAuth, requireManager, async (req: AuthRequest, res) => {
+    try {
+      const { ProductAddonModel } = await import("@shared/schema");
+      const addons = await ProductAddonModel.find({}).sort({ orderIndex: 1, category: 1, nameAr: 1 }).lean();
+      res.json(addons.map((addon: any) => ({
+        ...addon,
+        id: addon.id || addon._id?.toString(),
+        selectionType: addon.selectionType || (addon.isSingleSelect ? "single" : "multiple"),
+      })));
+    } catch (error) {
+      console.error("[product-addons-all]", error);
+      res.status(500).json({ error: "فشل في جلب جميع الإضافات" });
+    }
+  });
+
   app.get("/api/product-addons", async (req, res) => {
     try {
       const tenantId = getTenantIdFromRequest(req) || "demo-tenant";
