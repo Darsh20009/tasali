@@ -16,7 +16,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import {
   Package, ArrowRight, CheckCircle, XCircle, Plus, Edit2, Trash2, Sparkles, X,
   FlaskConical, AlertTriangle, ChevronUp, ChevronDown, ListOrdered, Search,
-  UtensilsCrossed, Coffee, ShoppingBag, Clock, Eye, EyeOff
+  UtensilsCrossed, Coffee, ShoppingBag, Clock, Eye, EyeOff, Copy
 } from "lucide-react";
 import { ImageLibraryModal } from "@/components/ImageLibraryModal";
 import { AIMenuAssistant } from "@/components/AIMenuAssistant";
@@ -76,13 +76,41 @@ function AddonsEditor({
   onOpenImageLibrary,
   context,
   setEditingAddonImageIdx,
+  coffeeItems = [],
 }: {
   addons: Array<{nameAr: string; nameEn?: string; price: number; imageUrl?: string; category?: string; section?: string; selectionType?: 'single' | 'multiple'}>;
   setAddons: React.Dispatch<React.SetStateAction<typeof addons>>;
   onOpenImageLibrary: (ctx: string) => void;
   context: 'add' | 'edit';
   setEditingAddonImageIdx: (idx: number) => void;
+  coffeeItems?: any[];
 }) {
+  const [showImportPicker, setShowImportPicker] = useState(false);
+  const [importSearch, setImportSearch] = useState('');
+
+  // Products that actually have addons
+  const productsWithAddons = coffeeItems.filter(
+    (item: any) => Array.isArray(item.addons) && item.addons.length > 0
+  );
+  const filteredImportItems = productsWithAddons.filter((item: any) =>
+    !importSearch || item.nameAr?.includes(importSearch) || item.nameEn?.toLowerCase().includes(importSearch.toLowerCase())
+  );
+
+  const importAddonsFrom = (item: any) => {
+    const incoming = (item.addons || []).map((a: any) => ({
+      nameAr: a.nameAr || '',
+      nameEn: a.nameEn || '',
+      price: a.price ?? 0,
+      imageUrl: a.imageUrl || '',
+      category: a.category || 'other',
+      section: a.section || '',
+      selectionType: (a.selectionType as 'single' | 'multiple') || 'multiple',
+    }));
+    setAddons(prev => [...prev, ...incoming]);
+    setShowImportPicker(false);
+    setImportSearch('');
+  };
+
   const sectionOrder: string[] = [];
   const sectionMap: Record<string, number[]> = {};
   addons.forEach((addon, idx) => {
@@ -142,10 +170,52 @@ function AddonsEditor({
           </div>
         </div>
       ); })}
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap">
         <Button type="button" size="sm" variant="outline" onClick={() => { const nm = `قسم ${sectionOrder.length + 1}`; setAddons(prev => [...prev, { nameAr: '', price: 0, imageUrl: '', category: 'other', section: nm, selectionType: 'multiple' }]); }} className="border-blue-400/40 text-blue-500 flex-1"><Plus className="w-4 h-4 ml-1" />إضافة قسم</Button>
         <Button type="button" size="sm" variant="outline" onClick={() => setAddons(prev => [...prev, {nameAr: '', price: 0, imageUrl: '', category: 'other', section: '', selectionType: 'multiple'}])} className="border-green-500/30 text-green-600 flex-1"><Plus className="w-4 h-4 ml-1" />خيار مفرد</Button>
+        {productsWithAddons.length > 0 && (
+          <Button type="button" size="sm" variant="outline" onClick={() => setShowImportPicker(v => !v)} className="border-purple-400/40 text-purple-600 flex-1"><Copy className="w-4 h-4 ml-1" />استيراد إضافات</Button>
+        )}
       </div>
+
+      {/* Import picker */}
+      {showImportPicker && (
+        <div className="border border-purple-200 rounded-xl bg-purple-50 p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold text-purple-700">اختر منتجاً لاستيراد إضافاته:</p>
+            <button type="button" onClick={() => { setShowImportPicker(false); setImportSearch(''); }} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+          </div>
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 absolute right-2 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              value={importSearch}
+              onChange={e => setImportSearch(e.target.value)}
+              placeholder="ابحث عن منتج..."
+              className="w-full text-sm border border-gray-200 rounded-lg py-1.5 pr-8 pl-3 focus:outline-none focus:border-purple-400"
+            />
+          </div>
+          <div className="max-h-48 overflow-y-auto space-y-1">
+            {filteredImportItems.length === 0 && (
+              <p className="text-xs text-gray-400 text-center py-2">لا توجد نتائج</p>
+            )}
+            {filteredImportItems.map((item: any) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => importAddonsFrom(item)}
+                className="w-full text-right flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-purple-100 transition-colors text-sm"
+              >
+                {item.imageUrl && (
+                  <img src={item.imageUrl.startsWith('/') ? item.imageUrl : '/' + item.imageUrl} className="w-7 h-7 rounded-md object-cover shrink-0" alt="" />
+                )}
+                <span className="flex-1 font-medium text-gray-700">{item.nameAr}</span>
+                <span className="text-xs text-purple-500 shrink-0">{item.addons.length} خيار</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -964,7 +1034,7 @@ export default function EmployeeMenuManagement() {
                 <Label className="text-xs font-bold text-gray-600 mb-2 block">الإضافات والخيارات</Label>
                 <AddonsEditor addons={addEditableAddons} setAddons={setAddEditableAddons}
                   onOpenImageLibrary={(ctx) => { setImageLibraryContext(ctx as any); setIsImageLibraryOpen(true); }}
-                  context="add" setEditingAddonImageIdx={setEditingAddonImageIdx} />
+                  context="add" setEditingAddonImageIdx={setEditingAddonImageIdx} coffeeItems={coffeeItems} />
               </div>
 
               <div className="flex justify-end gap-2 pt-2 border-t">
@@ -1173,7 +1243,7 @@ export default function EmployeeMenuManagement() {
                 <Label className="text-xs font-bold text-gray-600 mb-2 block">الإضافات والخيارات</Label>
                 <AddonsEditor addons={editableAddons} setAddons={setEditableAddons}
                   onOpenImageLibrary={(ctx) => { setImageLibraryContext(ctx as any); setIsImageLibraryOpen(true); }}
-                  context="edit" setEditingAddonImageIdx={setEditingAddonImageIdx} />
+                  context="edit" setEditingAddonImageIdx={setEditingAddonImageIdx} coffeeItems={coffeeItems} />
               </div>
 
               <div className="flex justify-end gap-2 pt-2 border-t">
