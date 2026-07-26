@@ -34,6 +34,7 @@ export function AddToCartModal({
   const [quantity, setQuantity] = useState(1);
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
   const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
+  const [selectedAddonQuantities, setSelectedAddonQuantities] = useState<Record<string, number>>({});
   const [selectedItemAddonIndices, setSelectedItemAddonIndices] = useState<number[]>([]);
   const [selectedBundledItems, setSelectedBundledItems] = useState<Record<number, string[]>>({});
   const [selectedReservationPackageIdx, setSelectedReservationPackageIdx] = useState<number | null>(null);
@@ -45,6 +46,7 @@ export function AddToCartModal({
     setQuantity(1);
     setSelectedSize(null);
     setSelectedAddons([]);
+    setSelectedAddonQuantities({});
     setSelectedItemAddonIndices([]);
     setSelectedBundledItems({});
     setSelectedVariant(null);
@@ -57,6 +59,7 @@ export function AddToCartModal({
       setQuantity(1);
       setSelectedSize(null);
       setSelectedAddons([]);
+      setSelectedAddonQuantities({});
       setSelectedItemAddonIndices([]);
       setSelectedBundledItems({});
       setSelectedReservationPackageIdx(null);
@@ -181,11 +184,15 @@ export function AddToCartModal({
     const selectedReservationPackage = (selectedReservationPackageIdx !== null && reservationPackages[selectedReservationPackageIdx])
       ? reservationPackages[selectedReservationPackageIdx] : null;
 
+    const selectedAddonSelections = selectedAddons.map(addonId => ({
+      addonId,
+      quantity: Math.max(1, selectedAddonQuantities[addonId] || 1),
+    }));
     const cartItem = {
       coffeeItemId: activeItem.id,
       quantity,
       selectedSize: selectedSize || "default",
-      selectedAddons: selectedAddons,
+      selectedAddons: selectedAddonSelections,
       selectedItemAddons,
       selectedBundledItems: selectedBundledDetails,
       isReservation: !!(activeItem as any)?.isReservation,
@@ -204,8 +211,21 @@ export function AddToCartModal({
 
   const productAddonPrice = selectedAddons.reduce((sum, addonId) => {
     const addon = allAddons.find((a) => a.id === addonId);
-    return sum + (addon?.price ?? 0);
+    return sum + (addon?.price ?? 0) * Math.max(1, selectedAddonQuantities[addonId] || 1);
   }, 0);
+
+  const toggleProductAddon = (addonId: string) => {
+    setSelectedAddons(prev => prev.includes(addonId) ? prev.filter(id => id !== addonId) : [...prev, addonId]);
+    setSelectedAddonQuantities(prev => ({ ...prev, [addonId]: prev[addonId] || 1 }));
+  };
+
+  const updateProductAddonQuantity = (addonId: string, delta: number) => {
+    setSelectedAddonQuantities(prev => {
+      const next = Math.max(0, (prev[addonId] || 1) + delta);
+      if (next === 0) setSelectedAddons(current => current.filter(id => id !== addonId));
+      return { ...prev, [addonId]: next };
+    });
+  };
 
   const reservationPkgs: Array<{packageName: string; price: number;}> = (activeItem as any)?.reservationPackages || [];
   const reservationPackagePrice = (selectedReservationPackageIdx !== null && reservationPkgs[selectedReservationPackageIdx])

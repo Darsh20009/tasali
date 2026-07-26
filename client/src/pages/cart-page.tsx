@@ -152,13 +152,13 @@ export default function CartPage() {
                                   const size = item.coffeeItem.availableSizes.find((s: any) => s.nameAr === item.selectedSize);
                                   if (size) price = size.price;
                                 }
-                                const addonsPrice = ((item as any).selectedItemAddons || []).reduce((sum: number, a: any) => sum + (Number(a.price) || 0), 0);
+                                 const addonsPrice = ((item as any).selectedItemAddons || []).reduce((sum: number, a: any) => sum + (Number(a.price) || 0) * Math.max(1, Number(a.quantity) || 1), 0);
                                 return (price + addonsPrice).toFixed(2);
                               })()} <SarIcon />
                             </p>
                             {((item as any).selectedItemAddons?.length > 0) && (
                               <p className="text-xs text-muted-foreground">
-                                {(item as any).selectedItemAddons.map((a: any) => isAr ? a.nameAr : (a.nameEn || a.nameAr)).join('، ')}
+                               {(item as any).selectedItemAddons.map((a: any) => `${isAr ? a.nameAr : (a.nameEn || a.nameAr)}${Number(a.quantity) > 1 ? ` ×${a.quantity}` : ''}`).join('، ')}
                               </p>
                             )}
                           </div>

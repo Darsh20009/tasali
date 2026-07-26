@@ -8083,7 +8083,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Collect all unique IDs in one pass — then batch-fetch in parallel (2 queries instead of N×M)
       const coffeeItemIds = [...new Set(cartItems.map((ci: any) => ci.coffeeItemId).filter(Boolean))];
-      const addonIds = [...new Set(cartItems.flatMap((ci: any) => ci.selectedAddons || []).filter(Boolean))];
+      const addonIds = [...new Set(cartItems.flatMap((ci: any) => (ci.selectedAddons || []).map((selection: any) =>
+        typeof selection === 'string' ? selection : selection?.addonId
+      )).filter(Boolean))];
 
       const [coffeeItemDocs, addonDocs] = await Promise.all([
         coffeeItemIds.length > 0 ? CoffeeItemModel.find({ id: { $in: coffeeItemIds } }).lean() : Promise.resolve([]),
@@ -8099,7 +8101,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ...doc,
           id: cartItem.id || cartItem.coffeeItemId,
           coffeeItem: coffeeItemMap.get(cartItem.coffeeItemId) || null,
-          enrichedAddons: (cartItem.selectedAddons || []).map((id: string) => addonMap.get(id)).filter(Boolean),
+          enrichedAddons: (cartItem.selectedAddons || []).map((selection: any) => {
+            const addonId = typeof selection === 'string' ? selection : selection?.addonId;
+            const quantity = Math.max(1, Number(typeof selection === 'string' ? 1 : selection?.quantity) || 1);
+            const addon = addonMap.get(addonId);
+            return addon ? { ...addon, quantity } : null;
+          }).filter(Boolean),
         };
       });
 
@@ -8123,13 +8130,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Consistent size selection
       const sizeName = typeof selectedSize === 'object' ? (selectedSize as any)?.nameAr : selectedSize;
-      const addons = Array.isArray(selectedAddons) ? selectedAddons : [];
+      // Normalize both the old ["addon-id"] shape and the quantity-aware
+      // [{ addonId, quantity }] shape. This makes quantity durable in Mongo
+      // and keeps old clients/carts working.
+      const addons = (Array.isArray(selectedAddons) ? selectedAddons : [])
+        .map((selection: any) => {
+          const addonId = typeof selection === 'string' ? selection : selection?.addonId;
+          if (!addonId) return null;
+          return {
+            addonId: String(addonId),
+            quantity: Math.max(1, Math.floor(Number(typeof selection === 'string' ? 1 : selection?.quantity) || 1)),
+          };
+        })
+        .filter(Boolean);
       const itemAddons = Array.isArray(selectedItemAddons) ? selectedItemAddons : [];
       
       // Use a consistent composite ID format: ITEMID-SIZENAME-ADDONS-ITEMADDONS
       const normalizedSize = sizeName || "default";
-      const normalizedAddons = Array.isArray(addons) ? addons.sort().join(",") : "";
-      const normalizedItemAddons = itemAddons.map((a: any) => a.nameAr).sort().join(",");
+      const normalizedAddons = addons
+        .slice()
+        .sort((a: any, b: any) => a.addonId.localeCompare(b.addonId))
+        .map((a: any) => `${a.addonId}x${a.quantity}`)
+        .join(",");
+      const normalizedItemAddons = itemAddons
+        .map((a: any) => `${a.addonId || a.nameAr}x${Math.max(1, Number(a.quantity) || 1)}`)
+        .sort()
+        .join(",");
       const reservationPkgKey = selectedReservationPackage ? `-pkg:${selectedReservationPackage.packageName}` : "";
       const compositeId = `${coffeeItemId}-${normalizedSize}-${normalizedAddons}-${normalizedItemAddons}${reservationPkgKey}`;
       

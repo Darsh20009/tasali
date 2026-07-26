@@ -557,76 +557,23 @@ function App() {
   }, []);
 
   useEffect(() => {
-    // Prefetch critical data in parallel on app start so pages load instantly
+    // Only prefetch data needed by the current portal. The old version fetched
+    // staff-only data for every visitor and materially increased bandwidth.
     const prefetch = (url: string) =>
       queryClient.prefetchQuery({ queryKey: [url], staleTime: 5 * 60 * 1000 });
-    Promise.all([
-      prefetch("/api/business-config"),
-      prefetch("/api/coffee-items"),
-      prefetch("/api/menu-categories"),
-      prefetch("/api/product-addons"),
-      prefetch("/api/custom-banners"),
-      prefetch("/api/payment-methods"),
-      prefetch("/api/public/loyalty-settings"),
-    ]);
+    const path = window.location.pathname;
+    const isStaff = ['/employee', '/manager', '/kitchen', '/pos', '/cashier', '/admin', '/owner', '/executive', '/0']
+      .some(prefix => path === prefix || path.startsWith(prefix + '/'));
+    const urls = isStaff
+      ? ["/api/business-config", "/api/coffee-items", "/api/product-addons", "/api/payment-methods"]
+      : ["/api/business-config", "/api/coffee-items", "/api/menu-categories", "/api/product-addons", "/api/custom-banners"];
+    Promise.all(urls.map(prefetch));
   }, []);
 
   useEffect(() => {
-    // Prefetch all page chunks after initial load so navigation is instant
-    const t = setTimeout(() => {
-      const pages = [
-        () => import("@/pages/pos-system"),
-        () => import("@/pages/employee-cashier"),
-        () => import("@/pages/employee-orders"),
-        () => import("@/pages/employee-home"),
-        () => import("@/pages/kitchen-display"),
-        () => import("@/pages/employee-attendance"),
-        () => import("@/pages/manager-dashboard"),
-        () => import("@/pages/employee-dashboard"),
-        () => import("@/pages/cashier-tables"),
-        () => import("@/pages/cashier-table-orders"),
-        () => import("@/pages/employee-loyalty"),
-        () => import("@/pages/menu"),
-        () => import("@/pages/manager-employees"),
-        () => import("@/pages/admin-employees"),
-        () => import("@/pages/accounting-dashboard"),
-        () => import("@/pages/manager-attendance"),
-        () => import("@/pages/inventory-raw-items"),
-        () => import("@/pages/inventory-recipes"),
-        () => import("@/pages/inventory-stock"),
-        () => import("@/pages/manager-delivery"),
-        () => import("@/pages/shift-management"),
-        () => import("@/pages/owner-dashboard"),
-        () => import("@/pages/admin-settings"),
-        () => import("@/pages/admin-branches"),
-        () => import("@/pages/employee-menu-management"),
-        () => import("@/pages/manager-tables"),
-        () => import("@/pages/zatca-invoices"),
-        () => import("@/pages/advanced-analytics"),
-        () => import("@/pages/payroll-management"),
-        () => import("@/pages/gift-cards-management"),
-        () => import("@/pages/loyalty-program"),
-        () => import("@/pages/employee-product-reservations"),
-        () => import("@/pages/cashier-reservations"),
-        () => import("@/pages/manager-reviews"),
-        () => import("@/pages/unified-reports"),
-        () => import("@/pages/bi-analytics"),
-        () => import("@/pages/erp-accounting"),
-        () => import("@/pages/manager-ai"),
-        () => import("@/pages/inventory-purchases"),
-        () => import("@/pages/inventory-suppliers"),
-      ];
-      // Load 3 at a time to avoid network congestion
-      let idx = 0;
-      const loadNext = () => {
-        if (idx >= pages.length) return;
-        const batch = pages.slice(idx, idx + 3);
-        idx += 3;
-        Promise.allSettled(batch.map(fn => fn())).then(loadNext);
-      };
-      loadNext();
-    }, 1500);
-    return () => clearTimeout(t);
+    // Route-level lazy loading is intentional: do not download every page
+    // chunk after 1.5s just because the app is open.
+    return;
   }, []);
 
   useEffect(() => {

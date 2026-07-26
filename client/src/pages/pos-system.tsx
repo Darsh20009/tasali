@@ -1006,7 +1006,7 @@ export default function PosSystem() {
       const size = item.coffeeItem.availableSizes.find((s: any) => s.nameAr === item.selectedSize);
       if (size) base = Number(size.price) || 0;
     }
-    const addonsPrice = (item.customization?.selectedItemAddons || []).reduce((s: number, a: any) => s + (Number(a.price) || 0), 0);
+    const addonsPrice = (item.customization?.selectedItemAddons || []).reduce((s: number, a: any) => s + (Number(a.price) || 0) * Math.max(1, Number(a.quantity) || 1), 0);
     return base + addonsPrice;
   };
 
@@ -1135,7 +1135,7 @@ export default function PosSystem() {
 
   const getPosItemUnitPrice = getPosItemUnitPriceEarly;
 
-  const addToOrder = (product: CoffeeItem, customization?: { selectedItemAddons: Array<{nameAr: string; nameEn?: string; price: number}> }, selectedSize?: string | null, quantity: number = 1, fullCustomization?: DrinkCustomization) => {
+  const addToOrder = (product: CoffeeItem, customization?: { selectedItemAddons: Array<{nameAr: string; nameEn?: string; price: number; quantity?: number; addonId?: string}> }, selectedSize?: string | null, quantity: number = 1, fullCustomization?: DrinkCustomization) => {
     const addonKey = JSON.stringify(customization?.selectedItemAddons || []);
     const sizeKey = selectedSize || '';
     const existing = orderItems.find(item => item.coffeeItem.id === product.id && item.selectedSize === sizeKey && JSON.stringify(item.customization?.selectedItemAddons || []) === addonKey);
@@ -4402,9 +4402,11 @@ export default function PosSystem() {
             const targetItem = selectedVariant || posCustomizationItem?.item;
             if (!targetItem) return;
             const selectedItemAddons = customization.selectedAddons.map(addon => ({
-              nameAr: addon.nameAr + (addon.quantity > 1 ? ` ×${addon.quantity}` : ''),
+              addonId: addon.addonId,
+              nameAr: addon.nameAr,
               nameEn: addon.nameAr,
-              price: addon.price * addon.quantity,
+              price: addon.price,
+              quantity: addon.quantity,
             }));
             addToOrder(targetItem, selectedItemAddons.length > 0 ? { selectedItemAddons } : undefined, customization.selectedSize || null, quantity, customization);
             setPosCustomizationItem(null);

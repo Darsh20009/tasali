@@ -1449,8 +1449,9 @@ export interface ICartItem extends Document {
   coffeeItemId: string;
   quantity: number;
   selectedSize?: string;
-  selectedAddons?: string[];
-  selectedItemAddons?: Array<{ nameAr: string; nameEn?: string; price: number }>;
+  // New entries use { addonId, quantity }; string IDs remain supported for old carts.
+  selectedAddons?: Array<string | { addonId: string; quantity: number }>;
+  selectedItemAddons?: Array<{ nameAr: string; nameEn?: string; price: number; quantity?: number; addonId?: string }>;
   selectedReservationPackage?: { packageName: string; description?: string; price: number; duration?: string; maxGuests?: number; } | null;
   carType?: string;
   carColor?: string;
@@ -1465,7 +1466,7 @@ const CartItemSchema = new Schema<ICartItem>({
   coffeeItemId: { type: String, required: true },
   quantity: { type: Number, required: true },
   selectedSize: { type: String },
-  selectedAddons: [{ type: String }],
+  selectedAddons: [{ type: mongoose.Schema.Types.Mixed }],
   selectedItemAddons: [{ type: mongoose.Schema.Types.Mixed }],
   selectedReservationPackage: { type: mongoose.Schema.Types.Mixed, default: null },
   createdAt: { type: Date, default: Date.now },

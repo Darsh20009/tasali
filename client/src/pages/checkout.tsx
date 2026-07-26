@@ -186,14 +186,16 @@ function getCartItemUnitPrice(i: any): number {
     const size = i.coffeeItem.availableSizes.find((s: any) => s.nameAr === i.selectedSize);
     if (size) base = Number(size.price) || 0;
   }
-  const enrichedAddonsPrice = (i.selectedAddons || []).reduce((sum: number, addonId: string) => {
+  const enrichedAddonsPrice = (i.selectedAddons || []).reduce((sum: number, selection: any) => {
     if (i.enrichedAddons) {
+      const addonId = typeof selection === 'string' ? selection : selection?.addonId;
+      const quantity = Math.max(1, Number(typeof selection === 'string' ? 1 : selection?.quantity) || 1);
       const addon = i.enrichedAddons.find((a: any) => a.id === addonId || a._id === addonId);
-      return sum + (Number(addon?.price) || 0);
+      return sum + (Number(addon?.price) || 0) * quantity;
     }
     return sum;
   }, 0);
-  const inlineAddonsPrice = ((i as any).selectedItemAddons || []).reduce((s: number, a: any) => s + (Number(a.price) || 0), 0);
+  const inlineAddonsPrice = ((i as any).selectedItemAddons || []).reduce((s: number, a: any) => s + (Number(a.price) || 0) * Math.max(1, Number(a.quantity) || 1), 0);
   return base + enrichedAddonsPrice + inlineAddonsPrice;
 }
 
@@ -793,6 +795,7 @@ export default function CheckoutPage() {
       customerEmail,
       items: cartItems.map(i => {
         const inlineAddons = (i as any).selectedItemAddons || [];
+        const selectedAddons = (i as any).selectedAddons || [];
         return {
           coffeeItemId: i.coffeeItemId,
           quantity: i.quantity,
@@ -800,7 +803,7 @@ export default function CheckoutPage() {
           nameAr: i.coffeeItem?.nameAr || "",
           nameEn: i.coffeeItem?.nameEn || "",
           selectedSize: i.selectedSize,
-          customization: inlineAddons.length > 0 ? { selectedItemAddons: inlineAddons } : undefined,
+          customization: (inlineAddons.length > 0 || selectedAddons.length > 0) ? { selectedAddons, selectedItemAddons: inlineAddons } : undefined,
         };
       }),
       totalAmount: finalTotal,
@@ -930,6 +933,7 @@ export default function CheckoutPage() {
       customerEmail: customerEmail,
       items: cartItems.map(i => {
         const inlineAddons = (i as any).selectedItemAddons || [];
+        const selectedAddons = (i as any).selectedAddons || [];
         return {
           coffeeItemId: i.coffeeItemId,
           quantity: i.quantity,
@@ -937,7 +941,7 @@ export default function CheckoutPage() {
           nameAr: i.coffeeItem?.nameAr || "",
           nameEn: i.coffeeItem?.nameEn || "",
           selectedSize: i.selectedSize,
-          customization: inlineAddons.length > 0 ? { selectedItemAddons: inlineAddons } : undefined,
+          customization: (inlineAddons.length > 0 || selectedAddons.length > 0) ? { selectedAddons, selectedItemAddons: inlineAddons } : undefined,
         };
       }),
       totalAmount: finalTotal,
