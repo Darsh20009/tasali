@@ -1,45 +1,60 @@
-# Tasali Qurumsh — Café Management System
+# Tasali Qurumsh — QIROX CAFE Engine
 
-## Overview
-Full-stack café/restaurant management platform (QIROX CAFE Engine). Built with React + Express + MongoDB + TypeScript.
+Full-stack café management system (80% complete) built with React + Express + MongoDB.
 
-- **Frontend**: React 18, Vite, Tailwind CSS, Radix UI, i18next (Arabic/English)
-- **Backend**: Express.js, Mongoose/MongoDB, Passport.js auth, WebSocket
-- **Language**: TypeScript (strict mode)
+## Stack
 
-## How to run
+- **Frontend**: React 18 + Vite + Tailwind CSS + shadcn/ui + TanStack Query + Wouter
+- **Backend**: Express + TypeScript (`server/index.ts`)
+- **Database**: MongoDB via Mongoose
+- **Auth**: express-session + Passport (local strategy)
+- **i18n**: i18next (Arabic/English support)
+
+## Running the App
+
 ```
 npm run dev
 ```
-Starts the Express server (port 5000) which also serves the Vite dev frontend.
 
-## Required secrets
-| Secret | Description |
-|--------|-------------|
-| `MONGODB_URI` | MongoDB Atlas connection string |
-| `SESSION_SECRET` | Express session secret |
+Starts the Express server (port 5000) in development mode with Vite middleware for HMR.
 
-## Optional secrets (features disabled if absent)
-| Secret | Description |
-|--------|-------------|
-| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Web Push notifications |
-| `PAYMOB_*` | PayMob payment gateway |
-| `GOOGLE_*` | Google Sheets / OAuth |
+## Required Secrets
 
-## Project status
-- **Phases 0–4** complete: architecture, recipe engine, inventory engine, accounting engine, 14 REST API routes
-- **Phase 5** pending: Dashboard UI pages (recipe management, inventory dashboard, accounting dashboard, reports, stock movements log)
-- **Phase 6** pending: CSV/PDF exports
-- **Phase 7** pending: Tests
+| Secret | Purpose |
+|---|---|
+| `MONGODB_URI` | MongoDB connection string (Atlas or self-hosted) |
+| `SESSION_SECRET` | Express session signing key |
 
-## Key directories
+Optional secrets (features degrade gracefully without them):
+- `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` — Web Push notifications
+- `PAYMOB_*` — PayMob payment gateway
+
+## Project Structure
+
 ```
-server/          — Express backend, engines, routes
-client/src/      — React frontend pages and components
-shared/          — Shared TypeScript types and Zod schemas
-public/          — Static assets
-Documentation/   — Architecture, API specs, domain models
+server/          Express backend, engines, routes, models
+client/          React frontend (src/)
+shared/          Zod schemas + Mongoose models (schema.ts)
+public/          Static assets, PWA manifests
+apple-wallet/    Passkit templates
+api/             Vercel-style API entry point
+data/            JSON seed data
 ```
 
-## User preferences
-- Keep existing project structure and stack
+## Key Engines (server/)
+
+- `recipe-engine.ts` — Recipe costing with ingredient cost freezing
+- `inventory-engine.ts` — Stock tracking, unit conversions, automatic deductions
+- `accounting-engine.ts` — Daily snapshots, profit analysis, waste reporting
+- `units-engine.ts` — Unit conversion library
+
+## Build for Production
+
+```
+npm run build   # builds client (Vite) + server (esbuild) → dist/
+npm start       # runs dist/index.js
+```
+
+## User Preferences
+
+- Keep existing project structure and stack (Express + MongoDB + React/Vite).
