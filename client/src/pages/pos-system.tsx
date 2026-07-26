@@ -149,7 +149,8 @@ export default function PosSystem() {
   const [customerPoints, setCustomerPoints] = useState(0);
   const [usePoints, setUsePoints] = useState(false);
   const [splitViewMode, setSplitViewMode] = useState(false);
-  const [mobilePanelView, setMobilePanelView] = useState<'products' | 'cart'>('products');
+  const [mobilePanelView, setMobilePanelView] = useState<'products' | 'cart' | 'payment'>('products');
+  const paymentSectionRef = useRef<HTMLDivElement>(null);
   const [soundEnabled, setSoundEnabled] = useState(() => getSoundEnabled('pos'));
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [syncing, setSyncing] = useState(false);
@@ -475,6 +476,15 @@ export default function PosSystem() {
   useEffect(() => { localStorage.setItem("pos-zoom", String(posZoom)); }, [posZoom]);
   useEffect(() => { if (orderItems.length === 0 && showOrderReview) setShowOrderReview(false); }, [orderItems.length, showOrderReview]);
 
+  // Auto-scroll to payment section when switching to payment tab on mobile
+  useEffect(() => {
+    if (mobilePanelView === 'payment') {
+      setTimeout(() => {
+        paymentSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+    }
+  }, [mobilePanelView]);
+
   // Auto-close quick print bar after 10 seconds
   useEffect(() => {
     if (!showQuickPrintBar) { setQuickPrintCountdown(0); return; }
@@ -730,7 +740,8 @@ export default function PosSystem() {
 
   const { data: liveOrders } = useQuery<Order[]>({
     queryKey: ["/api/orders/live"],
-    staleTime: 30000,
+    staleTime: 60000,
+    refetchInterval: 60000,
   });
 
   const { data: businessConfig } = useQuery<any>({
@@ -2519,7 +2530,7 @@ export default function PosSystem() {
             </ScrollArea>
           </section>
 
-          <aside className={`${mobilePanelView === 'cart' ? 'flex' : 'hidden'} md:flex w-full md:w-80 lg:w-[420px] border-r flex flex-col bg-card shrink-0`}>
+          <aside className={`${(mobilePanelView === 'cart' || mobilePanelView === 'payment') ? 'flex' : 'hidden'} md:flex w-full md:w-80 lg:w-[420px] border-r flex flex-col bg-card shrink-0`}>
             <div className="p-2 sm:p-3 border-b flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Button
@@ -2794,7 +2805,7 @@ export default function PosSystem() {
               )}
             </div>
 
-            <div className="px-2 sm:px-4 py-2 border-t">
+            <div ref={paymentSectionRef} className="px-2 sm:px-4 py-2 border-t">
               <p className="text-xs sm:text-sm font-bold text-muted-foreground mb-2">{t('pos.payment_method')}</p>
               {(() => {
                 const customPosMethods = allPaymentMethods.filter((m: any) => m.isCustom && m.enabledForPos !== false);
@@ -3581,7 +3592,7 @@ export default function PosSystem() {
           />
         </main>
 
-        {/* Mobile bottom navigation — Products / Cart tabs */}
+        {/* Mobile bottom navigation — Products / Cart / Payment tabs */}
         <div className="md:hidden fixed bottom-0 left-0 right-0 bg-card border-t z-50 flex h-[58px] shadow-lg">
           <button
             onClick={() => setMobilePanelView('products')}
@@ -3615,8 +3626,24 @@ export default function PosSystem() {
             <span className="text-[10px] font-bold">
               {orderItems.length > 0
                 ? `${calculateTotal.toFixed(0)} ${t('pos.currency')}`
-                : i18n.language === 'ar' ? 'الطلب' : 'Cart'}
+                : i18n.language === 'ar' ? 'السلة' : 'Cart'}
             </span>
+          </button>
+          <button
+            onClick={() => {
+              if (orderItems.length > 0) setMobilePanelView('payment');
+            }}
+            className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
+              mobilePanelView === 'payment'
+                ? 'text-primary border-t-2 border-primary bg-primary/5'
+                : orderItems.length === 0
+                ? 'text-muted-foreground/40'
+                : 'text-muted-foreground'
+            }`}
+            data-testid="button-mobile-tab-payment"
+          >
+            <CreditCard className="w-5 h-5" />
+            <span className="text-[10px] font-bold">{i18n.language === 'ar' ? 'الدفع' : 'Payment'}</span>
           </button>
         </div>
 

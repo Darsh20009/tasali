@@ -396,28 +396,50 @@ export function AddToCartModal({
             <div className="space-y-2">
               <Label className="text-sm font-semibold text-foreground">{isAr ? "الإضافات" : "Addons"}</Label>
               <div className="flex flex-wrap gap-2">
-                {specificAddons.map((addon) => (
-                  <button
-                    key={addon.id}
-                    onClick={() => {
-                      setSelectedAddons((prev) =>
-                        prev.includes(addon.id)
-                          ? prev.filter((id) => id !== addon.id)
-                          : [...prev, addon.id]
-                      );
-                    }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1 ${
-                      selectedAddons.includes(addon.id)
-                        ? "bg-primary text-white shadow-md"
-                        : "bg-secondary text-foreground border border-border hover:border-primary/50"
-                    }`}
-                  >
-                    {isAr ? addon.nameAr : addon.nameEn || addon.nameAr}
-                    <span className={selectedAddons.includes(addon.id) ? "text-white/80" : "text-primary"}>
-                      +{addon.price}
-                    </span>
-                  </button>
-                ))}
+                {specificAddons.map((addon) => {
+                  const isSelected = selectedAddons.includes(addon.id);
+                  const qty = Math.max(1, selectedAddonQuantities[addon.id] || 1);
+                  const maxQty = (addon as any).maxQuantity || 10;
+                  return isSelected ? (
+                    <div key={addon.id} className="flex items-center rounded-lg border-2 border-primary overflow-hidden shadow-sm">
+                      <button
+                        onClick={() => updateProductAddonQuantity(addon.id, -1)}
+                        className="bg-primary/10 hover:bg-primary/20 text-primary w-7 h-8 flex items-center justify-center transition-colors"
+                      >
+                        <Minus className="w-3 h-3" />
+                      </button>
+                      <div className="px-2 h-8 flex items-center gap-1.5 bg-primary/5">
+                        <span className="text-xs font-bold text-foreground">
+                          {isAr ? addon.nameAr : addon.nameEn || addon.nameAr}
+                        </span>
+                        <span className="text-[10px] font-black text-primary bg-primary/10 rounded px-1">×{qty}</span>
+                        {addon.price > 0 && (
+                          <span className="text-[10px] text-primary font-semibold">
+                            +{(addon.price * qty).toFixed(addon.price % 1 === 0 ? 0 : 1)}
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => qty < maxQty ? updateProductAddonQuantity(addon.id, 1) : undefined}
+                        disabled={qty >= maxQty}
+                        className="bg-primary text-white w-7 h-8 flex items-center justify-center disabled:opacity-40 transition-colors"
+                      >
+                        <Plus className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      key={addon.id}
+                      onClick={() => toggleProductAddon(addon.id)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1 bg-secondary text-foreground border border-border hover:border-primary/50"
+                    >
+                      {isAr ? addon.nameAr : addon.nameEn || addon.nameAr}
+                      {addon.price > 0 && (
+                        <span className="text-primary">+{addon.price}</span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}

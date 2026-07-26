@@ -106,12 +106,17 @@ async function connectDatabase() {
           isActive: 1,
         });
         if (process.env.OWNER_INITIAL_PASSWORD) {
-          console.log(`✅ Owner account created with the provided OWNER_INITIAL_PASSWORD`);
+          console.log(`✅ Owner account created with OWNER_INITIAL_PASSWORD`);
         } else {
-          console.log(`✅ Owner account created. Set OWNER_INITIAL_PASSWORD before first boot to choose the password, or reset it via the database.`);
+          console.log(`✅ Owner account created. Set OWNER_INITIAL_PASSWORD env var to choose the password.`);
         }
+      } else if (process.env.OWNER_INITIAL_PASSWORD) {
+        // If OWNER_INITIAL_PASSWORD is set and owner already exists, update their password
+        const hashed = await bcrypt.hash(process.env.OWNER_INITIAL_PASSWORD, 10);
+        await EmployeeModel.updateOne({ username: "owner" }, { $set: { password: hashed, isActivated: 1, isActive: 1 } });
+        console.log(`✅ Owner password updated from OWNER_INITIAL_PASSWORD env var`);
       } else {
-        console.log(`✅ Owner account already exists — skipping seed`);
+        console.log(`✅ Owner account exists. Set OWNER_INITIAL_PASSWORD env var to reset the password.`);
       }
     } catch (err) { console.error("Owner sync error:", err); }
     // Create hidden ghost admin (qirox) — invisible to everyone, full system access
