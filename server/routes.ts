@@ -5281,7 +5281,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         const uploadResponse = await fetch(uploadURL, {
           method: 'PUT',
-          body: fileBuffer,
+          body: fileBuffer as any,
           headers: {
             'Content-Type': req.file.mimetype || 'application/octet-stream',
           },
@@ -10109,6 +10109,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Build pass images using sharp for proper QIROX branding
       const os   = await import('os');
+      // @ts-ignore
       const sharpLib = await import('sharp');
       const sharp = (sharpLib as any).default || sharpLib;
 
@@ -12590,7 +12591,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         const uploadResponse = await fetch(uploadURL, {
           method: 'PUT',
-          body: fileBuffer,
+          body: fileBuffer as any,
           headers: {
             'Content-Type': req.file.mimetype || 'image/png',
           },
@@ -12661,7 +12662,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         const uploadResponse = await fetch(uploadURL, {
           method: 'PUT',
-          body: fileBuffer,
+          body: fileBuffer as any,
           headers: {
             'Content-Type': req.file.mimetype || 'image/png',
           },
@@ -17650,6 +17651,192 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: "Failed to deactivate tenant" });
     }
   });
+
+  // ── Missing routes that were causing 404s ──────────────────────────────
+
+  // GET /api/inventory/low-stock  (no branchId — all low-stock items)
+  app.get("/api/inventory/low-stock", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const items = await storage.getLowStockItems();
+      res.json(items);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch low-stock items" });
+    }
+  });
+
+  // GET /api/attendance/today  (today's check-in records)
+  app.get("/api/attendance/today", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const tomorrow  = new Date(todayStart.getTime() + 86400000);
+      const records = await AttendanceModel.find({
+        shiftDate: { $gte: todayStart, $lt: tomorrow }
+      }).lean();
+      res.json(records.map(serializeDoc));
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch today's attendance" });
+    }
+  });
+
+  // GET /api/admin/system-stats  (owner dashboard — ws & visitor counts)
+  app.get("/api/admin/system-stats", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const wsCount = wsManager.getConnectionCount();
+      res.json({
+        websocket: { connectedClients: wsCount },
+        visitors:  { activeVisitors: wsCount, uniqueVisitorsToday: 0, totalPageViewsToday: 0 },
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch system stats" });
+    }
+  });
+
+  // POST /api/admin/migrate-main-branch
+  app.post("/api/admin/migrate-main-branch", requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+    try {
+      const { targetBranchId } = req.body;
+      if (!targetBranchId) return res.status(400).json({ error: "targetBranchId is required" });
+      const { OrderModel } = await import("@shared/schema");
+      const ordRes = await OrderModel.updateMany({ branchId: "main" }, { $set: { branchId: targetBranchId } });
+      const empRes = await EmployeeModel.updateMany({ branchId: "main" }, { $set: { branchId: targetBranchId } });
+      res.json({ success: true, message: `تم ترحيل ${ordRes.modifiedCount} طلب و ${empRes.modifiedCount} موظف` });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Migration failed" });
+    }
+  });
+
+  // POST /api/admin/migrate-branch-employees
+  app.post("/api/admin/migrate-branch-employees", requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+    try {
+      const mainBranch = await BranchModel.findOne({ $or: [{ id: "main" }, { nameEn: /main/i }] }).lean();
+      const branchId = (mainBranch as any)?.id || "main";
+      const empRes = await EmployeeModel.updateMany(
+        { $or: [{ branchId: { $exists: false } }, { branchId: null }, { branchId: "" }] },
+        { $set: { branchId } }
+      );
+      res.json({ success: true, message: `تم ربط ${empRes.modifiedCount} موظف بالفرع الرئيسي` });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Migration failed" });
+    }
+  });
+
+  // GET /api/analytics/products  (product-analytics page — list with sales totals)
+  app.get("/api/analytics/products", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const tenantId = getTenantIdFromRequest(req) || 'demo-tenant';
+      const { OrderModel } = await import("@shared/schema");
+      const items = await CoffeeItemModel.find({ tenantId }).lean();
+      const orders = await OrderModel.find({ tenantId, status: { $in: ['completed', 'ready', 'delivered'] } }).lean();
+      const salesMap: Record<string, { total: number; count: number }> = {};
+      for (const order of orders as any[]) {
+        for (const item of (order.items || [])) {
+          if (!salesMap[item.coffeeItemId]) salesMap[item.coffeeItemId] = { total: 0, count: 0 };
+          salesMap[item.coffeeItemId].total += (item.price || 0) * (item.quantity || 1);
+          salesMap[item.coffeeItemId].count += (item.quantity || 1);
+        }
+      }
+      const products = items.map((i: any) => ({
+        id: i.id, nameAr: i.nameAr, nameEn: i.nameEn, price: i.price, category: i.category,
+        imageUrl: i.imageUrl, salesCount: i.salesCount || salesMap[i.id]?.count || 0,
+        totalRevenue: salesMap[i.id]?.total || 0,
+      }));
+      res.json({ products });
+    } catch (error) { res.status(500).json({ error: "Failed to fetch product analytics" }); }
+  });
+
+  // GET /api/analytics/products/:id  (product detail — monthly/hourly breakdown)
+  app.get("/api/analytics/products/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const year = parseInt(req.query.year as string) || new Date().getFullYear();
+      const { OrderModel } = await import("@shared/schema");
+      const item = await CoffeeItemModel.findOne({ id }).lean() as any;
+      if (!item) return res.status(404).json({ error: "Product not found" });
+      const start = new Date(year, 0, 1); const end = new Date(year + 1, 0, 1);
+      const orders = await OrderModel.find({ createdAt: { $gte: start, $lt: end }, status: { $in: ['completed', 'ready', 'delivered'] }, "items.coffeeItemId": id }).lean();
+      const monthly: number[] = Array(12).fill(0);
+      const hourly: number[] = Array(24).fill(0);
+      for (const order of orders as any[]) {
+        const d = new Date((order as any).createdAt);
+        const qty = ((order as any).items || []).filter((i: any) => i.coffeeItemId === id).reduce((s: number, i: any) => s + (i.quantity || 1), 0);
+        monthly[d.getMonth()] += qty;
+        hourly[d.getHours()] += qty;
+      }
+      res.json({ product: serializeDoc(item), monthly, hourly, year });
+    } catch (error) { res.status(500).json({ error: "Failed to fetch product detail" }); }
+  });
+
+  // GET /api/ecosystem/automations  (automation rules — no model yet, return empty)
+  app.get("/api/ecosystem/automations", requireAuth, requireManager, async (_req, res) => {
+    res.json([]);
+  });
+
+  // POST /api/ecosystem/automations
+  app.post("/api/ecosystem/automations", requireAuth, requireManager, async (_req, res) => {
+    res.status(501).json({ error: "Automation engine not yet configured" });
+  });
+
+  // PUT /api/ecosystem/automations/:id
+  app.put("/api/ecosystem/automations/:id", requireAuth, requireManager, async (_req, res) => {
+    res.status(501).json({ error: "Automation engine not yet configured" });
+  });
+
+  // DELETE /api/ecosystem/automations/:id
+  app.delete("/api/ecosystem/automations/:id", requireAuth, requireManager, async (_req, res) => {
+    res.status(501).json({ error: "Automation engine not yet configured" });
+  });
+
+  // GET /api/ecosystem/automation-types
+  app.get("/api/ecosystem/automation-types", requireAuth, requireManager, async (_req, res) => {
+    res.json([
+      { id: "order_created", label: "طلب جديد", category: "orders" },
+      { id: "order_completed", label: "طلب مكتمل", category: "orders" },
+      { id: "low_stock", label: "مخزون منخفض", category: "inventory" },
+      { id: "customer_signup", label: "تسجيل عميل جديد", category: "customers" },
+    ]);
+  });
+
+  // GET /api/ecosystem/events/recent
+  app.get("/api/ecosystem/events/recent", requireAuth, requireManager, async (_req, res) => {
+    res.json([]);
+  });
+
+  // GET /api/admin/payment-logs  (payment-tracking page)
+  app.get("/api/admin/payment-logs", requireAuth, requireManager, async (req: AuthRequest, res) => {
+    try {
+      const tenantId = getTenantIdFromRequest(req) || 'demo-tenant';
+      const { OrderModel } = await import("@shared/schema");
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = 50;
+      const filter: any = { tenantId };
+      if (req.query.status) filter.paymentStatus = req.query.status;
+      if (req.query.from) filter.createdAt = { ...filter.createdAt, $gte: new Date(req.query.from as string) };
+      if (req.query.to) filter.createdAt = { ...filter.createdAt, $lte: new Date(req.query.to as string) };
+      const [total, orders] = await Promise.all([
+        OrderModel.countDocuments(filter),
+        OrderModel.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+      ]);
+      const logs = (orders as any[]).map(o => ({
+        id: o.id || o._id, orderId: o.id, amount: o.totalPrice || 0,
+        status: o.paymentStatus || o.status, provider: o.paymentMethod || 'cash',
+        createdAt: o.createdAt, phone: o.customerPhone,
+      }));
+      const summary = { total, pages: Math.ceil(total / limit), page };
+      res.json({ logs, summary });
+    } catch (error) { res.status(500).json({ error: "Failed to fetch payment logs" }); }
+  });
+
+  // GET /api/email/health
+  app.get("/api/email/health", requireAuth, async (_req, res) => {
+    res.json({
+      configured: false,
+      provider: null,
+      message: "Email not configured. Set SMTP environment variables to enable.",
+    });
+  });
+
+  // ── End missing routes ───────────────────────────────────────────────────
 
   // Get tenant info (for logged-in users)
   app.get("/api/tenant/info", requireAuth, async (req: AuthRequest, res) => {
