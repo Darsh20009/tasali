@@ -2670,7 +2670,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const itemId = req.params.id;
       const { addons, ...itemFields } = req.body || {};
 
-      const updated = await CoffeeItemModel.findOneAndUpdate({ id: itemId }, { $set: itemFields }, { new: true });
+      // Write addons directly onto the item document so GET /api/coffee-items returns them
+      const updated = await CoffeeItemModel.findOneAndUpdate(
+        { id: itemId },
+        { $set: { ...itemFields, ...(Array.isArray(addons) ? { addons } : {}) } },
+        { new: true }
+      );
 
       // Persist addons & link them to the coffee item (works for both food and drinks)
       if (Array.isArray(addons)) {
