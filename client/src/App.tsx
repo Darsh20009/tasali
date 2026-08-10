@@ -19,7 +19,6 @@ import { OfflineIndicator } from "@/components/offline-indicator";
 import { CustomerNotificationListener } from "@/components/customer-notification-listener";
 import { GlobalCommandPalette } from "@/components/global-command-palette";
 import { QuickActionBar } from "@/components/quick-action-bar";
-import { GlobalAIAssistant } from "@/components/GlobalAIAssistant";
 import { useProximityNotify } from "@/hooks/useProximityNotify";
 
 const CartModal = lazy(() => import("@/components/cart-modal"));
@@ -609,7 +608,6 @@ function App() {
                 <GlobalPrompts />
                 <GlobalCommandPalette />
                 <QuickActionBar />
-                <GlobalAIAssistant />
                 <PWAUpdateNotifier />
                 <PWAInstallBanner />
                 <OfflineIndicator />
