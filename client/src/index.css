@@ -119,46 +119,46 @@ a, button, input, select, textarea, label, [role="button"] {
   --elevate-2: rgba(0,0,0, .08);
 
   /* ═══════════════════════════════════════════════════════════════
-     🎨 TASALI QURUMSH — Modern Purple & Clean White
-     مستوحى من BlackRose — بنفسجي عصري وأبيض نقي
+     🎨 تسالي كرومش — لوحة السنيل الإنسانية الدافئة
+     Warm Camel & Cream — Human Touch  No tech. No AI. Just warmth
      ═══════════════════════════════════════════════════════════════ */
-  
-  /* Base Colors — Pure White & Black */
-  --background: 0 0% 100%;     /* pure white */
-  --foreground: 0 0% 5%;       /* near-black text */
-  --border: 0 0% 90%;          /* subtle border */
-  --card: 0 0% 98%;            /* near-white cards */
-  --card-foreground: 0 0% 10%;
-  --card-border: 0 0% 92%;
 
-  /* Sidebar — Light/Glass */
-  --sidebar: 0 0% 98%;
-  --sidebar-foreground: 0 0% 10%;
-  --sidebar-border: 0 0% 90%;
-  --sidebar-primary: 262 83% 58%;
+  /* Base — كريم دافئ */
+  --background: 36 38% 97%;      /* cream warm white */
+  --foreground: 25 28% 10%;      /* warm near-black */
+  --border: 33 20% 87%;          /* warm soft border */
+  --card: 35 30% 98%;            /* warm card surface */
+  --card-foreground: 25 25% 12%;
+  --card-border: 33 20% 90%;
+
+  /* Sidebar — سنيل فاتح */
+  --sidebar: 34 28% 95%;
+  --sidebar-foreground: 25 25% 12%;
+  --sidebar-border: 33 18% 88%;
+  --sidebar-primary: 27 52% 38%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 0 0% 94%;
-  --sidebar-accent-foreground: 0 0% 0%;
-  --sidebar-ring: 262 83% 58%;
+  --sidebar-accent: 34 22% 91%;
+  --sidebar-accent-foreground: 25 25% 12%;
+  --sidebar-ring: 27 52% 38%;
 
-  /* Primary — QIROX Purple (Foodics-style) */
-  --primary: 262 83% 58%;
+  /* Primary — كراميل سنيل دافئ */
+  --primary: 27 52% 38%;
   --primary-foreground: 0 0% 100%;
 
-  /* Secondary — Neutral Grey */
-  --secondary: 0 0% 85%;
-  --secondary-foreground: 0 0% 20%;
+  /* Secondary */
+  --secondary: 33 18% 88%;
+  --secondary-foreground: 25 22% 20%;
 
   /* Muted */
-  --muted: 0 0% 60%;
-  --muted-foreground: 0 0% 45%;
+  --muted: 33 15% 62%;
+  --muted-foreground: 28 14% 48%;
 
-  /* Accent — Blue */
-  --accent: 200 70% 50%;
+  /* Accent — عنبر دافئ */
+  --accent: 36 60% 48%;
   --accent-foreground: 0 0% 100%;
 
   /* Ring */
-  --ring: 262 83% 58%;
+  --ring: 27 52% 38%;
 
   /* Charts - Premium Palette */
   --chart-1: 160 55% 42%; /* Teal Green */
@@ -242,59 +242,59 @@ a, button, input, select, textarea, label, [role="button"] {
   --elevate-2: rgba(255,255,255, .09);
 
   /* ═══════════════════════════════════════════════════════════════
-     🌙 TASALI QURUMSH DARK MODE — Deep Navy Night Theme
-     مستوحى من BlackRose — بحري عميق وأخضر فيروزي
+     🌙 الوضع الليلي — بني داكن دافئ  لا بحري لا بارد
+     Dark Warm Cocoa — همس الليل بنكهة التراب
      ═══════════════════════════════════════════════════════════════ */
 
-  --background: 220 25% 10%;   /* deep navy */
-  --foreground: 0 0% 100%;     /* pure white text */
-  --border: 220 20% 18%;       /* subtle dark border */
-  --card: 220 22% 14%;         /* elevated card surface */
-  --card-foreground: 0 0% 92%;
-  --card-border: 220 18% 20%;
+  --background: 22 18% 8%;      /* dark warm cocoa */
+  --foreground: 34 20% 92%;     /* warm off-white */
+  --border: 25 15% 18%;         /* warm dark border */
+  --card: 22 16% 12%;           /* elevated warm dark */
+  --card-foreground: 34 18% 90%;
+  --card-border: 25 14% 20%;
 
-  --sidebar: 180 40% 12%;      /* deep teal sidebar */
-  --sidebar-foreground: 0 0% 92%;
-  --sidebar-border: 180 35% 16%;
-  --sidebar-primary: 160 55% 50%;       /* bright teal green */
-  --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 180 30% 20%;
-  --sidebar-accent-foreground: 0 0% 90%;
-  --sidebar-ring: 160 55% 50%;
+  --sidebar: 22 20% 10%;        /* slightly lifted sidebar */
+  --sidebar-foreground: 34 18% 88%;
+  --sidebar-border: 25 15% 16%;
+  --sidebar-primary: 33 55% 55%;
+  --sidebar-primary-foreground: 22 18% 8%;
+  --sidebar-accent: 22 16% 18%;
+  --sidebar-accent-foreground: 34 18% 85%;
+  --sidebar-ring: 33 55% 55%;
 
-  --popover: 220 22% 14%;
-  --popover-foreground: 0 0% 92%;
-  --popover-border: 220 18% 20%;
+  --popover: 22 16% 12%;
+  --popover-foreground: 34 18% 90%;
+  --popover-border: 25 14% 20%;
 
-  --primary: 160 55% 48%;       /* bright teal green */
-  --primary-foreground: 0 0% 100%;
+  --primary: 33 55% 55%;        /* warm caramel on dark */
+  --primary-foreground: 22 18% 8%;
 
-  --secondary: 220 18% 20%;
-  --secondary-foreground: 0 0% 88%;
+  --secondary: 25 14% 20%;
+  --secondary-foreground: 34 15% 82%;
 
-  --muted: 220 12% 35%;
-  --muted-foreground: 220 10% 60%;
+  --muted: 25 10% 32%;
+  --muted-foreground: 30 10% 58%;
 
-  --accent: 200 70% 55%;        /* bright blue accent */
-  --accent-foreground: 0 0% 100%;
+  --accent: 36 55% 52%;         /* warm amber */
+  --accent-foreground: 22 18% 8%;
 
-  --destructive: 0 70% 55%;
+  --destructive: 0 65% 52%;
   --destructive-foreground: 0 0% 100%;
 
-  --success: 160 70% 45%;
+  --success: 145 55% 42%;
   --success-foreground: 0 0% 100%;
 
-  --warning: 38 95% 55%;
-  --warning-foreground: 38 100% 12%;
+  --warning: 38 90% 52%;
+  --warning-foreground: 22 18% 8%;
 
-  --input: 220 20% 16%;
-  --ring: 160 55% 48%;
+  --input: 22 14% 16%;
+  --ring: 33 55% 55%;
 
-  --chart-1: 160 55% 48%;
-  --chart-2: 200 70% 55%;
-  --chart-3: 160 70% 45%;
-  --chart-4: 0 70% 55%;
-  --chart-5: 270 60% 60%;
+  --chart-1: 33 55% 55%;
+  --chart-2: 36 60% 50%;
+  --chart-3: 145 50% 42%;
+  --chart-4: 0 65% 52%;
+  --chart-5: 260 50% 58%;
 
   --shadow-2xs: 0 1px 2px 0 rgba(0, 0, 0, 0.2);
   --shadow-xs: 0 1px 3px 0 rgba(0, 0, 0, 0.3);

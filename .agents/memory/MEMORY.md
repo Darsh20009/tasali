@@ -1,1 +1,2 @@
 - [Brand Migration Lessons](brand-migration-lessons.md) — sed text replacements in JSX files require care: attribute values and text nodes need different patterns to avoid broken syntax.
+- [System Design & Theme](system-design.md) — سنيل warm camel palette, system mode switcher (pos/menu), sidebar structure — read before touching colors or nav.

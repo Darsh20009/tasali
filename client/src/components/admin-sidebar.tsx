@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { brand } from "@/lib/brand";
 import staffLogo from "@assets/employee-logo.png";
+import { useSystemMode } from "@/lib/system-mode";
 
 interface AdminSidebarProps {
   mobileOpen?: boolean;
@@ -121,6 +122,7 @@ export function AdminSidebar({ mobileOpen = false, onMobileClose }: AdminSidebar
   const [location, navigate] = useLocation();
   const { i18n } = useTranslation();
   const isAr = i18n.language !== 'en';
+  const { isPOS } = useSystemMode();
 
   const { data: unreadData } = useQuery<{ count: number }>({
     queryKey: ['/api/notifications/unread-count'],
@@ -186,24 +188,26 @@ export function AdminSidebar({ mobileOpen = false, onMobileClose }: AdminSidebar
       {/* ── Navigation ── */}
       <nav className="flex-1 overflow-y-auto py-2">
 
-        {/* Direct top-level items */}
+        {/* Direct top-level items — in menu mode hide POS & orders */}
         <div className="mb-1">
-          {topItems.map(item => (
-            <NavItemButton
-              key={item.path}
-              label={item.label}
-              icon={item.icon}
-              path={item.path}
-              active={location === item.path || location.startsWith(item.path + '/')}
-              onClick={() => handleNavigate(item.path)}
-            />
-          ))}
+          {topItems
+            .filter(item => isPOS || !['نقطة البيع','POS System','الطلبات','Orders'].includes(item.label))
+            .map(item => (
+              <NavItemButton
+                key={item.path}
+                label={item.label}
+                icon={item.icon}
+                path={item.path}
+                active={location === item.path || location.startsWith(item.path + '/')}
+                onClick={() => handleNavigate(item.path)}
+              />
+            ))}
         </div>
 
         <div className="mx-4 my-1.5 border-t border-border" />
 
-        {/* Collapsible groups */}
-        {groups.map(group => {
+        {/* Collapsible groups — in menu mode only show menu & marketing */}
+        {groups.filter(g => isPOS || ['menu', 'marketing', 'management'].includes(g.key)).map(group => {
           const isGroupExpanded = expanded[group.key];
           const GroupIcon = group.icon;
           const hasActiveChild = group.items.some(

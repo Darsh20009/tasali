@@ -5,7 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Save, Shield, Bell, Palette, Database, Plus, Store, Utensils, Coffee, AlertTriangle, Layout, ShieldAlert, Users, Loader2, Trash2, FolderTree, Flame, Snowflake, Star, Cake, Sparkles, GripVertical, Pencil, CreditCard, Wifi, WifiOff, Eye, EyeOff, ExternalLink, CheckCircle, XCircle, Banknote, Smartphone, Gift, Percent, Tag, Ticket, Download, Globe, Package, ChevronDown, ChevronUp, MonitorSmartphone, MapPin, Navigation, FlaskConical, ShoppingBag, Truck, Timer, Car, Clock, Zap } from 'lucide-react';
+import { Save, Shield, Bell, Palette, Database, Plus, Store, Utensils, Coffee, AlertTriangle, Layout, ShieldAlert, Users, Loader2, Trash2, FolderTree, Flame, Snowflake, Star, Cake, Sparkles, GripVertical, Pencil, CreditCard, Wifi, WifiOff, Eye, EyeOff, ExternalLink, CheckCircle, XCircle, Banknote, Smartphone, Gift, Percent, Tag, Ticket, Download, Globe, Package, ChevronDown, ChevronUp, MonitorSmartphone, MapPin, Navigation, FlaskConical, ShoppingBag, Truck, Timer, Car, Clock, Zap, ShoppingCart, BookOpen } from 'lucide-react';
+import { useSystemMode, SystemMode } from '@/lib/system-mode';
 import {
   Dialog,
   DialogContent,
@@ -28,6 +29,87 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+
+/* ─── System Mode Section Component ─────────────────────────────────────── */
+function SystemModeSection() {
+  const { mode, setMode } = useSystemMode();
+
+  const modes: { id: SystemMode; titleAr: string; titleEn: string; descAr: string; descEn: string; icon: any; features: string[] }[] = [
+    {
+      id: 'pos',
+      titleAr: 'نظام POS الكامل',
+      titleEn: 'Full POS System',
+      descAr: 'نظام إدارة مطعم شامل — طلبات وكاشير ومخزون وتقارير وموظفون',
+      descEn: 'Full restaurant management — orders, cashier, inventory, reports & staff',
+      icon: ShoppingCart,
+      features: ['نقطة البيع (كاشير)', 'إدارة الطلبات', 'المخزون والوصفات', 'التقارير والإحصائيات', 'إدارة الموظفين', 'الحضور والورديات'],
+    },
+    {
+      id: 'menu',
+      titleAr: 'موقع قائمة Menu فقط',
+      titleEn: 'Digital Menu Website',
+      descAr: 'عرض قائمة المنتجات للزوار فقط — بسيط ونظيف بدون POS أو مخزون',
+      descEn: 'Display your menu to visitors only — clean & simple, no POS or inventory',
+      icon: BookOpen,
+      features: ['صفحة قائمة المنتجات', 'الصور والأسعار', 'معلومات الفرع', 'الوصف والفئات', 'رابط قابل للمشاركة'],
+    },
+  ];
+
+  return (
+    <div className="space-y-6 pb-8">
+      <div>
+        <h2 className="text-lg font-bold text-foreground">وضع تشغيل النظام</h2>
+        <p className="text-sm text-muted-foreground mt-1">اختر كيف يعمل نظامك — يؤثر على القائمة الجانبية وما يظهر للموظفين</p>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        {modes.map(m => {
+          const Icon = m.icon;
+          const selected = mode === m.id;
+          return (
+            <button
+              key={m.id}
+              onClick={() => setMode(m.id)}
+              className={`text-right w-full rounded-2xl border-2 p-5 transition-all ${
+                selected
+                  ? 'border-primary bg-primary/5 shadow-sm'
+                  : 'border-border bg-card hover:border-primary/40 hover:bg-muted/30'
+              }`}
+            >
+              <div className="flex items-start gap-4">
+                <div className={`mt-0.5 p-2.5 rounded-xl ${selected ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                  <Icon className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="font-bold text-foreground text-sm">{m.titleAr}</p>
+                    {selected && (
+                      <span className="text-[10px] font-bold bg-primary text-primary-foreground px-2 py-0.5 rounded-full">مفعّل</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{m.descAr}</p>
+                  <ul className="mt-3 space-y-1">
+                    {m.features.map(f => (
+                      <li key={f} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${selected ? 'bg-primary' : 'bg-muted-foreground/40'}`} />
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="rounded-xl bg-muted/40 border border-border p-4 text-sm text-muted-foreground">
+        <p className="font-semibold text-foreground mb-1">ملاحظة</p>
+        <p>التغيير فوري ويُطبَّق على القائمة الجانبية مباشرة دون إعادة تشغيل — يمكنك التبديل في أي وقت</p>
+      </div>
+    </div>
+  );
+}
 
 interface MenuCategory {
   id: string;
@@ -839,6 +921,7 @@ export default function AdminSettings() {
     { key: 'menu',       labelAr: 'القائمة',    labelEn: 'Menu',       icon: Utensils },
     { key: 'payments',   labelAr: 'الدفع',      labelEn: 'Payments',   icon: CreditCard },
     { key: 'loyalty',    labelAr: 'الولاء',     labelEn: 'Loyalty',    icon: Gift },
+    { key: 'system',     labelAr: 'النظام',     labelEn: 'System',     icon: Layout },
   ];
 
   const createCategoryMutation = useMutation({
@@ -3524,6 +3607,11 @@ export default function AdminSettings() {
             </Card>
 
           </div>
+        )}
+
+        {/* ── System Mode Selector ── */}
+        {activeTab === 'system' && (
+          <SystemModeSection />
         )}
       </div>
 

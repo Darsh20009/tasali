@@ -20,6 +20,7 @@ import { CustomerNotificationListener } from "@/components/customer-notification
 import { GlobalCommandPalette } from "@/components/global-command-palette";
 import { QuickActionBar } from "@/components/quick-action-bar";
 import { useProximityNotify } from "@/hooks/useProximityNotify";
+import { SystemModeProvider } from "@/lib/system-mode";
 
 const CartModal = lazy(() => import("@/components/cart-modal"));
 const CheckoutModal = lazy(() => import("@/components/checkout-modal"));
@@ -597,6 +598,7 @@ function App() {
   return (
     <div className={`${isEmployee ? 'employee-portal' : 'customer-portal'} min-h-screen bg-background text-foreground font-ibm-arabic antialiased`} dir={lang === 'ar' ? 'rtl' : 'ltr'} key={lang}>
       <QueryClientProvider client={queryClient}>
+        <SystemModeProvider>
         <TooltipProvider>
           <CustomerProvider>
             <AuthModalProvider>
@@ -616,6 +618,7 @@ function App() {
             </AuthModalProvider>
           </CustomerProvider>
         </TooltipProvider>
+        </SystemModeProvider>
       </QueryClientProvider>
     </div>
   );
