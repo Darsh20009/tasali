@@ -1,13 +1,123 @@
+import { useState } from 'react';
 import { useLocation } from 'wouter';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { LayoutDashboard, Users, FileText, Settings, LogOut, Bell, Code2, GitBranch, Mail, Coffee, BookOpen, Star, ClipboardList, CreditCard, UserSearch, Receipt, Layers, Rocket, Activity } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import staffLogo from "@assets/employee-logo.png";
+import {
+  LayoutDashboard, Users, FileText, Settings, LogOut, Bell,
+  GitBranch, Mail, Coffee, Star, ClipboardList, CreditCard,
+  ChevronDown, X, Package, BarChart3, ShoppingCart,
+  Palette, Printer, Code2, Gift, HelpCircle, Store, Megaphone,
+  BookOpen, Warehouse, UserCheck, Shield, Activity, Layers, Receipt,
+  UserSearch, Rocket, TrendingUp, Home, Menu
+} from 'lucide-react';
 import { brand } from "@/lib/brand";
+import staffLogo from "@assets/employee-logo.png";
 
+interface AdminSidebarProps {
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
+}
 
-export function AdminSidebar() {
+// ── Direct top-level nav items — like Foodics: الملخص, الطلبات, العملاء ──
+const TOP_ITEMS = (isAr: boolean) => [
+  { label: isAr ? 'الملخص' : 'Overview', icon: LayoutDashboard, path: '/admin/dashboard' },
+  { label: isAr ? 'الطلبات' : 'Orders', icon: ShoppingCart, path: '/manager/orders' },
+  { label: isAr ? 'العملاء' : 'Customers', icon: Users, path: '/admin/customers' },
+  { label: isAr ? 'نقطة البيع' : 'POS System', icon: CreditCard, path: '/employee/pos' },
+];
+
+// ── Collapsible groups — like Foodics ──
+const NAV_GROUPS = (isAr: boolean, unreadCount: number) => [
+  {
+    key: 'reports',
+    label: isAr ? 'التقارير' : 'Reports',
+    icon: BarChart3,
+    items: [
+      { label: isAr ? 'داشبورد المدير' : 'Manager Dashboard', icon: LayoutDashboard, path: '/manager/dashboard' },
+      { label: isAr ? 'الإحصائيات الدقيقة' : 'Statistics', icon: TrendingUp, path: '/manager/statistics' },
+      { label: isAr ? 'تقارير المبيعات' : 'Sales Reports', icon: FileText, path: '/admin/reports' },
+      { label: isAr ? 'سجل الدفعات' : 'Payment Logs', icon: Receipt, path: '/admin/payment-logs' },
+    ],
+  },
+  {
+    key: 'inventory',
+    label: isAr ? 'المخزون' : 'Inventory',
+    icon: Warehouse,
+    items: [
+      { label: isAr ? 'نظرة المخزون' : 'Inventory', icon: Warehouse, path: '/manager/inventory' },
+      { label: isAr ? 'المواد الخام' : 'Raw Items', icon: Package, path: '/manager/inventory/raw-items' },
+      { label: isAr ? 'المشتريات' : 'Purchases', icon: ClipboardList, path: '/manager/inventory/purchases' },
+    ],
+  },
+  {
+    key: 'menu',
+    label: isAr ? 'قائمة المنتجات' : 'Products',
+    icon: Coffee,
+    items: [
+      { label: isAr ? 'إدارة القائمة' : 'Menu Management', icon: Coffee, path: '/employee/menu-management' },
+      { label: isAr ? 'الإضافات' : 'Product Addons', icon: Layers, path: '/admin/product-addons' },
+      { label: isAr ? 'حجوزات الطاولات' : 'Table Reservations', icon: BookOpen, path: '/manager/reservations' },
+      { label: isAr ? 'حجوزات المنتجات' : 'Product Reservations', icon: Star, path: '/manager/product-reservations' },
+    ],
+  },
+  {
+    key: 'management',
+    label: isAr ? 'إدارة' : 'Management',
+    icon: Settings,
+    items: [
+      { label: isAr ? 'الموظفون' : 'Employees', icon: UserCheck, path: '/admin/employees' },
+      { label: isAr ? 'الفروع' : 'Branches', icon: GitBranch, path: '/admin/branches' },
+      { label: isAr ? 'الإشعارات' : 'Notifications', icon: Bell, path: '/admin/notifications', badge: unreadCount > 0 ? unreadCount : undefined },
+      { label: isAr ? 'الإعدادات' : 'Settings', icon: Settings, path: '/admin/settings' },
+      { label: isAr ? 'البراندة' : 'Branding', icon: Palette, path: '/admin/branding' },
+      { label: isAr ? 'الطباعة' : 'Printing', icon: Printer, path: '/admin/printing' },
+      { label: isAr ? 'نشر التطبيق' : 'App Publishing', icon: Rocket, path: '/admin/app-publishing' },
+    ],
+  },
+  {
+    key: 'marketing',
+    label: isAr ? 'التسويق' : 'Marketing',
+    icon: Megaphone,
+    items: [
+      { label: isAr ? 'التسويق البريدي' : 'Email Marketing', icon: Mail, path: '/admin/email' },
+      { label: isAr ? 'إدارة API' : 'API', icon: Code2, path: '/admin/api' },
+    ],
+  },
+];
+
+// ── One nav item button ──
+function NavItemButton({
+  label, icon: Icon, path, active, onClick, badge, indent = false
+}: {
+  label: string; icon: any; path: string; active: boolean;
+  onClick: () => void; badge?: number; indent?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      data-testid={`sidebar-link-${path.split('/').pop()}`}
+      className={`relative w-full flex items-center gap-3 py-2.5 text-sm transition-all ${
+        indent ? 'pr-9 pl-4' : 'px-4'
+      } ${
+        active
+          ? 'bg-primary/8 text-primary font-semibold'
+          : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
+      }`}
+    >
+      {/* Active indicator — right edge (RTL sidebar) */}
+      {active && <span className="absolute right-0 top-1.5 bottom-1.5 w-[3px] bg-primary rounded-l-full" />}
+      <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-primary' : 'text-muted-foreground'}`} />
+      <span className="flex-1 text-right leading-tight">{label}</span>
+      {badge ? (
+        <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold flex items-center justify-center">
+          {badge > 99 ? '99+' : badge}
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
+export function AdminSidebar({ mobileOpen = false, onMobileClose }: AdminSidebarProps) {
   const [location, navigate] = useLocation();
   const { i18n } = useTranslation();
   const isAr = i18n.language !== 'en';
@@ -19,138 +129,189 @@ export function AdminSidebar() {
   });
   const unreadCount = unreadData?.count ?? 0;
 
-  const groups = [
-    {
-      label: isAr ? "الرئيسية" : "Main",
-      items: [
-        { label: isAr ? 'لوحة التحكم' : 'Dashboard', icon: LayoutDashboard, path: '/admin/dashboard', isNotifications: false },
-      ]
-    },
-    {
-      label: isAr ? "نقطة البيع" : "Point of Sale",
-      items: [
-        { label: isAr ? 'نقطة البيع' : 'POS System', icon: Activity, path: '/employee/pos', isNotifications: false },
-        { label: isAr ? 'الإحصائيات الدقيقة' : 'Statistics', icon: Activity, path: '/manager/statistics', isNotifications: false },
-        { label: isAr ? 'لوحة تحكم المدير' : 'Manager Dashboard', icon: LayoutDashboard, path: '/manager/dashboard', isNotifications: false },
-      ]
-    },
-    {
-      label: isAr ? "العمليات" : "Operations",
-      items: [
-        { label: isAr ? 'إدارة المأكولات والمشروبات' : 'Menu Management', icon: Coffee, path: '/employee/menu-management', isNotifications: false },
-        { label: isAr ? 'إدارة الطلبات' : 'Orders', icon: ClipboardList, path: '/manager/orders', isNotifications: false },
-        { label: isAr ? 'حجوزات الطاولات' : 'Table Reservations', icon: BookOpen, path: '/manager/reservations', isNotifications: false },
-        { label: isAr ? 'حجوزات المنتجات' : 'Product Reservations', icon: Star, path: '/manager/product-reservations', isNotifications: false },
-      ]
-    },
-    {
-      label: isAr ? "الإدارة" : "Management",
-      items: [
-        { label: isAr ? 'الموظفون' : 'Employees', icon: Users, path: '/admin/employees', isNotifications: false },
-        { label: isAr ? 'الفروع' : 'Branches', icon: GitBranch, path: '/admin/branches', isNotifications: false },
-        { label: isAr ? 'العملاء' : 'Customers', icon: UserSearch, path: '/admin/customers', isNotifications: false },
-        { label: isAr ? 'الإضافات' : 'Product Addons', icon: Layers, path: '/admin/product-addons', isNotifications: false },
-        { label: isAr ? 'التقارير' : 'Reports', icon: FileText, path: '/admin/reports', isNotifications: false },
-        { label: isAr ? 'سجل المدفوعات' : 'Payment Logs', icon: Receipt, path: '/admin/payment-logs', isNotifications: false },
-        { label: isAr ? 'نشر التطبيق' : 'App Publishing', icon: Rocket, path: '/admin/app-publishing', isNotifications: false },
-      ]
-    },
-    {
-      label: isAr ? "التواصل" : "Communication",
-      items: [
-        { label: isAr ? 'إرسال الإشعارات' : 'Send Notifications', icon: Bell, path: '/admin/notifications', isNotifications: true },
-        { label: isAr ? 'التسويق البريدي' : 'Email Marketing', icon: Mail, path: '/admin/email', isNotifications: false },
-      ]
-    },
-    {
-      label: isAr ? "الإعدادات" : "Settings",
-      items: [
-        { label: isAr ? 'الإعدادات' : 'Settings', icon: Settings, path: '/admin/settings', isNotifications: false },
-        { label: isAr ? 'إدارة API' : 'API Management', icon: Code2, path: '/admin/api', isNotifications: false },
-      ]
-    },
-  ];
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({
+    reports: true,
+    inventory: false,
+    menu: false,
+    management: false,
+    marketing: false,
+  });
+
+  const toggleGroup = (key: string) =>
+    setExpanded(prev => ({ ...prev, [key]: !prev[key] }));
+
+  const handleNavigate = (path: string) => {
+    navigate(path);
+    onMobileClose?.();
+  };
 
   const handleLogout = async () => {
     await fetch('/api/employees/logout', { method: 'POST' });
-    localStorage.removeItem("qirox-restore-key");
+    localStorage.removeItem('qirox-restore-key');
     navigate('/employee/login');
   };
 
-  return (
-    <>
-      <div className="w-64 bg-background border-l border-border flex flex-col h-screen sticky top-0">
-        <div className="p-6 border-b border-border">
-          <div className="flex items-center gap-3 mb-1">
-            <img
-              src={staffLogo}
-              alt={brand.platformNameEn}
-              className="w-10 h-10 object-contain rounded-lg"
-            />
-            <div>
-              <h2 className="text-lg font-bold text-foreground">{isAr ? brand.platformNameAr : brand.platformNameEn}</h2>
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <p className="text-xs text-muted-foreground">{isAr ? 'لوحة التحكم الإدارية' : 'Admin Dashboard'}</p>
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-gradient-to-r from-yellow-500 to-amber-400 text-black leading-none tracking-wide shadow-sm">QIROX PRO</span>
-              </div>
-            </div>
+  const topItems = TOP_ITEMS(isAr);
+  const groups = NAV_GROUPS(isAr, unreadCount);
+
+  const SidebarContent = () => (
+    <div className="flex flex-col h-full bg-background border-l border-border" dir="rtl">
+
+      {/* ── Brand header ── */}
+      <div className="flex items-center justify-between px-4 py-4 border-b border-border">
+        <div className="flex items-center gap-2.5">
+          <img
+            src={staffLogo}
+            alt={brand.platformNameEn}
+            className="w-8 h-8 object-contain rounded-xl"
+          />
+          <div className="min-w-0">
+            <p className="text-sm font-black text-foreground leading-tight truncate">
+              {isAr ? brand.platformNameAr : brand.platformNameEn}
+            </p>
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-primary text-primary-foreground leading-none">
+              PRO
+            </span>
           </div>
         </div>
-
-        <nav className="flex-1 p-4 space-y-4 overflow-y-auto">
-          {groups.map((group) => (
-            <div key={group.label}>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground px-2 mb-1">{group.label}</p>
-              <div className="space-y-1">
-                {group.items.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = location === item.path;
-                  const showBadge = item.isNotifications && unreadCount > 0;
-                  return (
-                    <button
-                      key={item.path}
-                      onClick={() => navigate(item.path)}
-                      className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all text-right ${
-                        isActive
-                          ? 'bg-primary text-primary-foreground shadow-sm'
-                          : 'text-foreground hover:bg-primary/10'
-                      }`}
-                      data-testid={`sidebar-link-${item.path.split('/').pop()}`}
-                    >
-                      <div className="relative shrink-0">
-                        <Icon className="w-4 h-4" />
-                        {showBadge && (
-                          <span className="absolute -top-1.5 -right-1.5 min-w-[14px] h-3.5 px-0.5 rounded-full bg-red-500 text-white text-[8px] font-bold flex items-center justify-center leading-none ring-1 ring-background">
-                            {unreadCount > 99 ? '99+' : unreadCount}
-                          </span>
-                        )}
-                      </div>
-                      <span className="font-medium text-sm flex-1">{item.label}</span>
-                      {showBadge && (
-                        <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center leading-none">
-                          {unreadCount > 99 ? '99+' : unreadCount}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </nav>
-
-        <div className="p-4 border-t border-border space-y-2">
-          <Button
-            onClick={handleLogout}
-            variant="outline"
-            className="w-full justify-start"
-            data-testid="button-logout"
-          >
-            <LogOut className="w-4 h-4 ml-2" />
-            {isAr ? 'تسجيل الخروج' : 'Logout'}
-          </Button>
-        </div>
+        <button
+          onClick={onMobileClose}
+          className="lg:hidden p-1.5 rounded-lg hover:bg-muted transition-colors"
+          data-testid="button-sidebar-close"
+        >
+          <X className="w-4 h-4 text-muted-foreground" />
+        </button>
       </div>
+
+      {/* ── Navigation ── */}
+      <nav className="flex-1 overflow-y-auto py-2">
+
+        {/* Direct top-level items */}
+        <div className="mb-1">
+          {topItems.map(item => (
+            <NavItemButton
+              key={item.path}
+              label={item.label}
+              icon={item.icon}
+              path={item.path}
+              active={location === item.path || location.startsWith(item.path + '/')}
+              onClick={() => handleNavigate(item.path)}
+            />
+          ))}
+        </div>
+
+        <div className="mx-4 my-1.5 border-t border-border" />
+
+        {/* Collapsible groups */}
+        {groups.map(group => {
+          const isGroupExpanded = expanded[group.key];
+          const GroupIcon = group.icon;
+          const hasActiveChild = group.items.some(
+            item => location === item.path || location.startsWith(item.path + '/')
+          );
+
+          return (
+            <div key={group.key}>
+              {/* Group header */}
+              <button
+                onClick={() => toggleGroup(group.key)}
+                className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium transition-colors ${
+                  hasActiveChild && !isGroupExpanded
+                    ? 'text-primary'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <GroupIcon
+                    className={`w-4 h-4 shrink-0 ${
+                      hasActiveChild && !isGroupExpanded ? 'text-primary' : 'text-muted-foreground'
+                    }`}
+                  />
+                  <span>{group.label}</span>
+                </div>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 text-muted-foreground/60 transition-transform duration-200 ${
+                    isGroupExpanded ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+
+              {/* Sub-items */}
+              {isGroupExpanded && (
+                <div className="pb-1">
+                  {group.items.map(item => (
+                    <NavItemButton
+                      key={item.path}
+                      label={item.label}
+                      icon={item.icon}
+                      path={item.path}
+                      active={location === item.path}
+                      onClick={() => handleNavigate(item.path)}
+                      badge={(item as any).badge}
+                      indent
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        <div className="mx-4 my-1.5 border-t border-border" />
+
+        {/* Bottom direct items */}
+        <NavItemButton
+          label={isAr ? 'الرئيسية' : 'Home'}
+          icon={Home}
+          path="/employee/home"
+          active={location === '/employee/home'}
+          onClick={() => handleNavigate('/employee/home')}
+        />
+      </nav>
+
+      {/* ── Footer ── */}
+      <div className="border-t border-border pb-safe">
+        <button
+          onClick={() => handleNavigate('/manager/loyalty')}
+          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-colors"
+        >
+          <Gift className="w-4 h-4" />
+          <span className="flex-1 text-right">{isAr ? 'نقاط الولاء' : 'Loyalty'}</span>
+        </button>
+        <button
+          onClick={handleLogout}
+          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-muted-foreground hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30 dark:hover:text-red-400 transition-colors"
+          data-testid="button-logout"
+        >
+          <LogOut className="w-4 h-4" />
+          <span className="flex-1 text-right">{isAr ? 'تسجيل الخروج' : 'Logout'}</span>
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      {/* Desktop sidebar */}
+      <div className="hidden lg:flex w-56 flex-col h-screen sticky top-0 shrink-0">
+        <SidebarContent />
+      </div>
+
+      {/* Mobile overlay */}
+      {mobileOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden" onClick={onMobileClose}>
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+          <div
+            className="absolute right-0 top-0 bottom-0 w-60 shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <SidebarContent />
+          </div>
+        </div>
+      )}
     </>
   );
 }
+
+// Legacy named export kept for any older imports
+export default AdminSidebar;

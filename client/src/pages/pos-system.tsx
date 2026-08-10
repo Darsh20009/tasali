@@ -149,8 +149,17 @@ export default function PosSystem() {
   const [customerPoints, setCustomerPoints] = useState(0);
   const [usePoints, setUsePoints] = useState(false);
   const [splitViewMode, setSplitViewMode] = useState(false);
-  const [mobilePanelView, setMobilePanelView] = useState<'products' | 'cart' | 'payment'>('products');
+  // Mobile 4-panel navigation: settings ← cart ← products → payment
+  // panelOrder indices: 0=settings, 1=cart, 2=products(default), 3=payment
+  const MOBILE_PANEL_ORDER = ['settings', 'cart', 'products', 'payment'] as const;
+  type MobilePanel = typeof MOBILE_PANEL_ORDER[number];
+  const [mobilePanelIdx, setMobilePanelIdx] = useState(2); // default: products
+  const mobilePanelView = MOBILE_PANEL_ORDER[mobilePanelIdx] as MobilePanel;
+  const setMobilePanelView = (panel: MobilePanel) => setMobilePanelIdx(MOBILE_PANEL_ORDER.indexOf(panel));
   const paymentSectionRef = useRef<HTMLDivElement>(null);
+  // Touch swipe refs for native-feel 4-panel navigation
+  const swipeTouchStartX = useRef(0);
+  const swipeTouchStartY = useRef(0);
   const [soundEnabled, setSoundEnabled] = useState(() => getSoundEnabled('pos'));
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [syncing, setSyncing] = useState(false);
@@ -2311,7 +2320,26 @@ export default function PosSystem() {
         </header>
         <PosShiftBar />
 
-        <main className="flex-1 flex overflow-hidden">
+        <main
+          className="flex-1 flex overflow-hidden"
+          onTouchStart={(e) => {
+            swipeTouchStartX.current = e.touches[0].clientX;
+            swipeTouchStartY.current = e.touches[0].clientY;
+          }}
+          onTouchEnd={(e) => {
+            const dx = e.changedTouches[0].clientX - swipeTouchStartX.current;
+            const dy = e.changedTouches[0].clientY - swipeTouchStartY.current;
+            // Ignore vertical scrolls and tiny nudges
+            if (Math.abs(dy) > Math.abs(dx) + 15 || Math.abs(dx) < 55) return;
+            // Swipe RIGHT (dx > 0) → يمين → payment direction (increase index)
+            // Swipe LEFT  (dx < 0) → يسار → settings direction (decrease index)
+            if (dx > 0) {
+              setMobilePanelIdx(prev => Math.min(prev + 1, MOBILE_PANEL_ORDER.length - 1));
+            } else {
+              setMobilePanelIdx(prev => Math.max(prev - 1, 0));
+            }
+          }}
+        >
 
           <section className={`${mobilePanelView === 'products' ? 'flex' : 'hidden'} md:flex flex-1 flex-col overflow-hidden`}>
             {/* Category + Department Top Bar */}
@@ -3473,6 +3501,115 @@ export default function PosSystem() {
             </div>
           </aside>
 
+          {/* ── Mobile Settings Panel (shown when mobilePanelView === 'settings') ── */}
+          <section className={`${mobilePanelView === 'settings' ? 'flex' : 'hidden'} md:hidden w-full flex-col overflow-y-auto bg-background pb-[72px]`}>
+            <div className="p-4 border-b bg-card/50 flex items-center gap-3">
+              <Settings className="w-5 h-5 text-primary" />
+              <h2 className="font-bold text-base">{tc('إعدادات نقطة البيع', 'POS Settings')}</h2>
+            </div>
+            <div className="p-4 space-y-3">
+              {/* Sound */}
+              <div className="flex items-center justify-between bg-card border rounded-xl px-4 py-3">
+                <div className="flex items-center gap-3">
+                  {soundEnabled ? <Volume2 className="w-5 h-5 text-primary" /> : <VolumeX className="w-5 h-5 text-muted-foreground" />}
+                  <span className="text-sm font-medium">{tc('الأصوات', 'Sounds')}</span>
+                </div>
+                <button
+                  onClick={() => { const n = !soundEnabled; setSoundEnabled(n); saveSoundEnabled('pos', n); }}
+                  className={`w-11 h-6 rounded-full transition-colors relative ${soundEnabled ? 'bg-primary' : 'bg-muted'}`}
+                >
+                  <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${soundEnabled ? 'right-0.5' : 'left-0.5'}`} />
+                </button>
+              </div>
+
+              {/* Auto Print */}
+              <div className="flex items-center justify-between bg-card border rounded-xl px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <Printer className="w-5 h-5 text-primary" />
+                  <span className="text-sm font-medium">{tc('طباعة تلقائية', 'Auto Print')}</span>
+                </div>
+                <button
+                  onClick={() => { const n = !autoPrint; setAutoPrint(n); savePrinterSettings({ ...loadPrinterSettings(), autoPrint: n }); }}
+                  className={`w-11 h-6 rounded-full transition-colors relative ${autoPrint ? 'bg-primary' : 'bg-muted'}`}
+                >
+                  <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${autoPrint ? 'right-0.5' : 'left-0.5'}`} />
+                </button>
+              </div>
+
+              {/* VAT Label */}
+              <div className="flex items-center justify-between bg-card border rounded-xl px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <Receipt className="w-5 h-5 text-primary" />
+                  <span className="text-sm font-medium">{tc('إظهار "شامل الضريبة"', 'Show VAT label')}</span>
+                </div>
+                <button
+                  onClick={() => setShowVatLabel(v => !v)}
+                  className={`w-11 h-6 rounded-full transition-colors relative ${showVatLabel ? 'bg-primary' : 'bg-muted'}`}
+                >
+                  <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${showVatLabel ? 'right-0.5' : 'left-0.5'}`} />
+                </button>
+              </div>
+
+              {/* Actions */}
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground px-1 pt-2">{tc('إجراءات سريعة', 'Quick Actions')}</p>
+
+              <button onClick={() => setShowPrinterSettings(true)} className="w-full flex items-center gap-3 bg-card border rounded-xl px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors">
+                <Printer className="w-5 h-5 text-muted-foreground" />
+                {tc('إعدادات الطابعة', 'Printer Settings')}
+              </button>
+
+              <button onClick={() => setShowSoundSettings(true)} className="w-full flex items-center gap-3 bg-card border rounded-xl px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors">
+                <Volume2 className="w-5 h-5 text-muted-foreground" />
+                {tc('إعدادات الأصوات', 'Sound Settings')}
+              </button>
+
+              <button onClick={() => setShowPOSSettings(true)} className="w-full flex items-center gap-3 bg-card border rounded-xl px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors">
+                <Settings className="w-5 h-5 text-muted-foreground" />
+                {tc('إعدادات نقطة البيع', 'POS Settings')}
+              </button>
+
+              {lastOrder && (
+                <button onClick={() => setShowReceiptDialog(true)} className="w-full flex items-center gap-3 bg-card border rounded-xl px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors">
+                  <Receipt className="w-5 h-5 text-muted-foreground" />
+                  {tc('آخر فاتورة', 'Last Receipt')}
+                </button>
+              )}
+
+              <button onClick={() => setShowRefundDialog(true)} className="w-full flex items-center gap-3 bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-900 rounded-xl px-4 py-3 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-100 transition-colors">
+                <RotateCcw className="w-5 h-5" />
+                {tc('استرجاع طلب / Refund', 'Refund Order')}
+              </button>
+
+              {/* Order type quick select */}
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground px-1 pt-2">{tc('نوع الطلب', 'Order Type')}</p>
+              <div className="grid grid-cols-2 gap-2">
+                {ORDER_TYPES.map(type => (
+                  <button
+                    key={type.id}
+                    onClick={() => setOrderType(type.id as OrderType)}
+                    className={`flex items-center gap-2 rounded-xl px-3 py-3 text-sm font-bold border transition-colors ${orderType === type.id ? 'bg-primary text-primary-foreground border-primary' : 'bg-card border-border text-foreground hover:bg-muted/50'}`}
+                  >
+                    <type.icon className="w-4 h-4 shrink-0" />
+                    <span className="truncate">{i18n.language === 'ar' ? type.name : type.nameEn}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Zoom */}
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground px-1 pt-2">{tc('حجم العرض', 'Zoom')}</p>
+              <div className="flex items-center gap-3 bg-card border rounded-xl px-4 py-3">
+                <button onClick={() => setPosZoom(z => Math.max(70, z - 10))} className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center font-bold text-lg">−</button>
+                <span className="flex-1 text-center text-sm font-bold">{posZoom}%</span>
+                <button onClick={() => setPosZoom(z => Math.min(150, z + 10))} className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center font-bold text-lg">+</button>
+              </div>
+
+              <button onClick={() => setLocation('/employee/home')} className="w-full flex items-center gap-3 bg-card border rounded-xl px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors">
+                <Home className="w-5 h-5 text-muted-foreground" />
+                {tc('العودة للرئيسية', 'Back to Home')}
+              </button>
+            </div>
+          </section>
+
           {/* ── Quick Shortcuts Sidebar (left strip, hidden on mobile) ── */}
           <QuickSidebar
             groups={[
@@ -3592,60 +3729,103 @@ export default function PosSystem() {
           />
         </main>
 
-        {/* Mobile bottom navigation — Products / Cart / Payment tabs */}
-        <div className="md:hidden fixed bottom-0 left-0 right-0 bg-card border-t z-50 flex h-[58px] shadow-lg">
-          <button
-            onClick={() => setMobilePanelView('products')}
-            className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
-              mobilePanelView === 'products'
-                ? 'text-primary border-t-2 border-primary bg-primary/5'
-                : 'text-muted-foreground'
-            }`}
-            data-testid="button-mobile-tab-products"
-          >
-            <Grid3X3 className="w-5 h-5" />
-            <span className="text-[10px] font-bold">{i18n.language === 'ar' ? 'المنتجات' : 'Products'}</span>
-          </button>
-          <button
-            onClick={() => setMobilePanelView('cart')}
-            className={`flex-1 flex flex-col items-center justify-center gap-0.5 relative transition-colors ${
-              mobilePanelView === 'cart'
-                ? 'text-primary border-t-2 border-primary bg-primary/5'
-                : 'text-muted-foreground'
-            }`}
-            data-testid="button-mobile-tab-cart"
-          >
-            <div className="relative">
-              <ShoppingBag className="w-5 h-5" />
-              {orderItems.length > 0 && (
-                <span className="absolute -top-1.5 -right-2 bg-primary text-primary-foreground text-[9px] font-black rounded-full min-w-[16px] h-4 flex items-center justify-center px-0.5">
-                  {orderItems.length}
-                </span>
+        {/* ── Mobile bottom navigation — 4 swipeable panels ── */}
+        <nav
+          className="md:hidden fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur border-t border-border z-50 shadow-lg"
+          style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 4px)' }}
+        >
+          {/* Panel progress dots */}
+          <div className="flex justify-center gap-1.5 pt-1.5">
+            {MOBILE_PANEL_ORDER.map((_, idx) => (
+              <span
+                key={idx}
+                className={`h-[3px] rounded-full transition-all duration-300 ${
+                  idx === mobilePanelIdx ? 'w-5 bg-primary' : 'w-1.5 bg-muted-foreground/30'
+                }`}
+              />
+            ))}
+          </div>
+          {/* Tab buttons */}
+          <div className="flex h-14">
+            {/* Settings tab (far right in RTL = index 0) */}
+            <button
+              onClick={() => setMobilePanelView('settings')}
+              className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-all active:scale-95 ${
+                mobilePanelView === 'settings'
+                  ? 'text-primary'
+                  : 'text-muted-foreground'
+              }`}
+              data-testid="button-mobile-tab-settings"
+            >
+              <Settings className={`w-5 h-5 transition-transform ${mobilePanelView === 'settings' ? 'scale-110' : ''}`} />
+              <span className="text-[9px] font-bold leading-tight">{i18n.language === 'ar' ? 'الإعدادات' : 'Settings'}</span>
+            </button>
+
+            {/* Cart tab */}
+            <button
+              onClick={() => setMobilePanelView('cart')}
+              className={`flex-1 flex flex-col items-center justify-center gap-0.5 relative transition-all active:scale-95 ${
+                mobilePanelView === 'cart'
+                  ? 'text-primary'
+                  : 'text-muted-foreground'
+              }`}
+              data-testid="button-mobile-tab-cart"
+            >
+              <div className="relative">
+                <ShoppingBag className={`w-5 h-5 transition-transform ${mobilePanelView === 'cart' ? 'scale-110' : ''}`} />
+                {orderItems.length > 0 && (
+                  <span className="absolute -top-1.5 -right-2 bg-primary text-primary-foreground text-[9px] font-black rounded-full min-w-[16px] h-4 flex items-center justify-center px-0.5 leading-none">
+                    {orderItems.length}
+                  </span>
+                )}
+              </div>
+              <span className="text-[9px] font-bold leading-tight">
+                {orderItems.length > 0
+                  ? `${calculateTotal.toFixed(0)} ${t('pos.currency')}`
+                  : i18n.language === 'ar' ? 'السلة' : 'Cart'}
+              </span>
+            </button>
+
+            {/* Products tab — center (default) */}
+            <button
+              onClick={() => setMobilePanelView('products')}
+              className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-all active:scale-95 ${
+                mobilePanelView === 'products'
+                  ? 'text-primary'
+                  : 'text-muted-foreground'
+              }`}
+              data-testid="button-mobile-tab-products"
+            >
+              <Grid3X3 className={`w-5 h-5 transition-transform ${mobilePanelView === 'products' ? 'scale-110' : ''}`} />
+              <span className="text-[9px] font-bold leading-tight">{i18n.language === 'ar' ? 'المنتجات' : 'Products'}</span>
+            </button>
+
+            {/* Payment tab (far left in RTL = index 3) */}
+            <button
+              onClick={() => {
+                if (orderItems.length > 0) setMobilePanelView('payment');
+                else setMobilePanelView('cart'); // show cart first if empty
+              }}
+              className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-all active:scale-95 ${
+                mobilePanelView === 'payment'
+                  ? 'text-primary'
+                  : orderItems.length === 0
+                  ? 'text-muted-foreground/35'
+                  : 'text-muted-foreground'
+              }`}
+              data-testid="button-mobile-tab-payment"
+            >
+              {orderItems.length > 0 ? (
+                <div className="relative">
+                  <CreditCard className={`w-5 h-5 transition-transform ${mobilePanelView === 'payment' ? 'scale-110' : ''}`} />
+                </div>
+              ) : (
+                <CreditCard className="w-5 h-5" />
               )}
-            </div>
-            <span className="text-[10px] font-bold">
-              {orderItems.length > 0
-                ? `${calculateTotal.toFixed(0)} ${t('pos.currency')}`
-                : i18n.language === 'ar' ? 'السلة' : 'Cart'}
-            </span>
-          </button>
-          <button
-            onClick={() => {
-              if (orderItems.length > 0) setMobilePanelView('payment');
-            }}
-            className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
-              mobilePanelView === 'payment'
-                ? 'text-primary border-t-2 border-primary bg-primary/5'
-                : orderItems.length === 0
-                ? 'text-muted-foreground/40'
-                : 'text-muted-foreground'
-            }`}
-            data-testid="button-mobile-tab-payment"
-          >
-            <CreditCard className="w-5 h-5" />
-            <span className="text-[10px] font-bold">{i18n.language === 'ar' ? 'الدفع' : 'Payment'}</span>
-          </button>
-        </div>
+              <span className="text-[9px] font-bold leading-tight">{i18n.language === 'ar' ? 'الدفع' : 'Pay'}</span>
+            </button>
+          </div>
+        </nav>
 
         <Dialog open={showOrdersPanel} onOpenChange={(open) => { setShowOrdersPanel(open); if (open) setNewOrdersCount(0); }}>
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col" dir={dir}>
