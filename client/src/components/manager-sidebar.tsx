@@ -3,16 +3,18 @@ import { useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
 import {
   LayoutDashboard, ShoppingCart, ClipboardList, Package, Warehouse,
-  Wallet, Users, Truck, BarChart3, Building2, Brain, Tag, Settings,
-  ChefHat, Clock, Coffee, Gift, Star, Banknote, FileText, Globe,
-  HardDrive, Code2, Store, Handshake, Shield,
-  TrendingUp, MapPin, Receipt, ChevronDown, ChevronRight,
-  LogOut, Menu, X, BarChart2, Zap, Box, FlaskConical, 
+  Wallet, Users, Truck, BarChart3, Building2, Brain, Settings,
+  ChefHat, Clock, Coffee, Gift, Star, FileText,
+  Globe, Code2, Store, Shield,
+  TrendingUp, MapPin, Receipt, ChevronDown,
+  LogOut, X, BarChart2, Zap, Box, FlaskConical,
   ArrowRightLeft, Bell, Table, BookOpen, UserCheck, CreditCard, Monitor,
-  Sparkles, MessageSquare, ShieldCheck, RefreshCw, Calculator
+  Sparkles, RefreshCw, Calculator, Home, Crown
 } from "lucide-react";
 import { brand } from "@/lib/brand";
 import { cn } from "@/lib/utils";
+import { useSystemMode } from "@/lib/system-mode";
+import staffLogo from "@assets/employee-logo.png";
 
 interface ManagerSidebarProps {
   manager: any;
@@ -22,274 +24,283 @@ interface ManagerSidebarProps {
   role?: string;
 }
 
-interface NavItem {
-  label: string;
-  labelEn: string;
-  icon: any;
-  path?: string;
-  children?: NavItem[];
-  color?: string;
-  badge?: string;
-  roles?: string[];
+/* ─── Role-aware dashboard path ───────────────────────────────────────────── */
+function getDashboardPath(role: string) {
+  if (role === "owner" || role === "admin") return "/owner/dashboard";
+  return "/manager/dashboard";
 }
 
-const NAV_GROUPS: { label: string; labelEn: string; color: string; items: NavItem[] }[] = [
-  {
-    label: "الرئيسية", labelEn: "Home", color: "#2D9B6E",
-    items: [
-      { label: "لوحة التحكم", labelEn: "Dashboard", icon: LayoutDashboard, path: "/manager/dashboard", color: "#2D9B6E" },
-      { label: "نقطة البيع", labelEn: "POS", icon: ShoppingCart, path: "/employee/pos", color: "#10b981" },
-      { label: "الكيوسك", labelEn: "Kiosk", icon: Monitor, path: "/kiosk", color: "#059669" },
-    ]
-  },
-  {
-    label: "العمليات", labelEn: "Operations", color: "#3b82f6",
-    items: [
-      { label: "إدارة الطلبات", labelEn: "Orders", icon: ClipboardList, path: "/manager/orders", color: "#3b82f6" },
-      { label: "الطاولات", labelEn: "Tables", icon: Table, path: "/manager/tables", color: "#60a5fa" },
-      { label: "إدارة المأكولات والمشروبات", labelEn: "Menu", icon: Coffee, path: "/employee/menu-management", color: "#818cf8" },
-      { label: "حجوزات الطاولات", labelEn: "Table Reservations", icon: BookOpen, path: "/manager/reservations", color: "#6366f1" },
-      { label: "حجوزات المنتجات", labelEn: "Product Reservations", icon: Star, path: "/manager/product-reservations", color: "#8b5cf6" },
-      { label: "الورديات", labelEn: "Shifts", icon: Clock, path: "/manager/shifts", color: "#a78bfa" },
-    ]
-  },
-  {
-    label: "المخزون", labelEn: "Inventory", color: "#f59e0b",
-    items: [
-      { label: "دورة المخزون الذكي", labelEn: "Inventory Cycle", icon: RefreshCw, path: "/manager/inventory/cycle", color: "#10b981" },
-      { label: "الجرد الذكي", labelEn: "Smart Stocktake", icon: ClipboardList, path: "/manager/inventory/stocktake", color: "#059669" },
-      { label: "ذكاء المخزون AI", labelEn: "Inventory AI", icon: Sparkles, path: "/manager/inventory/ai", color: "#7c3aed" },
-      { label: "نظرة المخزون", labelEn: "Inventory", icon: Warehouse, path: "/manager/inventory", color: "#f59e0b" },
-      { label: "لوحة المخزون", labelEn: "Inventory Dashboard", icon: BarChart3, path: "/manager/inventory/dashboard", color: "#f59e0b" },
-      { label: "لوحة المخزون الذكية", labelEn: "Smart Inv. Dashboard", icon: Sparkles, path: "/manager/inventory/smart-dashboard", color: "#fbbf24" },
-      { label: "المواد الخام", labelEn: "Raw Items", icon: Box, path: "/manager/inventory/raw-items", color: "#fbbf24" },
-      { label: "الوصفات", labelEn: "Recipes", icon: FlaskConical, path: "/manager/inventory/recipes", color: "#f97316" },
-      { label: "إدارة الوصفات", labelEn: "Recipes Mgmt", icon: ChefHat, path: "/manager/inventory/recipes-management", color: "#fb923c" },
-      { label: "المخزون والوصفات الموحد", labelEn: "Unified Inv & Recipes", icon: ArrowRightLeft, path: "/manager/inventory/unified", color: "#fbbf24" },
-      { label: "المشتريات", labelEn: "Purchases", icon: Receipt, path: "/manager/inventory/purchases", color: "#fb923c" },
-      { label: "حركات المخزون", labelEn: "Movements", icon: ArrowRightLeft, path: "/manager/inventory/movements", color: "#fcd34d" },
-      { label: "حركات المخزون التفصيلية", labelEn: "Stock Movements", icon: ArrowRightLeft, path: "/manager/inventory/stock-movements", color: "#fcd34d" },
-      { label: "المواد والوصفات والمخزون", labelEn: "Ingredients & Recipes", icon: FlaskConical, path: "/manager/inventory/ingredients-recipes", color: "#f97316" },
-      { label: "نقل بين الفروع", labelEn: "Transfers", icon: Truck, path: "/manager/inventory/transfers", color: "#fde68a" },
-      { label: "تنبيهات المخزون", labelEn: "Alerts", icon: Bell, path: "/manager/inventory/alerts", color: "#ef4444", badge: "!" },
-    ]
-  },
-  {
-    label: "المالية", labelEn: "Finance", color: "#8b5cf6",
-    items: [
-      { label: "المحاسبة", labelEn: "Accounting", icon: Wallet, path: "/manager/accounting", color: "#8b5cf6" },
-      { label: "المحاسبة الذكية", labelEn: "Smart Accounting", icon: Sparkles, path: "/manager/accounting/smart", color: "#a78bfa" },
-      { label: "لوحة المحاسبة الذكية", labelEn: "Smart Acc. Dashboard", icon: BarChart3, path: "/manager/accounting/smart-dashboard", color: "#c4b5fd" },
-      { label: "تتبع المدفوعات", labelEn: "Payment Tracking", icon: Receipt, path: "/manager/payment-tracking", color: "#7c3aed" },
-      { label: "ZATCA فاتورة", labelEn: "ZATCA", icon: Shield, path: "/manager/zatca", color: "#a78bfa", roles: ["admin", "owner"] },
-      { label: "ERP المحاسبة", labelEn: "ERP Accounting", icon: BookOpen, path: "/erp/accounting", color: "#c4b5fd", roles: ["admin", "owner"] },
-    ]
-  },
-  {
-    label: "الفريق", labelEn: "Team", color: "#ec4899",
-    items: [
-      { label: "الموظفون", labelEn: "Employees", icon: Users, path: "/admin/employees", color: "#ec4899" },
-      { label: "الحضور", labelEn: "Attendance", icon: UserCheck, path: "/manager/attendance", color: "#f472b6" },
-      { label: "كيوسك الحضور", labelEn: "Attendance Kiosk", icon: Monitor, path: "/attendance-kiosk", color: "#6366f1" },
-    ]
-  },
-  {
-    label: "التوصيل", labelEn: "Delivery", color: "#06b6d4",
-    items: [
-      { label: "إدارة التوصيل", labelEn: "Delivery", icon: Truck, path: "/manager/delivery", color: "#06b6d4" },
-      { label: "السائقون", labelEn: "Drivers", icon: MapPin, path: "/manager/drivers", color: "#22d3ee" },
-      { label: "مناطق التوصيل", labelEn: "Delivery Zones", icon: MapPin, path: "/manager/delivery/zones", color: "#0ea5e9" },
-    ]
-  },
-  {
-    label: "الذكاء الاصطناعي", labelEn: "AI Center", color: "#a855f7",
-    items: [
-      { label: "مركز الذكاء الاصطناعي", labelEn: "AI Control Center", icon: Sparkles, path: "/manager/ai-center", color: "#D4912A", badge: "جديد" },
-      { label: "CEO AI — مستشار الأعمال", labelEn: "CEO AI", icon: Brain, path: "/manager/ceo-ai", color: "#6d28d9" },
-      { label: "محاكي قرارات الأعمال", labelEn: "Business Simulator", icon: Calculator, path: "/manager/simulator", color: "#7c3aed" },
-      { label: "التوأم الرقمي للفروع", labelEn: "Digital Twin", icon: Building2, path: "/manager/digital-twin", color: "#a855f7" },
-      { label: "مساعد الذكاء الاصطناعي", labelEn: "AI Assistant", icon: Zap, path: "/manager/ai", color: "#c084fc" },
-      { label: "تقارير ذكية", labelEn: "Smart Reports", icon: FileText, path: "/manager/smart-reports", color: "#d8b4fe" },
-    ]
-  },
-  {
-    label: "التحليلات والتقارير", labelEn: "Analytics", color: "#14b8a6",
-    items: [
-      { label: "تحاليلي اليومي", labelEn: "My Daily Analytics", icon: TrendingUp, path: "/manager/tahalyli", color: "#f59e0b", badge: "✨" },
-      { label: "التقارير", labelEn: "Reports", icon: FileText, path: "/admin/reports", color: "#14b8a6" },
-      { label: "تقارير المنتجات", labelEn: "Product Reports", icon: FileText, path: "/manager/product-reports", color: "#2dd4bf" },
-      { label: "تحليلات المنتجات", labelEn: "Product Analytics", icon: BarChart3, path: "/manager/product-analytics", color: "#14b8a6" },
-      { label: "الإحصائيات الدقيقة", labelEn: "Detailed Statistics", icon: TrendingUp, path: "/manager/statistics", color: "#10b981" },
-      { label: "التقارير الموحدة", labelEn: "Unified Reports", icon: Building2, path: "/manager/unified-reports", color: "#2dd4bf" },
-      { label: "تحليلات BI", labelEn: "BI Analytics", icon: Brain, path: "/manager/bi-analytics", color: "#99f6e4" },
-      { label: "سجل الأحداث", labelEn: "Audit Logs", icon: ShieldCheck, path: "/manager/audit-logs", color: "#6366f1", roles: ["owner", "admin", "manager"] },
-    ]
-  },
-  {
-    label: "التسويق", labelEn: "Marketing", color: "#f43f5e",
-    items: [
-      { label: "برنامج الولاء", labelEn: "Loyalty", icon: CreditCard, path: "/manager/loyalty", color: "#f43f5e" },
-      { label: "العروض الترويجية", labelEn: "Promotions", icon: Tag, path: "/manager/promotions", color: "#fda4af" },
-      { label: "إرسال إشعارات Push", labelEn: "Push Notifications", icon: Bell, path: "/admin/notifications", color: "#fb7185" },
-      { label: "الموردون", labelEn: "Suppliers", icon: Handshake, path: "/manager/suppliers", color: "#fecdd3" },
-    ]
-  },
-  {
-    label: "الإعدادات", labelEn: "Settings", color: "#64748b",
-    items: [
-      { label: "إعدادات الفروع", labelEn: "Branches", icon: Building2, path: "/admin/branches", color: "#64748b", roles: ["admin", "owner"] },
-      { label: "الإعدادات", labelEn: "Settings", icon: Settings, path: "/admin/settings", color: "#94a3b8" },
-      { label: "التكاملات", labelEn: "Integrations", icon: Globe, path: "/manager/integrations", color: "#cbd5e1", roles: ["admin", "owner"] },
-    ]
-  },
-  {
-    label: "المتقدمة", labelEn: "Advanced", color: "#7c3aed",
-    items: [
-      { label: "سوق B2B", labelEn: "B2B Market", icon: Store, path: "/manager/b2b", color: "#7c3aed", roles: ["admin", "owner"] },
-      { label: "برنامج الشركاء", labelEn: "Partners", icon: Handshake, path: "/manager/partners", color: "#9333ea", roles: ["admin", "owner"] },
-      { label: "إدارة الأجهزة", labelEn: "Hardware", icon: HardDrive, path: "/manager/hardware", color: "#a855f7", roles: ["admin", "owner"] },
-      { label: "إدارة المستودع", labelEn: "Warehouse", icon: Warehouse, path: "/manager/warehouse", color: "#c084fc" },
-      { label: "إدارة API", labelEn: "API Mgmt", icon: Code2, path: "/admin/api", color: "#d8b4fe", roles: ["admin", "owner"] },
-    ]
-  },
-];
+/* ─── Navigation groups ───────────────────────────────────────────────────── */
+function buildNavGroups(role: string, isPOS: boolean) {
+  const dashPath = getDashboardPath(role);
+  const isOwner = role === "owner" || role === "admin";
 
-function SidebarNavItem({ item, collapsed, depth = 0 }: { item: NavItem; collapsed: boolean; depth?: number }) {
-  const [location, navigate] = useLocation();
-  const { i18n } = useTranslation();
-  const isAr = i18n.language === "ar";
-  const label = isAr ? item.label : item.labelEn;
-  const isActive = location === item.path;
+  const all = [
+    {
+      key: "home",
+      label: "الرئيسية",
+      labelEn: "Overview",
+      icon: Home,
+      items: [
+        { label: "لوحة التحكم", labelEn: "Dashboard", icon: LayoutDashboard, path: dashPath },
+        ...(isPOS ? [
+          { label: "نقطة البيع", labelEn: "POS", icon: ShoppingCart, path: "/employee/pos" },
+          { label: "الكيوسك", labelEn: "Kiosk", icon: Monitor, path: "/kiosk" },
+        ] : []),
+      ],
+    },
+    {
+      key: "operations",
+      label: "العمليات",
+      labelEn: "Operations",
+      icon: ClipboardList,
+      hidden: !isPOS,
+      items: [
+        { label: "إدارة الطلبات", labelEn: "Orders", icon: ClipboardList, path: "/manager/orders" },
+        { label: "الطاولات", labelEn: "Tables", icon: Table, path: "/manager/tables" },
+        { label: "إدارة المنتجات", labelEn: "Menu", icon: Coffee, path: "/employee/menu-management" },
+        { label: "حجوزات الطاولات", labelEn: "Table Reservations", icon: BookOpen, path: "/manager/reservations" },
+        { label: "حجوزات المنتجات", labelEn: "Product Reservations", icon: Star, path: "/manager/product-reservations" },
+        { label: "الورديات", labelEn: "Shifts", icon: Clock, path: "/manager/shifts" },
+      ],
+    },
+    {
+      key: "menu",
+      label: "قائمة المنتجات",
+      labelEn: "Products",
+      icon: Coffee,
+      hidden: isPOS, // only show in menu mode when operations is hidden
+      items: [
+        { label: "إدارة المنتجات", labelEn: "Menu Management", icon: Coffee, path: "/employee/menu-management" },
+        { label: "حجوزات المنتجات", labelEn: "Product Reservations", icon: Star, path: "/manager/product-reservations" },
+      ],
+    },
+    {
+      key: "inventory",
+      label: "المخزون",
+      labelEn: "Inventory",
+      icon: Warehouse,
+      hidden: !isPOS,
+      items: [
+        { label: "نظرة المخزون", labelEn: "Inventory", icon: Warehouse, path: "/manager/inventory" },
+        { label: "دورة المخزون الذكي", labelEn: "Smart Inventory Cycle", icon: RefreshCw, path: "/manager/inventory/cycle" },
+        { label: "المواد الخام", labelEn: "Raw Items", icon: Box, path: "/manager/inventory/raw-items" },
+        { label: "الوصفات", labelEn: "Recipes", icon: FlaskConical, path: "/manager/inventory/recipes" },
+        { label: "المشتريات", labelEn: "Purchases", icon: Receipt, path: "/manager/inventory/purchases" },
+        { label: "حركات المخزون", labelEn: "Movements", icon: ArrowRightLeft, path: "/manager/inventory/movements" },
+        { label: "نقل بين الفروع", labelEn: "Transfers", icon: Truck, path: "/manager/inventory/transfers" },
+        { label: "تنبيهات المخزون", labelEn: "Alerts", icon: Bell, path: "/manager/inventory/alerts", badge: true },
+      ],
+    },
+    {
+      key: "finance",
+      label: "المالية",
+      labelEn: "Finance",
+      icon: Wallet,
+      hidden: !isPOS,
+      items: [
+        { label: "المحاسبة", labelEn: "Accounting", icon: Wallet, path: "/manager/accounting" },
+        { label: "تتبع المدفوعات", labelEn: "Payment Tracking", icon: Receipt, path: "/manager/payment-tracking" },
+        { label: "تقارير المبيعات", labelEn: "Sales Reports", icon: FileText, path: "/admin/reports" },
+        ...(isOwner ? [
+          { label: "ZATCA فاتورة", labelEn: "ZATCA", icon: Shield, path: "/manager/zatca" },
+        ] : []),
+      ],
+    },
+    {
+      key: "reports",
+      label: "التقارير",
+      labelEn: "Reports",
+      icon: BarChart3,
+      hidden: !isPOS,
+      items: [
+        { label: "الإحصائيات", labelEn: "Statistics", icon: TrendingUp, path: "/manager/statistics" },
+        { label: "تقارير موحدة", labelEn: "Unified Reports", icon: BarChart3, path: "/manager/unified-reports" },
+        ...(isOwner ? [
+          { label: "لوحة المالك", labelEn: "Owner Dashboard", icon: Crown, path: "/owner/dashboard" },
+          { label: "نظام ERP", labelEn: "ERP Accounting", icon: BookOpen, path: "/erp/accounting" },
+        ] : []),
+      ],
+    },
+    {
+      key: "team",
+      label: "الفريق",
+      labelEn: "Team",
+      icon: Users,
+      items: [
+        { label: "الموظفون", labelEn: "Employees", icon: Users, path: "/admin/employees" },
+        ...(isPOS ? [
+          { label: "الحضور", labelEn: "Attendance", icon: UserCheck, path: "/manager/attendance" },
+          { label: "إدارة التوصيل", labelEn: "Delivery", icon: Truck, path: "/manager/delivery" },
+        ] : []),
+      ],
+    },
+    {
+      key: "management",
+      label: "الإعدادات",
+      labelEn: "Settings",
+      icon: Settings,
+      items: [
+        { label: "الإعدادات العامة", labelEn: "Settings", icon: Settings, path: "/admin/settings" },
+        { label: "الفروع", labelEn: "Branches", icon: Building2, path: "/admin/branches" },
+        ...(isOwner ? [
+          { label: "إدارة API", labelEn: "API", icon: Code2, path: "/admin/api" },
+        ] : []),
+      ],
+    },
+  ];
 
-  if (item.children) {
-    return (
-      <div className="space-y-0.5">
-        <button
-          className={cn(
-            "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm font-medium transition-all",
-            "text-[#888] hover:text-white hover:bg-[#1a1a1a]",
-            depth > 0 && "pl-8"
-          )}
-        >
-          <item.icon className="w-4 h-4 flex-shrink-0" style={{ color: item.color }} />
-          {!collapsed && <span className="flex-1 truncate">{label}</span>}
-          {!collapsed && <ChevronDown className="w-3 h-3 opacity-50" />}
-        </button>
-        {!collapsed && (
-          <div className="ml-4 space-y-0.5">
-            {item.children.map(child => (
-              <SidebarNavItem key={child.path} item={child} collapsed={collapsed} depth={depth + 1} />
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }
+  return all.filter(g => !g.hidden && g.items.length > 0);
+}
 
+/* ─── Single nav item ─────────────────────────────────────────────────────── */
+function NavItem({
+  label, icon: Icon, path, active, onClick, badge, indent = false,
+}: {
+  label: string; icon: any; path: string; active: boolean;
+  onClick: () => void; badge?: boolean; indent?: boolean;
+}) {
   return (
     <button
-      onClick={() => item.path && navigate(item.path)}
+      onClick={onClick}
       className={cn(
-        "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left text-sm transition-all group relative",
-        isActive
-          ? "text-white font-semibold"
-          : "text-[#888] hover:text-white hover:bg-[#1a1a1a] font-medium",
-        depth > 0 && "pl-6"
+        "relative w-full flex items-center gap-3 py-2.5 text-sm transition-all",
+        indent ? "pr-9 pl-4" : "px-4",
+        active
+          ? "bg-primary/8 text-primary font-semibold"
+          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
       )}
-      style={isActive ? { background: `linear-gradient(135deg, ${item.color}22, ${item.color}11)`, border: `1px solid ${item.color}33` } : {}}
-      title={collapsed ? label : undefined}
     >
-      {isActive && (
-        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full" style={{ background: item.color }} />
+      {active && (
+        <span className="absolute right-0 top-1.5 bottom-1.5 w-[3px] bg-primary rounded-l-full" />
       )}
-      <item.icon className={cn("w-4 h-4 flex-shrink-0 transition-transform group-hover:scale-110", isActive && "scale-110")} style={{ color: isActive ? item.color : undefined }} />
-      {!collapsed && (
-        <>
-          <span className={cn("flex-1 truncate", isAr ? "text-right" : "text-left")}>{label}</span>
-          {item.badge && (
-            <span className="w-4 h-4 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center font-bold flex-shrink-0">
-              {item.badge}
-            </span>
-          )}
-        </>
+      <Icon className={cn("w-4 h-4 shrink-0", active ? "text-primary" : "text-muted-foreground")} />
+      <span className="flex-1 text-right leading-tight truncate">{label}</span>
+      {badge && (
+        <span className="w-4 h-4 rounded-full bg-destructive text-destructive-foreground text-[9px] font-bold flex items-center justify-center shrink-0">
+          !
+        </span>
       )}
     </button>
   );
 }
 
+/* ─── Main sidebar ────────────────────────────────────────────────────────── */
 export function ManagerSidebar({ manager, onLogout, mobileOpen, onMobileClose, role }: ManagerSidebarProps) {
-  const [collapsed, setCollapsed] = useState(false);
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(["الرئيسية", "العمليات"]));
+  const [location, navigate] = useLocation();
   const { i18n } = useTranslation();
   const isAr = i18n.language === "ar";
+  const { isPOS } = useSystemMode();
+
   const userRole = role || manager?.role || "manager";
+  const isOwner = userRole === "owner" || userRole === "admin";
+  const groups = buildNavGroups(userRole, isPOS);
 
-  const filterItemsByRole = (items: NavItem[]) =>
-    items.filter(item => !item.roles || item.roles.includes(userRole));
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(() => ({
+    home: true,
+    operations: true,
+    menu: true,
+    inventory: false,
+    finance: false,
+    reports: false,
+    team: false,
+    management: false,
+  }));
 
-  const visibleGroups = NAV_GROUPS.map(group => ({
-    ...group,
-    items: filterItemsByRole(group.items),
-  })).filter(group => group.items.length > 0);
+  const toggle = (key: string) =>
+    setExpanded(prev => ({ ...prev, [key]: !prev[key] }));
 
-  const toggleGroup = (label: string) => {
-    setExpandedGroups(prev => {
-      const next = new Set(prev);
-      if (next.has(label)) next.delete(label);
-      else next.add(label);
-      return next;
-    });
+  const go = (path: string) => {
+    navigate(path);
+    onMobileClose?.();
   };
 
-  const sidebarContent = (
-    <div className={cn("flex flex-col h-full bg-[#0a0a0a] border-l border-[#1a1a1a] overflow-hidden transition-all duration-300", collapsed ? "w-[60px]" : "w-[240px]")}>
-      {/* Header */}
-      <div className={cn("flex items-center border-b border-[#1a1a1a] flex-shrink-0", collapsed ? "justify-center px-2 py-4" : "justify-between px-4 py-4")}>
-        {!collapsed && (
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="w-8 h-8 bg-[#2D9B6E] rounded-lg flex items-center justify-center flex-shrink-0">
-              <Coffee className="w-4 h-4 text-white" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-white text-sm font-bold truncate">{brand.nameAr}</div>
-              <div className="text-[#2D9B6E] text-[10px] truncate">{manager?.fullName || "مدير"}</div>
-            </div>
+  const roleBadge = isOwner
+    ? { label: "مالك", color: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-400/30" }
+    : userRole === "branch_manager"
+    ? { label: "مدير فرع", color: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-400/30" }
+    : { label: "مدير", color: "bg-primary/10 text-primary border border-primary/20" };
+
+  const SidebarContent = () => (
+    <div className="flex flex-col h-full bg-background border-l border-border" dir="rtl">
+
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between px-4 py-4 border-b border-border">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <img src={staffLogo} alt={brand.platformNameEn} className="w-8 h-8 object-contain rounded-xl shrink-0" />
+          <div className="min-w-0">
+            <p className="text-sm font-black text-foreground leading-tight truncate">
+              {isAr ? brand.platformNameAr : brand.platformNameEn}
+            </p>
+            <span className={cn("inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold leading-none", roleBadge.color)}>
+              {roleBadge.label}
+            </span>
           </div>
-        )}
+        </div>
         <button
-          onClick={onMobileClose || (() => setCollapsed(!collapsed))}
-          className="w-7 h-7 flex items-center justify-center rounded-lg text-[#666] hover:text-white hover:bg-[#1a1a1a] flex-shrink-0"
+          onClick={onMobileClose}
+          className="lg:hidden p-1.5 rounded-lg hover:bg-muted transition-colors shrink-0"
         >
-          {mobileOpen ? <X className="w-4 h-4" /> : collapsed ? <Menu className="w-4 h-4" /> : <X className="w-3 h-3" />}
+          <X className="w-4 h-4 text-muted-foreground" />
         </button>
       </div>
 
-      {/* Navigation */}
-      <div className="flex-1 overflow-y-auto py-2 space-y-1 scrollbar-thin scrollbar-thumb-[#222] scrollbar-track-transparent px-2">
-        {visibleGroups.map(group => (
-          <div key={group.label}>
-            {!collapsed && (
-              <button
-                onClick={() => toggleGroup(group.label)}
-                className="w-full flex items-center justify-between px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-[#444] hover:text-[#666] transition-colors"
-              >
-                <span>{isAr ? group.label : group.labelEn}</span>
-                {expandedGroups.has(group.label) ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-              </button>
-            )}
-            {(collapsed || expandedGroups.has(group.label)) && (
-              <div className="space-y-0.5">
-                {group.items.map(item => (
-                  <SidebarNavItem key={item.path || item.label} item={item} collapsed={collapsed} />
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+      {/* ── User info strip ── */}
+      {manager?.fullName && (
+        <div className="px-4 py-2.5 border-b border-border/60 bg-muted/20">
+          <p className="text-xs text-muted-foreground truncate">{manager.fullName}</p>
+        </div>
+      )}
 
-      {/* Footer */}
-      <div className="border-t border-[#1a1a1a] p-2 flex-shrink-0 space-y-1">
+      {/* ── Navigation ── */}
+      <nav className="flex-1 overflow-y-auto py-2">
+        {groups.map((group, gi) => {
+          const isOpen = expanded[group.key];
+          const GroupIcon = group.icon;
+          const hasActive = group.items.some(i => i.path && (location === i.path));
+
+          return (
+            <div key={group.key}>
+              {gi > 0 && <div className="mx-4 my-1 border-t border-border/40" />}
+              {/* Group header */}
+              <button
+                onClick={() => toggle(group.key)}
+                className={cn(
+                  "w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium transition-colors",
+                  hasActive && !isOpen ? "text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
+                )}
+              >
+                <div className="flex items-center gap-2.5">
+                  <GroupIcon className={cn("w-4 h-4 shrink-0", hasActive && !isOpen ? "text-primary" : "text-muted-foreground")} />
+                  <span>{isAr ? group.label : group.labelEn}</span>
+                </div>
+                <ChevronDown className={cn("w-3.5 h-3.5 text-muted-foreground/60 transition-transform duration-200", isOpen && "rotate-180")} />
+              </button>
+
+              {/* Items */}
+              {isOpen && (
+                <div className="pb-0.5">
+                  {group.items.map(item => (
+                    <NavItem
+                      key={item.path}
+                      label={isAr ? item.label : item.labelEn}
+                      icon={item.icon}
+                      path={item.path}
+                      active={location === item.path}
+                      onClick={() => go(item.path)}
+                      badge={(item as any).badge}
+                      indent
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </nav>
+
+      {/* ── Footer ── */}
+      <div className="border-t border-border pb-safe">
         <button
           onClick={() => {
             const newLang = isAr ? "en" : "ar";
@@ -298,20 +309,17 @@ export function ManagerSidebar({ manager, onLogout, mobileOpen, onMobileClose, r
             document.documentElement.dir = newLang === "ar" ? "rtl" : "ltr";
             document.documentElement.lang = newLang;
           }}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[#666] hover:text-white hover:bg-[#1a1a1a] transition-all text-sm"
-          title={collapsed ? (isAr ? "English" : "عربي") : undefined}
-          data-testid="button-sidebar-language-toggle"
+          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-colors"
         >
-          <Globe className="w-4 h-4 flex-shrink-0" />
-          {!collapsed && <span className="font-medium">{isAr ? "English" : "عربي"}</span>}
+          <Globe className="w-4 h-4" />
+          <span className="flex-1 text-right">{isAr ? "English" : "عربي"}</span>
         </button>
         <button
           onClick={onLogout}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[#666] hover:text-red-400 hover:bg-red-500/10 transition-all text-sm"
-          title={collapsed ? (isAr ? "تسجيل الخروج" : "Logout") : undefined}
+          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-muted-foreground hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30 dark:hover:text-red-400 transition-colors"
         >
-          <LogOut className="w-4 h-4 flex-shrink-0" />
-          {!collapsed && <span className="font-medium">{isAr ? "تسجيل الخروج" : "Logout"}</span>}
+          <LogOut className="w-4 h-4" />
+          <span className="flex-1 text-right">{isAr ? "تسجيل الخروج" : "Logout"}</span>
         </button>
       </div>
     </div>
@@ -319,53 +327,28 @@ export function ManagerSidebar({ manager, onLogout, mobileOpen, onMobileClose, r
 
   return (
     <>
-      {/* Desktop sidebar */}
-      <aside className="hidden lg:flex h-screen sticky top-0 flex-shrink-0">
-        {sidebarContent}
+      {/* Desktop */}
+      <aside className="hidden lg:flex w-56 flex-col h-screen sticky top-0 shrink-0">
+        <SidebarContent />
       </aside>
 
-      {/* Mobile drawer overlay */}
+      {/* Mobile overlay */}
       {mobileOpen && (
-        <>
-          <div className="fixed inset-0 bg-black/60 z-40 lg:hidden" onClick={onMobileClose} />
-          <aside className="fixed right-0 top-0 h-full z-50 flex lg:hidden">
-            {sidebarContent}
+        <div className="fixed inset-0 z-50 lg:hidden" onClick={onMobileClose}>
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+          <aside
+            className="absolute right-0 top-0 bottom-0 w-60 shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <SidebarContent />
           </aside>
-        </>
+        </div>
       )}
     </>
   );
 }
 
-/* Mobile bottom navigation bar */
+/* ─── Mobile bottom nav from manager-sidebar — now disabled (returns null) ── */
 export function MobileBottomNav({ manager }: { manager: any }) {
-  const [location, navigate] = useLocation();
-
-  const items = [
-    { label: "الرئيسية", icon: LayoutDashboard, path: "/manager/dashboard", color: "#2D9B6E" },
-    { label: "الطلبات", icon: ClipboardList, path: "/employee/orders", color: "#3b82f6" },
-    { label: "المخزون", icon: Warehouse, path: "/manager/inventory", color: "#f59e0b" },
-    { label: "التقارير", icon: BarChart2, path: "/manager/unified-reports", color: "#14b8a6" },
-    { label: "المحاسبة", icon: Wallet, path: "/manager/accounting", color: "#8b5cf6" },
-  ];
-
-  return (
-    <nav className="fixed bottom-0 left-0 right-0 z-30 lg:hidden bg-[#0a0a0a] border-t border-[#1a1a1a]">
-      <div className="flex items-center justify-around px-1 py-1 safe-area-pb">
-        {items.map(item => {
-          const isActive = location === item.path;
-          return (
-            <button
-              key={item.path}
-              onClick={() => navigate(item.path)}
-              className={cn("flex flex-col items-center gap-1 px-3 py-2 rounded-xl flex-1 transition-all", isActive ? "bg-[#1a1a1a]" : "")}
-            >
-              <item.icon className="w-5 h-5 transition-transform" style={{ color: isActive ? item.color : "#555" }} />
-              <span className="text-[10px] font-medium" style={{ color: isActive ? item.color : "#555" }}>{item.label}</span>
-            </button>
-          );
-        })}
-      </div>
-    </nav>
-  );
+  return null;
 }
