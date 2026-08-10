@@ -16,6 +16,7 @@ interface MobileBottomNavProps {
 }
 
 export function MobileBottomNav({ employeeRole, onLogout }: MobileBottomNavProps) {
+  return null;
   const [location] = useLocation();
   const [showMenu, setShowMenu] = useState(false);
   const { t, i18n } = useTranslation();
