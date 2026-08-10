@@ -777,7 +777,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/admin/send-email", requireAuth, requireManager, async (req: AuthRequest, res) => {
     try {
       const { customerId, subject, message } = req.body;
-      const customer = await CustomerModel.findOne({ id: customerId });
+      // Use ONLY the tenantId from the authenticated session — never from request params/body/headers
+      const tenantId = req.employee?.tenantId;
+      if (!tenantId) {
+        return res.status(403).json({ error: "Tenant not identified from session" });
+      }
+      const customer = await CustomerModel.findOne({ id: customerId, tenantId });
       if (!customer || !customer.email) {
         return res.status(404).json({ error: "Customer not found or has no email" });
       }
@@ -796,10 +801,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get all customers for email selection
+  // Get all customers for email selection — scoped exclusively to the authenticated session's tenant
   app.get("/api/admin/customers-list", requireAuth, requireManager, async (req: AuthRequest, res) => {
     try {
-      const tenantId = getTenantIdFromRequest(req) || 'demo-tenant';
+      // Use ONLY the tenantId from the authenticated session — never from request params/body/headers
+      const tenantId = req.employee?.tenantId;
+      if (!tenantId) {
+        return res.status(403).json({ error: "Tenant not identified from session" });
+      }
       const customers = await CustomerModel.find({ tenantId, email: { $exists: true, $ne: "" } });
       res.json(customers.map(serializeDoc));
     } catch (error) {

@@ -27,6 +27,14 @@ export function AdminSidebar() {
       ]
     },
     {
+      label: isAr ? "نقطة البيع" : "Point of Sale",
+      items: [
+        { label: isAr ? 'نقطة البيع' : 'POS System', icon: Activity, path: '/employee/pos', isNotifications: false },
+        { label: isAr ? 'الإحصائيات الدقيقة' : 'Statistics', icon: Activity, path: '/manager/statistics', isNotifications: false },
+        { label: isAr ? 'لوحة تحكم المدير' : 'Manager Dashboard', icon: LayoutDashboard, path: '/manager/dashboard', isNotifications: false },
+      ]
+    },
+    {
       label: isAr ? "العمليات" : "Operations",
       items: [
         { label: isAr ? 'إدارة المأكولات والمشروبات' : 'Menu Management', icon: Coffee, path: '/employee/menu-management', isNotifications: false },

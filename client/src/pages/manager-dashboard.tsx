@@ -35,6 +35,9 @@ import SarIcon from "@/components/sar-icon";
 import { DemoDataManager } from "@/components/demo-data-manager";
 import { FlaskConical, Sparkles, Brain, Globe, Plug, Gauge, Code2 } from "lucide-react";
 import { useTranslate } from "@/lib/useTranslate";
+import DashboardAnalyticsPanel from "@/components/dashboard-analytics-panel";
+import TopProductsWidget from "@/components/top-products-widget";
+import EmailComposerWidget from "@/components/email-composer-widget";
 
 interface EmployeeWithStats extends Employee {
  orderCount?: number;
@@ -1141,6 +1144,21 @@ export default function ManagerDashboard() {
                  <span className="text-[10px] text-muted-foreground group-hover:text-foreground/70 text-center leading-tight">{item.label}</span>
                </button>
              ))}
+           </div>
+         </div>
+
+         {/* ── Weekly Stats, Profits & Product Consumption ── */}
+         <div className="mb-4">
+           <DashboardAnalyticsPanel />
+         </div>
+
+         {/* ── Top Products + Email Composer ── */}
+         <div className="mb-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
+           <div className="lg:col-span-2">
+             <TopProductsWidget />
+           </div>
+           <div className="lg:col-span-1">
+             <EmailComposerWidget />
            </div>
          </div>
 
