@@ -459,6 +459,16 @@ export default function AdminSettings() {
   const { data: config, isLoading } = useQuery<any>({
     queryKey: ["/api/business-config"],
   });
+  const orderTrackingMutation = useMutation({
+    mutationFn: (orderTrackingEnabled: boolean) =>
+      apiRequest("PATCH", "/api/business-config", { orderTrackingEnabled }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/business-config"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/public/settings"] });
+      toast({ title: "تم حفظ إعداد التتبع" });
+    },
+    onError: () => toast({ title: "تعذر حفظ إعداد التتبع", variant: "destructive" }),
+  });
 
   const { data: menuCategories = [], isLoading: categoriesLoading } = useQuery<MenuCategory[]>({
     queryKey: ["/api/menu-categories"],
@@ -1346,6 +1356,27 @@ export default function AdminSettings() {
 
         {/* Shift Time Settings */}
         <ShiftTimeSettingsCard />
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">تتبع الطلبات للعملاء</CardTitle>
+            <CardDescription>
+              عند الإيقاف لا تظهر روابط أو باركودات تتبع الطلب في الفواتير والإيصالات، ولا تكون صفحة التتبع العامة متاحة.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex items-center justify-between gap-4">
+            <div>
+              <p className="font-medium">{config?.orderTrackingEnabled === true ? "التتبع مفعّل" : "التتبع متوقف"}</p>
+              <p className="text-sm text-muted-foreground mt-1">يبقى رمز QR الضريبي ZATCA ظاهرًا دائمًا.</p>
+            </div>
+            <Switch
+              checked={config?.orderTrackingEnabled === true}
+              disabled={isLoading || orderTrackingMutation.isPending}
+              onCheckedChange={(enabled) => orderTrackingMutation.mutate(enabled)}
+              aria-label="تفعيل تتبع الطلبات"
+            />
+          </CardContent>
+        </Card>
 
         {/* Layout Settings */}
         <Card className="hover-elevate border-primary/10">

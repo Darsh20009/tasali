@@ -1084,7 +1084,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         tenantId,
         totalAmount: (body.totalAmount !== undefined && body.totalAmount !== null) ? Number(body.totalAmount) : (body.total || 0),
         paymentMethod: mappedPaymentMethod,
-        status: shouldAutoConfirm ? 'payment_confirmed' : (body.status || 'pending'),
+        // A POS payment method represents a completed transaction. Keep the
+        // payment and fulfilment fields in sync so it is counted exactly once.
+        status: shouldAutoConfirm ? 'completed' : (body.status || 'pending'),
+        paymentStatus: shouldAutoConfirm ? 'paid' : (body.paymentStatus || 'pending'),
+        ...(shouldAutoConfirm ? { deliveredAt: new Date() } : {}),
         estimatedPrepTimeInMinutes: autoPrepTimeMinutes,
         prepTimeSetAt: new Date(),
         customerInfo: body.customerInfo || {
@@ -1654,6 +1658,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!config) return res.json({});
       res.json({
         tradeNameAr: (config as any).tradeNameAr,
+        orderTrackingEnabled: (config as any).orderTrackingEnabled === true,
         tradeNameEn: (config as any).tradeNameEn,
         currency: (config as any).currency || 'SAR',
         vatPercentage: (config as any).vatPercentage || 15,
@@ -3666,7 +3671,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (status === 'success' || status === 'paid') {
         const order = await storage.getOrderByNumber(orderId);
         if (order) {
-          await storage.updateOrderStatus(order.id || order._id, 'payment_confirmed');
+          await OrderModel.findByIdAndUpdate(order.id || order._id, {
+            $set: { paymentStatus: 'paid', status: 'completed', deliveredAt: new Date(), updatedAt: new Date() },
+          });
         }
       }
 
@@ -3709,8 +3716,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           const order = await storage.getOrderByNumber(merchantRefId);
           if (order) {
-            await storage.updateOrderStatus(order.id || order._id, 'payment_confirmed');
-            console.log(`[Geidea Webhook] Order ${merchantRefId} confirmed as paid`);
+            await OrderModel.findByIdAndUpdate(order.id || order._id, {
+              $set: { paymentStatus: 'paid', status: 'completed', deliveredAt: new Date(), updatedAt: new Date() },
+            });
+            console.log(`[Geidea Webhook] Order ${merchantRefId} finalized as paid and received`);
           } else {
             console.warn(`[Geidea Webhook] Order not found for merchantReferenceId: ${merchantRefId}`);
           }
@@ -3996,7 +4005,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 const txId = String(transactions.find((t: any) => t?.success)?.id || intentData?.id || intentionId || '');
                 const updatedOrder = await OrderModel.findOneAndUpdate(
                   { orderNumber, tenantId },
-                  { $set: { paymentStatus: 'paid', status: 'pending', paymentTransactionId: txId } },
+                  { $set: { paymentStatus: 'paid', status: 'completed', deliveredAt: new Date(), paymentTransactionId: txId } },
                   { new: true }
                 ).lean().catch(() => null);
                 // Notify employees now that payment is confirmed
@@ -4004,7 +4013,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   cache.invalidate('live-orders:');
                   wsManager.broadcastNewOrder(serializeDoc(updatedOrder));
                 }
-                return res.json({ found: true, paid: true, status: 'pending', paymentStatus: 'paid' });
+                return res.json({ found: true, paid: true, status: 'completed', paymentStatus: 'paid' });
               }
             }
           }
@@ -4068,7 +4077,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const paymentUpdate = {
             paymentStatus: 'paid',
             paymentTransactionId: String(transaction.id),
-            status: 'payment_confirmed',
+            status: 'completed',
+            deliveredAt: new Date(),
           };
 
           // Try by orderNumber first (most common for PayMob SA flow)
@@ -4619,7 +4629,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const shiftQuery: any = {
           tenantId,
           createdAt: { $gte: new Date(activeShift.openedAt) },
-          status: { $nin: ['cancelled', 'awaiting_payment'] },
+          paymentStatus: 'paid',
+          status: { $in: ['completed', 'received'] },
         };
         if (empBranchId) {
           // Only count POS orders from this branch during the shift window
@@ -4680,6 +4691,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (!activeShift) {
         return res.json({ success: true, message: "لا توجد وردية مفتوحة" });
+      }
+
+      // Shift figures are accounting figures, not a queue of attempted orders.
+      // Re-read the order and accept it only once it has an eligible, verified payment.
+      const paidOrder = await OrderModel.findOne({
+        $or: [
+          { id: orderId },
+          ...(mongoose.Types.ObjectId.isValid(String(orderId)) ? [{ _id: orderId }] : []),
+        ],
+        paymentStatus: 'paid',
+        status: { $in: ['completed', 'received'] },
+      }).lean();
+      if (!paidOrder) {
+        return res.status(400).json({ error: "لا يمكن إضافة طلب غير مدفوع أو غير مكتمل إلى الوردية" });
+      }
+      if ((activeShift.orderIds || []).some((id: any) => String(id) === String(orderId))) {
+        return res.json({ success: true, message: "الطلب مسجل بالفعل في الوردية", shift: activeShift });
       }
 
       const amount = Number(totalAmount) || 0;
@@ -5022,7 +5050,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const orders = await OrderModel.find({
         tenantId,
         createdAt: { $gte: windowStartUTC, $lte: now },
-        status: { $nin: ['cancelled', 'refunded'] },
+        paymentStatus: 'paid',
+        status: { $in: ['completed', 'received'] },
       }).select('totalAmount paymentMethod createdAt items').lean();
 
       let totalSales = 0, totalCash = 0, totalCard = 0, totalDigital = 0;
@@ -5138,7 +5167,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const orders = await OrderModel.find({
           tenantId,
           createdAt: { $gte: windowStartUTC, $lte: effectiveEnd },
-          status: { $nin: ['cancelled', 'refunded'] },
+          paymentStatus: 'paid',
+          status: { $in: ['completed', 'received'] },
         }).select('totalAmount paymentMethod items').lean();
 
         if (orders.length === 0) continue; // always skip empty windows
@@ -5204,7 +5234,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const orders = await OrderModel.find({
         tenantId,
         createdAt: { $gte: fromUTC, $lte: toUTC },
-        status: { $nin: ['cancelled', 'refunded'] },
+        paymentStatus: 'paid',
+        status: { $in: ['completed', 'received'] },
       }).select('totalAmount paymentMethod items').lean();
 
       let totalSales = 0, totalCash = 0, totalCard = 0;
@@ -5248,7 +5279,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const orders = await OrderModel.find({
         tenantId,
         createdAt: { $gte: since },
-        status: { $nin: ['cancelled', 'refunded'] },
+        paymentStatus: 'paid',
+        status: { $in: ['completed', 'received'] },
       }).select('createdAt').lean();
 
       // Convert each order's createdAt to a local date string YYYY-MM-DD
@@ -6415,7 +6447,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const matchQuery: any = {
         createdAt: { $gte: start, $lte: end },
-        status: { $in: ['completed', 'payment_confirmed'] }
+        paymentStatus: 'paid',
+        status: { $in: ['completed', 'received'] },
       };
 
       if (branchId) {
@@ -8317,10 +8350,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!order) return res.status(404).json({ error: "Order not found" });
       if (order.status !== 'open') return res.status(400).json({ error: "Order is not open" });
 
-      order.status = 'payment_confirmed';
-      order.tableStatus = 'payment_confirmed';
+      order.status = 'completed';
+      order.tableStatus = 'delivered';
       order.paymentMethod = paymentMethod;
       order.paymentDetails = paymentDetails;
+      order.paymentStatus = 'paid';
+      order.deliveredAt = new Date();
       order.updatedAt = new Date();
       await order.save();
 
@@ -8578,6 +8613,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get order by number - for public tracking
   app.get("/api/orders/number/:orderNumber", async (req, res) => {
     try {
+      const tenantId = getTenantIdFromRequest(req) || 'demo-tenant';
+      const config = await BusinessConfigModel.findOne({ tenantId }).lean();
+      if ((config as any)?.orderTrackingEnabled !== true) {
+        return res.status(404).json({ error: "تتبع الطلبات غير متاح" });
+      }
       const { orderNumber } = req.params;
       const order = await storage.getOrderByNumber(orderNumber);
 
@@ -12443,10 +12483,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updates: any = { paymentStatus };
       if (paymentDetails) updates.paymentDetails = paymentDetails;
 
-      // If marking as paid, also move pending orders to payment_confirmed so kitchen sees them
+      // A verified payment is final in the no-tracking flow: confirm, close, and mark received.
       const existingOrder = await OrderModel.findOne({ id }) || await OrderModel.findById(id);
-      if (paymentStatus === 'paid' && existingOrder?.status === 'pending') {
-        updates.status = 'payment_confirmed';
+      if (paymentStatus === 'paid' && existingOrder) {
+        updates.status = 'completed';
+        updates.deliveredAt = new Date();
       }
 
       let updatedOrder = await OrderModel.findOneAndUpdate(

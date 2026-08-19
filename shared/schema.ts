@@ -733,6 +733,7 @@ export interface IBusinessConfig extends Document {
   isEmergencyClosed: boolean;
   isMaintenanceMode?: boolean;
   maintenanceReason?: string;
+  orderTrackingEnabled?: boolean;
   storeHours: IStoreHours;
   socialLinks: ISocialLinks;
   paymentGateway?: IPaymentGatewayConfig;
@@ -813,6 +814,7 @@ const BusinessConfigSchema = new Schema<IBusinessConfig>({
   isMaintenanceMode: { type: Boolean, default: false },
   maintenanceReason: { type: String, default: 'maintenance' },
   isEmergencyClosed: { type: Boolean, default: false },
+  orderTrackingEnabled: { type: Boolean, default: false },
   storeHours: {
     type: Schema.Types.Mixed,
     default: () => ({

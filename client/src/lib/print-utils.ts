@@ -2,6 +2,18 @@ import QRCode from "qrcode";
 import { VAT_RATE } from "@/lib/constants";
 import brand from "@/lib/brand";
 
+/** Tracking is an opt-in customer feature. Printing must fail closed when unavailable. */
+export async function isOrderTrackingEnabled(): Promise<boolean> {
+  try {
+    const response = await fetch("/api/public/settings");
+    if (!response.ok) return false;
+    const settings = await response.json();
+    return settings?.orderTrackingEnabled === true;
+  } catch {
+    return false;
+  }
+}
+
 // ── ZATCA QR pre-generation cache ────────────────────────────────────────────
 // Key: `zatca:${orderNumber}:${total}` → SVG string
 // Populated by prewarmZatcaQr() when an order is created, so printing is instant.
@@ -821,16 +833,16 @@ async function _buildFastCustomerEscPos(
     vatAmount: vatAmount.toFixed(2),
   });
 
-  // Generate both QR codes in parallel — ~50ms total
-  // Use plain daily-number in tracking URL so the QR has no %23 encoding issues
+  // Generate the mandatory tax QR and the opt-in order-tracking QR in parallel.
   const trackingNum = String(data.orderNumber).replace(/\D/g, '') || String(data.orderNumber);
+  const trackingEnabled = await isOrderTrackingEnabled();
   const [trackingQr, zatcaQr] = await Promise.all([
-    (async () => {
+    trackingEnabled ? (async () => {
       try {
         const url = `${window.location.origin}/track/${trackingNum}`;
         return await QRCode.toDataURL(url, { width: 180, margin: 1, errorCorrectionLevel: 'M' });
       } catch { return ''; }
-    })(),
+    })() : Promise.resolve(''),
     (async () => {
       try {
         return await QRCode.toDataURL(zatcaPayload, { width: 140, margin: 1, errorCorrectionLevel: 'M' });
@@ -1553,17 +1565,6 @@ export async function printTaxInvoice(data: TaxInvoiceData, config: PrintConfig 
 }
 
 export async function printCustomerPickupReceipt(data: TaxInvoiceData & { deliveryType?: string; deliveryTypeAr?: string }): Promise<void> {
-  const _trackNum = String(data.orderNumber).replace(/\D/g, '') || String(data.orderNumber);
-  const orderTrackingUrl = `${window.location.origin}/track/${_trackNum}`;
-  
-  let qrCodeSvg = "";
-  try {
-    const svgStr = await QRCode.toString(orderTrackingUrl, { type: 'svg', width: 100, margin: 1, errorCorrectionLevel: 'M' });
-    qrCodeSvg = svgStr.replace(/<\?xml[^?]*\?>/g, '').replace(/width="\d+"/, 'width="100"').replace(/height="\d+"/, 'height="100"');
-  } catch (error) {
-    console.error("Error generating order tracking QR:", error);
-  }
-
   const { date: formattedDate, time: formattedTime } = formatDate(data.date);
   const deliveryTypeAr = data.deliveryTypeAr || (data.deliveryType === 'dine-in' ? 'في الكافيه' : data.deliveryType === 'delivery' ? 'توصيل' : 'استلام');
 

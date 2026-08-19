@@ -104,6 +104,10 @@ export default function PublicOrderTrackPage() {
   const [showReadyAlert, setShowReadyAlert] = useState(false);
   const [showDeliveredAlert, setShowDeliveredAlert] = useState(false);
   const isAr = i18n.language !== 'en';
+  const { data: publicSettings, isLoading: settingsLoading } = useQuery<{ orderTrackingEnabled?: boolean }>({
+    queryKey: ['/api/public/settings'],
+  });
+  const trackingEnabled = publicSettings?.orderTrackingEnabled === true;
 
   const { data: order, isLoading, error, refetch } = useQuery<TrackOrder>({
     queryKey: ['/api/orders/number', orderNumberRaw],
@@ -112,13 +116,13 @@ export default function PublicOrderTrackPage() {
       if (!res.ok) throw new Error('not found');
       return res.json();
     },
-    enabled: !!orderNumberRaw,
+    enabled: !!orderNumberRaw && trackingEnabled,
     refetchInterval: 15000,
     retry: 2,
   });
 
   useEffect(() => {
-    if (!orderNumberRaw) return;
+    if (!orderNumberRaw || !trackingEnabled) return;
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${proto}//${window.location.host}/ws/orders`);
     ws.onmessage = (e) => {
@@ -131,7 +135,7 @@ export default function PublicOrderTrackPage() {
       } catch {}
     };
     return () => { try { ws.close(); } catch {} };
-  }, [orderNumberRaw, refetch]);
+  }, [orderNumberRaw, refetch, trackingEnabled]);
 
   useEffect(() => {
     if (!order) return;
@@ -140,6 +144,17 @@ export default function PublicOrderTrackPage() {
     if (order.status === 'delivered' && prev && prev !== 'delivered') setShowDeliveredAlert(true);
     prevStatusRef.current = order.status;
   }, [order]);
+
+  if (!settingsLoading && !trackingEnabled) {
+    return (
+      <main className="min-h-screen grid place-items-center bg-muted/30 px-6 text-center" dir="rtl">
+        <div>
+          <h1 className="text-xl font-bold">تتبع الطلبات غير متاح</h1>
+          <p className="mt-2 text-sm text-muted-foreground">للاستفسار عن طلبك، تواصل مع الفرع مباشرة.</p>
+        </div>
+      </main>
+    );
+  }
 
   const isCancelled = order?.status === 'cancelled' || order?.status === 'refunded';
   const isSuspended = order?.status === 'suspended';

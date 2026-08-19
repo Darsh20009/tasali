@@ -20,7 +20,7 @@ import { useCustomer } from "@/contexts/CustomerContext";
 import { useLoyaltyCard } from "@/hooks/useLoyaltyCard";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { useTranslate, tc } from "@/lib/useTranslate";
-import { User, Gift, CheckCircle, Sparkles, Loader2, Ticket, Tag, Wrench, Coffee, Award, CreditCard, Star, Coins, X, ChevronLeft, Upload, Camera, Truck, Printer, Navigation, MapPin, PackageCheck, Bell, ClipboardList } from "lucide-react";
+import { User, Gift, CheckCircle, Sparkles, Loader2, Ticket, Tag, Wrench, Coffee, Award, CreditCard, Star, Coins, X, ChevronLeft, Upload, Camera, Truck, Printer, Navigation, MapPin, Bell, ClipboardList } from "lucide-react";
 import BlackRoseCard from "@/components/BlackRoseCard";
 import { printTaxInvoice, printReceiptSection, openReceiptPreviewWindow } from "@/lib/print-utils";
 import { useTranslation } from "react-i18next";
@@ -1141,17 +1141,7 @@ export default function CheckoutPage() {
             </div>
 
             {/* Action buttons */}
-            <div className="grid grid-cols-3 divide-x divide-x-reverse border-b">
-              <button
-                onClick={() => setLocation("/tracking")}
-                className="flex flex-col items-center gap-1.5 py-4 px-2 hover:bg-muted/50 transition-colors"
-                data-testid="button-track-order"
-              >
-                <div className="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center">
-                  <PackageCheck className="w-5 h-5 text-blue-600" />
-                </div>
-                <span className="text-[11px] font-semibold text-center">تتبع الطلب</span>
-              </button>
+            <div className="grid grid-cols-2 divide-x divide-x-reverse border-b">
               <button
                 onClick={handlePrintInvoice}
                 className="flex flex-col items-center gap-1.5 py-4 px-2 hover:bg-muted/50 transition-colors"

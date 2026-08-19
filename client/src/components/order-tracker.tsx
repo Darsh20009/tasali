@@ -33,6 +33,16 @@ const getStepIndex = (status: string) => {
 export default function OrderTracker({ order, compact = false }: OrderTrackerProps) {
   const { t } = useTranslation();
   const [currentStepIndex, setCurrentStepIndex] = useState(getStepIndex(order.status));
+  const [trackingEnabled, setTrackingEnabled] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    fetch("/api/public/settings")
+      .then((res) => res.ok ? res.json() : {})
+      .then((settings: any) => { if (mounted) setTrackingEnabled(settings.orderTrackingEnabled === true); })
+      .catch(() => { if (mounted) setTrackingEnabled(false); });
+    return () => { mounted = false; };
+  }, []);
 
   const orderSteps = [
     {
@@ -114,6 +124,8 @@ export default function OrderTracker({ order, compact = false }: OrderTrackerPro
         description: t("order_tracker.cancelled_desc"),
       }
     : (orderSteps[currentStepIndex] || orderSteps[0]);
+
+  if (!trackingEnabled) return null;
 
   if (compact) {
     return (

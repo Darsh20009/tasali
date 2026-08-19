@@ -32,6 +32,14 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
   const invoiceRef = useRef<HTMLDivElement>(null);
   const [trackingQrUrl, setTrackingQrUrl] = useState<string>(precomputedTrackingQr || "");
   const [zatcaQrUrl, setZatcaQrUrl] = useState<string>(precomputedZatcaQr || "");
+  const [trackingEnabled, setTrackingEnabled] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/public/settings")
+      .then((res) => res.ok ? res.json() : {})
+      .then((settings: any) => setTrackingEnabled(settings.orderTrackingEnabled === true))
+      .catch(() => setTrackingEnabled(false));
+  }, []);
 
   const getItemsArray = (): any[] => {
     try {
@@ -57,8 +65,12 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
     if (!order?.orderNumber) return;
     (async () => {
       try {
-        const url = `${window.location.origin}/track/${encodeURIComponent(String(order.orderNumber))}`;
-        setTrackingQrUrl(await QRCode.toDataURL(url, { width: 200, margin: 1, errorCorrectionLevel: "M" }));
+        if (trackingEnabled) {
+          const url = `${window.location.origin}/track/${encodeURIComponent(String(order.orderNumber))}`;
+          setTrackingQrUrl(await QRCode.toDataURL(url, { width: 200, margin: 1, errorCorrectionLevel: "M" }));
+        } else {
+          setTrackingQrUrl("");
+        }
       } catch {}
       try {
         const vatNum = brand.taxNumber || "";
@@ -66,7 +78,7 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
         setZatcaQrUrl(await QRCode.toDataURL(payload, { width: 180, margin: 1, errorCorrectionLevel: "M" }));
       } catch {}
     })();
-  }, [order?.orderNumber]);
+  }, [order?.orderNumber, trackingEnabled]);
 
   if (!order?.orderNumber) return null;
 
@@ -139,7 +151,7 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
     // Skip staged iframe on Android — we use the no-iframe path
     if (isAndroidDevice) { setPrintReady(true); return; }
     // Wait until both QR codes are generated before staging the iframe
-    if (!trackingQrUrl || !zatcaQrUrl || !invoiceRef.current) return;
+    if ((trackingEnabled && !trackingQrUrl) || !zatcaQrUrl || !invoiceRef.current) return;
     if (printIframeRef.current) return; // already staged
 
     let cancelled = false;
@@ -184,7 +196,7 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trackingQrUrl, zatcaQrUrl]);
+  }, [trackingEnabled, trackingQrUrl, zatcaQrUrl]);
 
   // Cleanup the staged iframe on unmount
   useEffect(() => {
@@ -414,7 +426,7 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
         <div style={{ textAlign: "center", fontSize: "11px", color: "#555", paddingBottom: "8px" }}>تسالي كرومش</div>
 
         {/* ── 10. Tracking QR barcode — small on right with text beside it ── */}
-        {trackingQrUrl && (
+        {trackingEnabled && trackingQrUrl && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "10px", padding: "6px 4px 4px", direction: "rtl" }}>
             <img src={trackingQrUrl} alt="Tracking QR" style={{ width: "65px", height: "65px", flexShrink: 0 }} />
             <div style={{ textAlign: "right", lineHeight: "1.7" }}>

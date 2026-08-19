@@ -134,6 +134,14 @@ export const ReceiptPrint = forwardRef<HTMLDivElement, ReceiptProps>(
     const [qrCodeUrl, setQrCodeUrl] = useState<string>("");
     const [barcodeUrl, setBarcodeUrl] = useState<string>("");
     const [tasaliLogo, setTasaliLogo] = useState<string>("/images/logo-bw.png");
+    const [trackingEnabled, setTrackingEnabled] = useState(false);
+
+    useEffect(() => {
+      fetch("/api/public/settings")
+        .then((res) => res.ok ? res.json() : {})
+        .then((settings: any) => setTrackingEnabled(settings.orderTrackingEnabled === true))
+        .catch(() => setTrackingEnabled(false));
+    }, []);
 
     useEffect(() => {
       getInvoiceLogoDataUrl().then(setTasaliLogo);
@@ -201,8 +209,9 @@ export const ReceiptPrint = forwardRef<HTMLDivElement, ReceiptProps>(
           console.error("Error generating barcode:", error);
         }
       };
-      if (orderNumber && !isKitchenCopy) generateBarcode();
-    }, [orderNumber, isKitchenCopy]);
+      if (trackingEnabled && orderNumber && !isKitchenCopy) generateBarcode();
+      else setBarcodeUrl("");
+    }, [orderNumber, isKitchenCopy, trackingEnabled]);
 
     if (isKitchenCopy) {
       return (
@@ -437,7 +446,7 @@ export const ReceiptPrint = forwardRef<HTMLDivElement, ReceiptProps>(
           <div className="text-center mb-4">
             <p className="text-xs font-bold text-gray-700 mb-1">رقم الطلب</p>
             <p className="text-[10px] text-gray-500 mb-2">Order Number</p>
-            {barcodeUrl && (
+            {trackingEnabled && barcodeUrl && (
               <div className="inline-block p-1 bg-white border border-gray-200 rounded">
                 <img src={barcodeUrl} alt="Order Barcode" className="h-12 mx-auto" />
               </div>

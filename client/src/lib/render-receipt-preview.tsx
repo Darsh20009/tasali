@@ -43,22 +43,14 @@ export async function renderReceiptPreviewToPng(input: PreviewOrderInput): Promi
   const totalAmount = parseFloat(String(input.totalAmount || 0));
   const vat = totalAmount - totalAmount / 1.15;
 
-  // ── Pre-generate QR codes BEFORE rendering — eliminates useEffect delay ──
-  const [trackingQr, zatcaQr] = await Promise.all([
-    (async () => {
-      try {
-        const url = `${window.location.origin}/track/${encodeURIComponent(String(input.orderNumber))}`;
-        return await QRCode.toDataURL(url, { width: 200, margin: 1, errorCorrectionLevel: 'M' });
-      } catch { return ''; }
-    })(),
-    (async () => {
-      try {
-        const ts = input.createdAt ? new Date(input.createdAt).toISOString() : new Date().toISOString();
-        const payload = btoa(`\x01\x10TASALI QURUMSH\x03\x14${ts}\x04\x08${totalAmount.toFixed(2)}\x05\x08${vat.toFixed(2)}`);
-        return await QRCode.toDataURL(payload, { width: 180, margin: 1, errorCorrectionLevel: 'M' });
-      } catch { return ''; }
-    })(),
-  ]);
+  // Only the mandatory tax QR is prepared for an invoice preview. The customer
+  // tracking QR is opt-in and ReceiptInvoice reads that setting separately.
+  let zatcaQr = '';
+  try {
+    const ts = input.createdAt ? new Date(input.createdAt).toISOString() : new Date().toISOString();
+    const payload = btoa(`\x01\x10TASALI QURUMSH\x03\x14${ts}\x04\x08${totalAmount.toFixed(2)}\x05\x08${vat.toFixed(2)}`);
+    zatcaQr = await QRCode.toDataURL(payload, { width: 180, margin: 1, errorCorrectionLevel: 'M' });
+  } catch {}
 
   const fakeOrder: any = {
     id: 'preview',
@@ -91,12 +83,11 @@ export async function renderReceiptPreviewToPng(input: PreviewOrderInput): Promi
 
   const root = createRoot(host);
   try {
-    // Pass pre-computed QRs directly — no useEffect delay inside the component
+    // Pass the tax QR directly — no useEffect delay inside the component.
     root.render(
       <ReceiptInvoice
         order={fakeOrder}
         variant="button"
-        precomputedTrackingQr={trackingQr}
         precomputedZatcaQr={zatcaQr}
       />
     );
