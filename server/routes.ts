@@ -990,10 +990,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const mappedPaymentMethod = paymentMethodMap[body.paymentMethod] || body.paymentMethod || 'other';
 
-      // Auto-confirm orders from POS channel with immediate payment methods
-      const autoConfirmMethods = ['cash', 'pos', 'pos-network', 'mada', 'apple_pay', 'paymob-apple-pay', 'neoleap-apple-pay', 'stc-pay', 'qahwa-card', 'qirox-card', 'split', 'paymob-card', 'geidea'];
+      // POS is currently operating without a kitchen workflow: every regular
+      // cashier order is paid and completed immediately. QR checkout is the
+      // only exception because it must remain pending until the customer pays.
       const isPosChannel = body.channel === 'pos';
-      const shouldAutoConfirm = isPosChannel && autoConfirmMethods.includes(mappedPaymentMethod);
+      const shouldAutoComplete = isPosChannel && body.status !== 'awaiting_payment';
 
       // ── QAHWA CARD / POINTS DISCOUNT VALIDATION (ATOMIC) ─────────────────
       // Uses findOneAndUpdate with $gte to atomically deduct points — prevents
@@ -1086,9 +1087,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         paymentMethod: mappedPaymentMethod,
         // A POS payment method represents a completed transaction. Keep the
         // payment and fulfilment fields in sync so it is counted exactly once.
-        status: shouldAutoConfirm ? 'completed' : (body.status || 'pending'),
-        paymentStatus: shouldAutoConfirm ? 'paid' : (body.paymentStatus || 'pending'),
-        ...(shouldAutoConfirm ? { deliveredAt: new Date() } : {}),
+        status: shouldAutoComplete ? 'completed' : (body.status || 'pending'),
+        paymentStatus: shouldAutoComplete ? 'paid' : (body.paymentStatus || 'pending'),
+        ...(shouldAutoComplete ? { deliveredAt: new Date() } : {}),
         estimatedPrepTimeInMinutes: autoPrepTimeMinutes,
         prepTimeSetAt: new Date(),
         customerInfo: body.customerInfo || {
@@ -1380,7 +1381,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             await mongoose.model('LoyaltyCard').findByIdAndUpdate(card._id, { $set: { customerId: body.customerId } });
           }
           if (card && earnedPts > 0) {
-            if (shouldAutoConfirm) {
+            if (shouldAutoComplete) {
               // POS order: award actual points immediately and mark order as awarded
               await mongoose.model('LoyaltyCard').findByIdAndUpdate(card._id, {
                 $inc: { points: earnedPts },

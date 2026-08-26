@@ -22,6 +22,31 @@ import { playNotificationSound, initAudioUnlock, getSoundEnabled, setSoundEnable
 import { AudioUnlockBanner } from "@/components/audio-unlock-banner";
 import { getPaymentMethodLabel } from "@shared/order-states";
 
+const ORDER_PAGE_SIZE = 300;
+
+async function fetchAllManagementOrders(): Promise<any[]> {
+  const allOrders: any[] = [];
+  let offset = 0;
+
+  while (true) {
+    const params = new URLSearchParams({
+      limit: String(ORDER_PAGE_SIZE),
+      offset: String(offset),
+    });
+    const res = await fetch(`/api/orders?${params.toString()}`, { credentials: "include" });
+    if (!res.ok) throw new Error("Failed to fetch orders");
+
+    const page = await res.json();
+    if (!Array.isArray(page)) throw new Error("Invalid orders response");
+
+    allOrders.push(...page);
+    if (page.length < ORDER_PAGE_SIZE) break;
+    offset += page.length;
+  }
+
+  return allOrders;
+}
+
 export default function EmployeeOrders() {
   const { toast } = useToast();
   const tc = useTranslate();
@@ -68,11 +93,7 @@ export default function EmployeeOrders() {
 
   const { data: orders = [], refetch, isLoading, isError } = useQuery<any[]>({
     queryKey: ["/api/orders", "management"],
-    queryFn: async () => {
-      const res = await fetch("/api/orders?limit=100", { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch orders");
-      return res.json();
-    },
+    queryFn: fetchAllManagementOrders,
     refetchInterval: 8000,
     refetchOnWindowFocus: true,
     retry: 2,
