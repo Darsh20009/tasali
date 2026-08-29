@@ -8660,12 +8660,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const phone = q.replace(/\D/g, "");
         const normalizedPhone = phone.startsWith('0') ? phone.slice(1) : phone;
         order = await OrderModel.findOne({
+          tenantId,
           $or: [{ 'customerInfo.phone': phone }, { 'customerInfo.phone': normalizedPhone }, { customerPhone: phone }, { customerPhone: normalizedPhone }],
         }).sort({ createdAt: -1 });
       } else {
         const num = q.replace(/^#/, "");
         const numAsNumber = parseInt(num, 10);
         order = await OrderModel.findOne({
+          tenantId,
           $or: [
             { orderNumber: num },
             ...(isNaN(numAsNumber) ? [] : [{ orderNumber: numAsNumber }, { dailyNumber: numAsNumber }]),
@@ -8786,9 +8788,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (originalOrderId) {
         try {
           const { OrderModel } = await import('@shared/schema');
-          const origOrder = await OrderModel.findOne({
-            $or: [{ id: originalOrderId }, { _id: originalOrderId.length === 24 ? originalOrderId : undefined }]
-          }).catch(() => null) || await OrderModel.findById(originalOrderId).catch(() => null);
+           const orderIdConditions: any[] = [{ id: originalOrderId }];
+           if (isValidObjectId(originalOrderId)) {
+             orderIdConditions.push({ _id: originalOrderId });
+           }
+           const origOrder = await OrderModel.findOne({
+             tenantId,
+             $or: orderIdConditions,
+           }).catch(() => null);
 
           if (origOrder) {
             const prevRefunded = Number((origOrder as any).refundedAmount) || 0;

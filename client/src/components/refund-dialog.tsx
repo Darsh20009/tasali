@@ -86,21 +86,11 @@ export default function RefundDialog({ open, onOpenChange, branchId, employeeId,
     setSearchError("");
     setFoundOrder(null);
     try {
+      const params = new URLSearchParams({ q });
+      const res = await fetch(`/api/refunds/search-order?${params.toString()}`, { credentials: "include" });
       let order: any = null;
-      const isPhone = /^\d{9,11}$/.test(q.replace(/\D/g, ""));
-      if (isPhone) {
-        const res = await fetch(`/api/orders/customer/${q}?limit=5`, { credentials: "include" });
-        if (res.ok) {
-          const data = await res.json();
-          const orders = Array.isArray(data) ? data : (data.orders || []);
-          order = orders[0] || null;
-        }
-      } else {
-        const num = q.replace(/^#/, "");
-        const res = await fetch(`/api/orders/number/${num}`, { credentials: "include" });
-        if (res.ok) {
-          order = await res.json();
-        }
+      if (res.ok) {
+        order = await res.json();
       }
       if (!order) {
         setSearchError(tc("لم يتم العثور على الطلب — تحقق من الرقم أو الجوال", "Order not found — check the number or phone"));
