@@ -1,7 +1,7 @@
 import QRCode from "qrcode";
 import JsBarcode from "jsbarcode";
 
-export const RECEIPT_CAMPAIGN_IMAGE = "/images/invoice-campaign.webp?v=2";
+export const RECEIPT_CAMPAIGN_IMAGE = "/images/invoice-campaign.webp?v=3";
 
 export type ReceiptTemplateMode = "default" | "campaign" | "custom";
 export type ReceiptCustomElementKind = "qr" | "barcode" | "link" | "text";
