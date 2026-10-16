@@ -5,8 +5,7 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 
 RUN set -eu; \
-    sed -i 's|http://package-firewall\.replit\.local/npm/|https://registry.npmjs.org/|g' package-lock.json 2>/dev/null || true; \
-    sed -i 's|https://package-firewall\.replit\.local/npm/|https://registry.npmjs.org/|g' package-lock.json 2>/dev/null || true; \
+    sed -E -i 's#https?://package-firewall\.replit\.(local|internal)/npm/#https://registry.npmjs.org/#g' package-lock.json; \
     if ! npm ci --include=dev --registry https://registry.npmjs.org; then \
       echo "npm ci failed; recent npm diagnostics:" >&2; \
       log="$(ls -1t /root/.npm/_logs/*-debug-0.log 2>/dev/null | head -n 1 || true)"; \
