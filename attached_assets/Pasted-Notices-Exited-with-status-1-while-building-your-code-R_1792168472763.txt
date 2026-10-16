@@ -1,0 +1,182 @@
+Notices
+Exited with status 1 while building your code.
+Read our docs for common ways to troubleshoot your deploy.
+
+All logs
+Search
+Search logs
+
+
+Oct 16, 7:30 PM - 7:34 PM
+GMT+3
+
+
+
+07:31:16 PM
+==> Cloning from https://github.com/Darsh20009/tasali
+07:31:39 PM
+==> Checking out commit 46162674dead3583de92b823b5f1d2876563374b in branch main
+07:31:42 PM
+#1 [internal] load build definition from Dockerfile
+07:31:42 PM
+#1 transferring dockerfile: 532B done
+07:31:42 PM
+#1 DONE 0.0s
+07:31:42 PM
+07:31:42 PM
+#2 [internal] load metadata for docker.io/library/node:20-alpine
+07:31:42 PM
+#2 ...
+07:31:42 PM
+07:31:42 PM
+#3 [auth] library/node:pull render-prod/docker-mirror-repository/library/node:pull token for us-west1-docker.pkg.dev
+07:31:42 PM
+#3 DONE 0.0s
+07:31:42 PM
+07:31:42 PM
+#2 [internal] load metadata for docker.io/library/node:20-alpine
+07:31:43 PM
+#2 DONE 1.9s
+07:31:44 PM
+07:31:44 PM
+#4 [internal] load .dockerignore
+07:31:44 PM
+#4 transferring context: 92B done
+07:31:44 PM
+#4 DONE 0.0s
+07:31:44 PM
+07:31:44 PM
+#5 [internal] load build context
+07:31:44 PM
+#5 DONE 0.0s
+07:31:44 PM
+07:31:44 PM
+#6 [1/6] FROM docker.io/library/node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293
+07:31:44 PM
+#6 resolve docker.io/library/node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293 done
+07:31:44 PM
+#6 DONE 0.0s
+07:31:44 PM
+07:31:44 PM
+#7 importing cache manifest
+07:31:44 PM
+#7 inferred cache manifest type: application/vnd.oci.image.manifest.v1+json done
+07:31:44 PM
+#7 DONE 0.2s
+07:31:44 PM
+07:31:44 PM
+#5 [internal] load build context
+07:31:44 PM
+#5 transferring context: 54.74MB 0.5s done
+07:31:44 PM
+#5 DONE 0.5s
+07:31:44 PM
+07:31:44 PM
+#8 [2/6] WORKDIR /app
+07:31:44 PM
+#8 extracting sha256:6a0ac1617861a677b045b7ff88545213ec31c0ff08763195a70a4a5adda577bb 0.1s done
+07:31:45 PM
+#8 extracting sha256:4feea04c154301db6f4a496efa397b3db96603b1c009c797cfdde77bea8b3287
+07:31:46 PM
+#8 extracting sha256:4feea04c154301db6f4a496efa397b3db96603b1c009c797cfdde77bea8b3287 1.0s done
+07:31:46 PM
+#8 DONE 1.5s
+07:31:46 PM
+07:31:46 PM
+#8 [2/6] WORKDIR /app
+07:31:46 PM
+#8 extracting sha256:b2cbbfe903b0821005780971ddc5892edcc4ce74c5a48d82e1d2b382edac3122 0.0s done
+07:31:46 PM
+#8 extracting sha256:fff4e2c1b189bf87d63ad8bd07f7f4eb288d6f2b6a07a8bb44c60e8c075d2096 done
+07:31:46 PM
+#8 extracting sha256:9dceedc5732f20ea0f79f359eeb4d02bd221ad7864f0e1ff12cb5e2c1354cbe3 done
+07:31:46 PM
+#8 DONE 1.6s
+07:31:46 PM
+07:31:46 PM
+#9 [3/6] COPY package.json package-lock.json* ./
+07:31:46 PM
+#9 DONE 0.0s
+07:31:46 PM
+07:31:46 PM
+#10 [4/6] RUN sed -i 's|http://package-firewall\.replit\.local/npm/|https://registry.npmjs.org/|g' package-lock.json 2>/dev/null || true &&     sed -i 's|https://package-firewall\.replit\.local/npm/|https://registry.npmjs.org/|g' package-lock.json 2>/dev/null || true &&     npm ci --registry https://registry.npmjs.org
+07:31:55 PM
+#10 9.531 npm warn deprecated uuid@8.3.2: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+07:31:59 PM
+#10 13.48 npm warn deprecated recharts@2.15.4: 1.x and 2.x branches are no longer active. Bump to Recharts v3 to receive latest features and bugfixes. See https://github.com/recharts/recharts/wiki/3.0-migration-guide
+07:32:58 PM
+#10 72.57 npm notice
+07:32:58 PM
+#10 72.57 npm notice New major version of npm available! 10.8.2 -> 12.2.0
+07:32:58 PM
+#10 72.57 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+07:32:58 PM
+#10 72.57 npm notice To update run: npm install -g npm@12.2.0
+07:32:58 PM
+#10 72.57 npm notice
+07:32:58 PM
+#10 72.57 npm error Exit handler never called!
+07:32:58 PM
+#10 72.57 npm error This is an error with npm itself. Please report this error at:
+07:32:58 PM
+#10 72.57 npm error   <https://github.com/npm/cli/issues>
+07:32:58 PM
+#10 72.57 npm error A complete log of this run can be found in: /root/.npm/_logs/2026-10-16T16_31_46_306Z-debug-0.log
+07:32:59 PM
+#10 DONE 72.9s
+07:32:59 PM
+07:32:59 PM
+#11 [5/6] COPY . .
+07:32:59 PM
+#11 DONE 0.6s
+07:32:59 PM
+07:32:59 PM
+#12 [6/6] RUN npm run build
+07:33:00 PM
+#12 0.371 
+07:33:00 PM
+#12 0.371 > tasali-qurmash@2.0.0 build
+07:33:00 PM
+#12 0.371 > vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --minify --outfile=dist/index.js
+07:33:00 PM
+#12 0.371 
+07:33:00 PM
+#12 0.382 sh: vite: not found
+07:33:00 PM
+#12 ERROR: process "/bin/sh -c npm run build" did not complete successfully: exit code: 127
+07:33:00 PM
+------
+07:33:00 PM
+ > [6/6] RUN npm run build:
+07:33:00 PM
+0.371 
+07:33:00 PM
+0.371 > tasali-qurmash@2.0.0 build
+07:33:00 PM
+0.371 > vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --minify --outfile=dist/index.js
+07:33:00 PM
+0.371 
+07:33:00 PM
+0.382 sh: vite: not found
+07:33:00 PM
+------
+07:33:00 PM
+Dockerfile:13
+07:33:00 PM
+--------------------
+07:33:00 PM
+  11 |     COPY . .
+07:33:00 PM
+  12 |     
+07:33:00 PM
+  13 | >>> RUN npm run build
+07:33:00 PM
+  14 |     
+07:33:00 PM
+  15 |     EXPOSE 5000
+07:33:00 PM
+--------------------
+07:33:00 PM
+error: failed to solve: process "/bin/sh -c npm run build" did not complete successfully: exit code: 127
+07:33:00 PM
+error: exit status 1
