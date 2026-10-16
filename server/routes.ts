@@ -1659,6 +1659,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!config) return res.json({});
       res.json({
         tradeNameAr: (config as any).tradeNameAr,
+        vatNumber: (config as any).vatNumber || '',
         orderTrackingEnabled: (config as any).orderTrackingEnabled === true,
         tradeNameEn: (config as any).tradeNameEn,
         currency: (config as any).currency || 'SAR',

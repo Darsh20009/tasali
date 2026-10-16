@@ -43,6 +43,7 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
   const invoiceRef = useRef<HTMLDivElement>(null);
   const [trackingQrUrl, setTrackingQrUrl] = useState<string>(precomputedTrackingQr || "");
   const [zatcaQrUrl, setZatcaQrUrl] = useState<string>(precomputedZatcaQr || "");
+  const [vatNumber, setVatNumber] = useState<string>(brand.taxNumber || "");
   const [trackingEnabled, setTrackingEnabled] = useState(false);
   const [paperWidth] = useState<"58mm" | "80mm">(() => loadPrinterSettings().paperWidth);
   const paperWidthPx = paperWidth === "58mm" ? 219 : 300;
@@ -55,7 +56,12 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
   useEffect(() => {
     fetch("/api/public/settings")
       .then((res) => res.ok ? res.json() : {})
-      .then((settings: any) => setTrackingEnabled(settings.orderTrackingEnabled === true && receiptVisibility.trackingCode))
+      .then((settings: any) => {
+        setTrackingEnabled(settings.orderTrackingEnabled === true && receiptVisibility.trackingCode);
+        setVatNumber(typeof settings.vatNumber === "string" && settings.vatNumber.trim()
+          ? settings.vatNumber.trim()
+          : brand.taxNumber || "");
+      })
       .catch(() => setTrackingEnabled(false));
   }, [receiptVisibility.trackingCode]);
 
@@ -117,12 +123,12 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
         }
       } catch {}
       try {
-        const vatNum = brand.taxNumber || "";
+        const vatNum = vatNumber;
         const payload = btoa(`\x01\x10${brand.shortNameAr}\x02\x0F${vatNum}\x03\x14${new Date(order.createdAt).toISOString()}\x04\x08${totalAmount.toFixed(2)}\x05\x08${vat.toFixed(2)}`);
         setZatcaQrUrl(await QRCode.toDataURL(payload, { width: 180, margin: 1, errorCorrectionLevel: "M" }));
       } catch {}
     })();
-  }, [order?.orderNumber, trackingEnabled, templateSettings.visibility.trackingCode]);
+  }, [order?.orderNumber, trackingEnabled, templateSettings.visibility.trackingCode, vatNumber]);
 
   if (!order?.orderNumber) return null;
 
@@ -408,7 +414,7 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
         <div style={{ textAlign: "center", fontSize: "12px", lineHeight: "1.9", marginBottom: "8px" }}>
           {(!isCustom || templateSettings.visibility.brandHeader) && <div style={{ fontWeight: 900, fontSize: "15px" }}>تسالي كرومش</div>}
           {isCustom && templateSettings.visibility.website && <div style={{ fontSize: "10px", direction: "ltr" }}>{brand.website}</div>}
-          {brand.taxNumber && <div style={{ direction: "ltr", fontSize: "11px", color: "#444" }}>الرقم الضريبي: {brand.taxNumber}</div>}
+          {vatNumber && <div style={{ direction: "ltr", fontSize: "11px", color: "#444" }}>الرقم الضريبي: {vatNumber}</div>}
           <div style={{ direction: "ltr", fontSize: "11px", color: "#444" }}>{timeStr} · {dateStr}</div>
           {(!isCustom || templateSettings.visibility.orderDetails) && <div style={{ fontWeight: 700, fontSize: "13px", marginTop: "3px", background: "#f0f0f0", padding: "2px 8px", display: "inline-block", borderRadius: "4px" }}>
             {orderTypeLabel}

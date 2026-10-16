@@ -742,6 +742,19 @@ export async function printKitchenOrder(data: KitchenOrderData): Promise<void> {
 }
 
 const VAT_NUMBER = brand.taxNumber || "";
+let publicVatNumberPromise: Promise<string> | null = null;
+
+async function resolveVatNumber(value?: string): Promise<string> {
+  if (value?.trim()) return value.trim();
+  if (!publicVatNumberPromise) {
+    publicVatNumberPromise = fetch("/api/public/settings")
+      .then((response) => response.ok ? response.json() : {})
+      .then((settings: any) => typeof settings?.vatNumber === "string" ? settings.vatNumber.trim() : "")
+      .catch(() => "")
+      .then((number) => number || VAT_NUMBER);
+  }
+  return publicVatNumberPromise;
+}
 const COMPANY_NAME = brand.shortNameAr;
 const COMPANY_NAME_EN = brand.nameEn;
 const COMPANY_CR = brand.commercialRegister;
@@ -1119,6 +1132,7 @@ export async function buildReceiptPreviewHtml(
   data: TaxInvoiceData,
   templateSettingsOverride?: ReceiptTemplateSettings,
 ): Promise<string> {
+  data = { ...data, vatNumber: await resolveVatNumber(data.vatNumber) };
   const { loadPrinterSettings } = await import("./thermal-printer");
   const paperWidth = loadPrinterSettings().paperWidth;
   const paperWidthPx = paperWidth === "58mm" ? 219 : 302;
@@ -1836,6 +1850,7 @@ export async function printCashierReceipt(data: TaxInvoiceData & { deliveryType?
 }
 
 export async function printAllReceipts(data: TaxInvoiceData & { deliveryType?: string; deliveryTypeAr?: string }): Promise<void> {
+  data = { ...data, vatNumber: await resolveVatNumber(data.vatNumber) };
   // Try thermal printer (WebUSB) first
   try {
     const { loadPrinterSettings, buildEscPosReceipt, buildReceiptBitmapEscPos, buildEscPosKitchenTicketBitmap, thermalPrint } = await import('./thermal-printer');
