@@ -51,7 +51,9 @@ export default function EmployeeOrders() {
   const { toast } = useToast();
   const tc = useTranslate();
   const [, setLocation] = useLocation();
+  const isManagerOrdersPage = window.location.pathname.startsWith("/manager/orders");
   const [employee, setEmployee] = useState<any>(null);
+  const [identityLoading, setIdentityLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
@@ -84,15 +86,42 @@ export default function EmployeeOrders() {
     ['payment_confirmed', 'confirmed', 'in_progress', 'ready', 'delivered', 'received', 'completed'].includes(order.status);
 
   useEffect(() => {
-    const stored = localStorage.getItem("currentEmployee");
-    if (stored) {
-      setEmployee(JSON.parse(stored));
+    let cancelled = false;
+    const identityKeys = isManagerOrdersPage
+      ? ["currentManager", "currentEmployee"]
+      : ["currentEmployee", "currentManager"];
+    let restored = false;
+    for (const key of identityKeys) {
+      const stored = localStorage.getItem(key);
+      if (!stored) continue;
+      try {
+        const parsed = JSON.parse(stored);
+        if (!parsed || typeof parsed !== "object") throw new Error("Invalid session identity");
+        setEmployee(parsed);
+        restored = true;
+        break;
+      } catch {
+        localStorage.removeItem(key);
+      }
+    }
+    if (restored) setIdentityLoading(false);
+    else {
+      fetch("/api/verify-session", { credentials: "include" })
+        .then(async (response) => response.ok ? response.json() : null)
+        .then((result) => {
+          if (!cancelled && result?.employee) setEmployee(result.employee);
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (!cancelled) setIdentityLoading(false);
+        });
     }
     initAudioUnlock();
-  }, [setLocation]);
+    return () => { cancelled = true; };
+  }, [isManagerOrdersPage]);
 
   const { data: orders = [], refetch, isLoading, isError } = useQuery<any[]>({
-    queryKey: ["/api/orders", "management"],
+    queryKey: ["/api/orders", "management", isManagerOrdersPage ? "manager" : "employee"],
     queryFn: fetchAllManagementOrders,
     refetchInterval: 8000,
     refetchOnWindowFocus: true,
@@ -247,7 +276,14 @@ export default function EmployeeOrders() {
     });
   };
 
-  if (!employee) return null;
+  if (!employee && identityLoading) {
+    return <div className="flex min-h-[40vh] items-center justify-center gap-3 text-muted-foreground" dir="rtl"><Loader2 className="h-5 w-5 animate-spin" />جاري تحميل بيانات الحساب...</div>;
+  }
+  if (!employee) {
+    return <div className="mx-auto mt-10 max-w-lg rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-center text-sm text-destructive" dir="rtl">
+      تعذر تحميل بيانات الحساب. أعد تسجيل الدخول ثم حاول فتح إدارة الطلبات مرة أخرى.
+    </div>;
+  }
 
   const filteredOrders = orders.filter((order) => {
     if (selectedBranchId && order.branchId !== selectedBranchId) return false;
@@ -312,7 +348,7 @@ export default function EmployeeOrders() {
                   {tc("إدارة الطلبات", "Orders Management")}
                   {newOrdersCount > 0 && <BellRing className="w-4 h-4 sm:w-5 sm:h-5 text-destructive animate-pulse" />}
                 </h1>
-                <p className="text-muted-foreground text-sm">{tc("الموظف:", "Staff:")} {employee.fullName}</p>
+                <p className="text-muted-foreground text-sm">{tc(isManagerOrdersPage ? "الحساب:" : "الموظف:", isManagerOrdersPage ? "Account:" : "Staff:")} {employee.fullName || employee.name || employee.username || "—"}</p>
               </div>
             </div>
             <div className="flex gap-2">
@@ -320,7 +356,7 @@ export default function EmployeeOrders() {
                 <RefreshCw className={`w-4 h-4 ml-2 ${isLoading ? 'animate-spin' : ''}`} />
                 {tc("تحديث", "Refresh")}
               </Button>
-              <Button variant="outline" onClick={() => setLocation("/employee/home")} data-testid="button-back">
+              <Button variant="outline" onClick={() => setLocation(isManagerOrdersPage ? "/manager/dashboard" : "/employee/home")} data-testid="button-back">
                 <ArrowRight className="w-4 h-4 ml-2" />
                 {tc("العودة", "Back")}
               </Button>

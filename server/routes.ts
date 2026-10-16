@@ -8644,44 +8644,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ─── Refund / Return Orders ────────────────────────────────────────────────
 
-  // Search order for refund (by order number or phone)
-  app.get("/api/refunds/search-order", async (req: any, res) => {
+  // Search order for refund (by order number or phone). Order numbers wrap, so
+  // never select an arbitrary matching order when a visible number is reused.
+  app.get("/api/refunds/search-order", requireAuth, async (req: any, res) => {
     try {
       const { q } = req.query as { q?: string };
-      if (!q) return res.status(400).json({ error: "يرجى إدخال رقم الطلب أو رقم الجوال" });
+      const search = String(q || "")
+        .trim()
+        .replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 0x0660))
+        .replace(/[۰-۹]/g, (digit) => String(digit.charCodeAt(0) - 0x06f0));
+      if (!search) return res.status(400).json({ error: "يرجى إدخال رقم الطلب أو رقم الجوال" });
 
       const tenantId = getTenantIdFromRequest(req) || 'demo-tenant';
       const { OrderModel } = await import('@shared/schema');
 
-      let order: any = null;
-      const isPhone = /^\d{7,12}$/.test(q.replace(/\D/g, ""));
+      const digits = search.replace(/\D/g, "");
+      const explicitOrderNumber = /^(?:ORD\s*#?\s*|#\s*)\d+$/i.test(search);
+      const isPhoneCandidate = /^\+?[\d\s()-]+$/.test(search) && /^\d{7,12}$/.test(digits);
+      const orderNumberValues = new Set<string>([search, search.toUpperCase()]);
+      const orderNumberClauses: any[] = [{ orderNumber: { $in: [...orderNumberValues] } }];
 
-      if (isPhone) {
-        const phone = q.replace(/\D/g, "");
-        const normalizedPhone = phone.startsWith('0') ? phone.slice(1) : phone;
-        order = await OrderModel.findOne({
-          tenantId,
-          $or: [{ 'customerInfo.phone': phone }, { 'customerInfo.phone': normalizedPhone }, { customerPhone: phone }, { customerPhone: normalizedPhone }],
-        }).sort({ createdAt: -1 });
-      } else {
-        const num = q.replace(/^#/, "");
-        const numAsNumber = parseInt(num, 10);
-        order = await OrderModel.findOne({
+      if (digits && /^(?:ORD\s*#?\s*|#\s*)?\d+$/i.test(search)) {
+        const numeric = Number(digits);
+        const padded = String(numeric).padStart(4, "0");
+        orderNumberValues.add(`ORD#${digits.padStart(4, "0")}`);
+        orderNumberValues.add(`ORD#${padded}`);
+        orderNumberValues.add(`ORD#${digits}`);
+        orderNumberClauses[0] = { orderNumber: { $in: [...orderNumberValues] } };
+      }
+
+      let orders = await OrderModel.find({
+        tenantId,
+        $or: orderNumberClauses,
+      }).sort({ createdAt: -1 }).limit(25).lean();
+
+      // A plain short number may mean either the visible wrapping number or
+      // the longer sequence number. Include both matches for operator review.
+      if (!explicitOrderNumber && digits && !isPhoneCandidate) {
+        const numeric = Number(digits);
+        if (Number.isSafeInteger(numeric)) {
+          const sequenceMatches = await OrderModel.find({ tenantId, dailyNumber: numeric })
+            .sort({ createdAt: -1 }).limit(25).lean();
+          const seenIds = new Set(orders.map((order: any) => String(order._id || order.id)));
+          orders = [...orders, ...sequenceMatches.filter((order: any) => !seenIds.has(String(order._id || order.id)))]
+            .sort((left: any, right: any) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime())
+            .slice(0, 25);
+        }
+      }
+
+      // Treat long numeric input as a phone only after exact order-number lookup.
+      if (orders.length === 0 && isPhoneCandidate) {
+        const normalizedPhone = digits.startsWith("0") ? digits.slice(1) : digits;
+        const phones = [...new Set([digits, normalizedPhone, `0${normalizedPhone}`])];
+        orders = await OrderModel.find({
           tenantId,
           $or: [
-            { orderNumber: num },
-            ...(isNaN(numAsNumber) ? [] : [{ orderNumber: numAsNumber }, { dailyNumber: numAsNumber }]),
+            { "customerInfo.phone": { $in: phones } },
+            { "customerInfo.phoneNumber": { $in: phones } },
+            { customerPhone: { $in: phones } },
+            { phoneNumber: { $in: phones } },
           ],
-        });
+        }).sort({ createdAt: -1 }).limit(25).lean();
       }
 
-      if (!order) return res.status(404).json({ error: "لم يتم العثور على الطلب" });
+      if (orders.length === 0) return res.status(404).json({ error: "لم يتم العثور على الطلب" });
 
-      const serialized = serializeDoc(order);
-      if (typeof serialized.items === 'string') {
-        try { serialized.items = JSON.parse(serialized.items); } catch { serialized.items = []; }
-      }
-      res.json(serialized);
+      const candidates = orders.map((order: any) => {
+        const serialized = serializeDoc(order);
+        if (typeof serialized.items === "string") {
+          try { serialized.items = JSON.parse(serialized.items); } catch { serialized.items = []; }
+        }
+        if (!Array.isArray(serialized.items)) serialized.items = [];
+        return serialized;
+      });
+      res.json({ candidates });
     } catch (error) {
       console.error('[Refund Search]', error);
       res.status(500).json({ error: "فشل البحث عن الطلب" });

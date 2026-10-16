@@ -1258,7 +1258,7 @@ export async function buildReceiptPreviewHtml(data: TaxInvoiceData): Promise<str
     </div>`;
 
   const campaignImageHtml = showCampaignImage
-    ? `<img src="${RECEIPT_CAMPAIGN_IMAGE}" alt="صورة الحملة" style="display:block;width:calc(100% + 24px);max-width:none;height:auto;margin:0 -12px;object-fit:contain;" />`
+    ? `<img src="${RECEIPT_CAMPAIGN_IMAGE}" alt="صورة الحملة" style="display:block;width:calc(100% + 24px);max-width:none;height:auto;margin:-12px -12px 8px;object-fit:contain;" />`
     : "";
   const orderNumberHtml = `<div class="order-line">رقم الطلب: #${orderNumDisplay}</div>`;
   const customOrderDetailsHtml = customElementsHtml("afterOrderInfo");
@@ -1271,7 +1271,7 @@ export async function buildReceiptPreviewHtml(data: TaxInvoiceData): Promise<str
 body{font-family:'Cairo',Tahoma,Arial,sans-serif;direction:rtl;background:#d6d6d6;display:flex;justify-content:center;align-items:flex-start;padding:24px 10px;min-height:100vh;color:#000;}
 .paper{background:#fff;width:${paperWidthPx}px;padding:12px 12px 10px;box-shadow:0 2px 8px rgba(0,0,0,.18),0 8px 32px rgba(0,0,0,.12);}
 .label{background:#000;color:#fff;padding:2px 8px;border-radius:4px;font-size:13px;font-weight:bold;margin-bottom:8px;display:inline-block;}
-.header{text-align:center;border-bottom:1px solid #000;padding-bottom:10px;margin-bottom:10px;}
+.header{text-align:center;border-bottom:1px solid #000;padding-bottom:10px;margin-bottom:10px;overflow:visible;}
 .website{font-size:13px;font-weight:bold;color:#b45309;margin-bottom:4px;}
 .head-line{font-size:11.5px;margin:2px 0;}
 .order-line{font-size:13px;font-weight:bold;margin-top:4px;}

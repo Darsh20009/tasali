@@ -873,7 +873,7 @@ export async function buildReceiptCanvas(opts: ReceiptBitmapOpts): Promise<HTMLC
 
   // ── Build drawing queue (y-position auto-managed) ────────────────────────
   type DrawOp =
-    | { type: 'img'; img: HTMLImageElement; width: number; height: number; }
+    | { type: 'img'; img: HTMLImageElement; width: number; height: number; fullWidth?: boolean; }
     | { type: 'text'; text: string; align: 'center' | 'left' | 'right'; fs: number; bold: boolean; color?: string; }
     | { type: 'row'; label: string; value: string; fs: number; boldLabel?: boolean; boldValue?: boolean; color?: string; }
     | { type: 'line'; thick?: boolean; dashed?: boolean; }
@@ -900,7 +900,7 @@ export async function buildReceiptCanvas(opts: ReceiptBitmapOpts): Promise<HTMLC
     if (!img || img.naturalWidth <= 0) return;
     const targetWidth = Math.min(width, DW);
     const targetHeight = Math.round(targetWidth * img.naturalHeight / img.naturalWidth);
-    ops.push({ type: 'img', img, width: targetWidth, height: targetHeight });
+    ops.push({ type: 'img', img, width: targetWidth, height: targetHeight, fullWidth: true });
   };
   const addCustomElements = (placement: "afterOrderInfo" | "footer") => {
     if (!isCustom) return;
@@ -924,8 +924,9 @@ export async function buildReceiptCanvas(opts: ReceiptBitmapOpts): Promise<HTMLC
 
   const orderNumFmt = String(opts.orderNumber).replace(/\D/g, '').padStart(4, '0') || opts.orderNumber;
   if (showCampaignImage) {
-    // The campaign artwork spans the printable page width; preserve its native ratio.
+    // The campaign artwork spans the complete printable width and keeps its native ratio.
     addWideImg(campaignImg, DW);
+    addGap(Math.max(8, Math.round(FS * 0.3)));
     addText(`#${orderNumFmt}`, 'center', Math.round(FS * 2.1), true);
     addGap(Math.round(FS * 0.4));
     addText('فاتورة ضريبية مبسطة', 'center', Math.round(FS * 1.05), true);
@@ -1049,6 +1050,7 @@ export async function buildReceiptCanvas(opts: ReceiptBitmapOpts): Promise<HTMLC
   let y = 0;
 
   const measureTextH = (fs: number) => Math.ceil(fs * 1.45);
+  ctx.textBaseline = 'top';
 
   for (const op of ops) {
     if (op.type === 'gap') {
@@ -1094,9 +1096,12 @@ export async function buildReceiptCanvas(opts: ReceiptBitmapOpts): Promise<HTMLC
       ctx.fillText(op.value, PAD, y);
       y += lh;
     } else if (op.type === 'img') {
-      const width = Math.min(op.width, CONTENT_W);
-      const height = Math.min(op.height, 3000);
-      const x = Math.floor((DW - width) / 2);
+      const width = op.fullWidth ? Math.min(op.width, DW) : Math.min(op.width, CONTENT_W);
+      const height = Math.min(
+        op.fullWidth ? Math.round(width * op.img.naturalHeight / op.img.naturalWidth) : op.height,
+        3000,
+      );
+      const x = op.fullWidth ? 0 : Math.floor((DW - width) / 2);
       ctx.drawImage(op.img, x, y, width, height);
       y += height + 4;
     }

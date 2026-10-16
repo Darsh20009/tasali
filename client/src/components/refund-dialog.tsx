@@ -49,6 +49,7 @@ export default function RefundDialog({ open, onOpenChange, branchId, employeeId,
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [foundOrder, setFoundOrder] = useState<any>(null);
+  const [orderCandidates, setOrderCandidates] = useState<any[]>([]);
   const [searchError, setSearchError] = useState("");
 
   const [selectedItems, setSelectedItems] = useState<Record<string, boolean>>({});
@@ -64,6 +65,7 @@ export default function RefundDialog({ open, onOpenChange, branchId, employeeId,
     setStep(1);
     setSearchQuery("");
     setFoundOrder(null);
+    setOrderCandidates([]);
     setSearchError("");
     setSelectedItems({});
     setRefundQtys({});
@@ -79,34 +81,44 @@ export default function RefundDialog({ open, onOpenChange, branchId, employeeId,
     onOpenChange(false);
   };
 
+  const chooseOrder = (candidate: any) => {
+    let items = candidate.items;
+    if (typeof items === "string") {
+      try { items = JSON.parse(items); } catch { items = []; }
+    }
+    if (!Array.isArray(items)) items = [];
+    const order = { ...candidate, items };
+    setFoundOrder(order);
+    setOrderCandidates([]);
+    const initSel: Record<string, boolean> = {};
+    const initQty: Record<string, number> = {};
+    items.forEach((item: any, idx: number) => {
+      const key = `${item.coffeeItemId || item.id || idx}`;
+      initSel[key] = true;
+      initQty[key] = Number(item.quantity) || 1;
+    });
+    setSelectedItems(initSel);
+    setRefundQtys(initQty);
+  };
+
   const handleSearch = async () => {
     const q = searchQuery.trim();
     if (!q) return;
     setIsSearching(true);
     setSearchError("");
     setFoundOrder(null);
+    setOrderCandidates([]);
     try {
       const params = new URLSearchParams({ q });
       const res = await fetch(`/api/refunds/search-order?${params.toString()}`, { credentials: "include" });
-      let order: any = null;
-      if (res.ok) {
-        order = await res.json();
-      }
-      if (!order) {
+      const result = res.ok ? await res.json() : null;
+      const candidates = Array.isArray(result?.candidates) ? result.candidates : result ? [result] : [];
+      if (candidates.length === 0) {
         setSearchError(tc("لم يتم العثور على الطلب — تحقق من الرقم أو الجوال", "Order not found — check the number or phone"));
+      } else if (candidates.length === 1) {
+        chooseOrder(candidates[0]);
       } else {
-        const items = typeof order.items === "string" ? JSON.parse(order.items) : (order.items || []);
-        order.items = items;
-        setFoundOrder(order);
-        const initSel: Record<string, boolean> = {};
-        const initQty: Record<string, number> = {};
-        items.forEach((item: any, idx: number) => {
-          const key = `${item.coffeeItemId || item.id || idx}`;
-          initSel[key] = true;
-          initQty[key] = Number(item.quantity) || 1;
-        });
-        setSelectedItems(initSel);
-        setRefundQtys(initQty);
+        setOrderCandidates(candidates);
       }
     } catch {
       setSearchError(tc("حدث خطأ أثناء البحث", "An error occurred while searching"));
@@ -279,6 +291,38 @@ export default function RefundDialog({ open, onOpenChange, branchId, employeeId,
                 <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
                   <AlertTriangle className="w-4 h-4 shrink-0" />
                   {searchError}
+                </div>
+              )}
+
+              {orderCandidates.length > 1 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold">
+                    {tc("وُجد أكثر من طلب بهذا الرقم. اختر الطلب الصحيح حسب التاريخ والمبلغ:", "More than one order matches. Choose the right order by date and amount:")}
+                  </p>
+                  {orderCandidates.map((candidate) => {
+                    const createdAt = candidate.createdAt ? new Date(candidate.createdAt) : null;
+                    const dateLabel = createdAt && !Number.isNaN(createdAt.getTime())
+                      ? format(createdAt, "dd/MM/yyyy HH:mm")
+                      : "—";
+                    return (
+                      <div key={candidate.id || candidate._id} className="rounded-lg border p-3 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <Badge variant="outline">{tc("طلب", "Order")} #{candidate.orderNumber || candidate.dailyNumber || "—"}</Badge>
+                          <span className="text-xs text-muted-foreground">{dateLabel}</span>
+                        </div>
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                          <span>{tc("الرقم التسلسلي", "Sequence")}: {candidate.dailyNumber || "—"}</span>
+                          <span className="font-bold">{Number(candidate.totalAmount || 0).toFixed(2)} <SarIcon size={12} /></span>
+                        </div>
+                        {candidate.customerInfo?.customerName && (
+                          <p className="text-xs text-muted-foreground">{candidate.customerInfo.customerName}</p>
+                        )}
+                        <Button type="button" size="sm" variant="outline" className="w-full" onClick={() => chooseOrder(candidate)}>
+                          {tc("اختيار هذا الطلب", "Select this order")}
+                        </Button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
