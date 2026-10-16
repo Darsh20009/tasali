@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Save, Shield, Bell, Palette, Database, Plus, Store, Utensils, Coffee, AlertTriangle, Layout, ShieldAlert, Users, Loader2, Trash2, FolderTree, Flame, Snowflake, Star, Cake, Sparkles, GripVertical, Pencil, CreditCard, Wifi, WifiOff, Eye, EyeOff, ExternalLink, CheckCircle, XCircle, Banknote, Smartphone, Gift, Percent, Tag, Ticket, Download, Globe, Package, ChevronDown, ChevronUp, MonitorSmartphone, MapPin, Navigation, FlaskConical, ShoppingBag, Truck, Timer, Car, Clock, Zap, ShoppingCart, BookOpen } from 'lucide-react';
+import { Save, Shield, Bell, Palette, Database, Plus, Store, Utensils, Coffee, AlertTriangle, Layout, ShieldAlert, Users, Loader2, Trash2, FolderTree, Flame, Snowflake, Star, Cake, Sparkles, GripVertical, Pencil, CreditCard, Wifi, WifiOff, Eye, EyeOff, ExternalLink, CheckCircle, XCircle, Banknote, Smartphone, Gift, Percent, Tag, Ticket, Download, Globe, Package, ChevronDown, ChevronUp, MonitorSmartphone, MapPin, Navigation, FlaskConical, ShoppingBag, Truck, Timer, Car, Clock, Zap, ShoppingCart, BookOpen, Receipt } from 'lucide-react';
 import { useSystemMode, SystemMode } from '@/lib/system-mode';
 import {
   Dialog,
@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import InvoiceTemplateSettingsPanel from "@/components/invoice-template-settings-panel";
 
 /* ─── System Mode Section Component ─────────────────────────────────────── */
 function SystemModeSection() {
@@ -928,6 +929,7 @@ export default function AdminSettings() {
   const settingsTabs = [
     { key: 'store',      labelAr: 'المتجر',     labelEn: 'Store',      icon: Store },
     { key: 'operations', labelAr: 'التشغيل',    labelEn: 'Operations', icon: Truck },
+    { key: 'invoices',   labelAr: 'الفواتير',   labelEn: 'Invoices',   icon: Receipt },
     { key: 'menu',       labelAr: 'القائمة',    labelEn: 'Menu',       icon: Utensils },
     { key: 'payments',   labelAr: 'الدفع',      labelEn: 'Payments',   icon: CreditCard },
     { key: 'loyalty',    labelAr: 'الولاء',     labelEn: 'Loyalty',    icon: Gift },
@@ -3641,6 +3643,10 @@ export default function AdminSettings() {
         )}
 
         {/* ── System Mode Selector ── */}
+        {activeTab === 'invoices' && (
+          <InvoiceTemplateSettingsPanel />
+        )}
+
         {activeTab === 'system' && (
           <SystemModeSection />
         )}
