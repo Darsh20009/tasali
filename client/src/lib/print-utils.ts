@@ -1,6 +1,14 @@
 import QRCode from "qrcode";
 import { VAT_RATE } from "@/lib/constants";
 import brand from "@/lib/brand";
+import {
+  escapeReceiptHtml,
+  getReceiptTemplateVisibility,
+  loadReceiptTemplateSettings,
+  RECEIPT_CAMPAIGN_IMAGE,
+  renderReceiptCustomElements,
+  shouldShowReceiptCampaign,
+} from "@/lib/receipt-template-settings";
 
 /** Tracking is an opt-in customer feature. Printing must fail closed when unavailable. */
 export async function isOrderTrackingEnabled(): Promise<boolean> {
@@ -824,6 +832,9 @@ async function _buildFastCustomerEscPos(
 
   const invoiceTs = data.date ? new Date(data.date).toISOString() : new Date().toISOString();
   const { date: fmtDate, time: fmtTime } = formatDate(data.date);
+  const templateSettings = loadReceiptTemplateSettings();
+  const receiptVisibility = getReceiptTemplateVisibility(templateSettings);
+  const receiptOrderNumber = String(data.orderNumber).replace(/\D/g, '').padStart(4, '0') || String(data.orderNumber);
 
   const zatcaPayload = generateZATCAQRCode({
     sellerName: COMPANY_NAME,
@@ -836,8 +847,8 @@ async function _buildFastCustomerEscPos(
   // Generate the mandatory tax QR and the opt-in order-tracking QR in parallel.
   const trackingNum = String(data.orderNumber).replace(/\D/g, '') || String(data.orderNumber);
   const trackingEnabled = await isOrderTrackingEnabled();
-  const [trackingQr, zatcaQr] = await Promise.all([
-    trackingEnabled ? (async () => {
+  const [trackingQr, zatcaQr, customElements] = await Promise.all([
+    trackingEnabled && receiptVisibility.trackingCode ? (async () => {
       try {
         const url = `${window.location.origin}/track/${trackingNum}`;
         return await QRCode.toDataURL(url, { width: 180, margin: 1, errorCorrectionLevel: 'M' });
@@ -848,6 +859,12 @@ async function _buildFastCustomerEscPos(
         return await QRCode.toDataURL(zatcaPayload, { width: 140, margin: 1, errorCorrectionLevel: 'M' });
       } catch { return ''; }
     })(),
+    renderReceiptCustomElements(templateSettings, {
+      orderNumber: receiptOrderNumber,
+      invoiceNumber: `INV-${receiptOrderNumber}`,
+      total: totalAmount.toFixed(2),
+      date: `${fmtDate} ${fmtTime}`,
+    }),
   ]);
 
   const payLabel = (() => {
@@ -874,6 +891,7 @@ async function _buildFastCustomerEscPos(
     customerName: data.customerName && data.customerName !== 'عميل نقدي' ? data.customerName : undefined,
     tableNumber: data.tableNumber,
     orderType: orderTypeThermal || undefined,
+    website: COMPANY_WEBSITE,
     items: data.items.map(item => ({
       name: item.coffeeItem.nameAr,
       nameEn: (item.coffeeItem as any).nameEn || '',
@@ -892,8 +910,11 @@ async function _buildFastCustomerEscPos(
     paymentMethod: payLabel,
     ...(data.cashReceived ? { cashReceived: data.cashReceived } : {}),
     logoDataUrl: '/logo-print.png',
+    campaignImageDataUrl: shouldShowReceiptCampaign(templateSettings) ? RECEIPT_CAMPAIGN_IMAGE : undefined,
     trackingQrDataUrl: trackingQr || undefined,
     zatcaQrDataUrl: zatcaQr || undefined,
+    templateSettings,
+    customElements,
     paperWidth,
     feedLines,
   });
@@ -1093,12 +1114,37 @@ function formatDate(dateStr: string): { date: string; time: string } {
 
 /** Build a visual HTML receipt for preview — image-free, instant print */
 export async function buildReceiptPreviewHtml(data: TaxInvoiceData): Promise<string> {
+  const { loadPrinterSettings } = await import("./thermal-printer");
+  const paperWidth = loadPrinterSettings().paperWidth;
+  const paperWidthPx = paperWidth === "58mm" ? 219 : 302;
   const totalAmount = parseNumber(data.total);
   const subtotalBeforeVat = totalAmount / (1 + VAT_RATE);
   const vat = totalAmount - subtotalBeforeVat;
   const disc = data.invoiceDiscount ? parseNumber(data.invoiceDiscount) : 0;
   const { date: fmtDate, time: fmtTime } = formatDate(data.date);
   const orderNumDisplay = String(data.orderNumber).replace(/\D/g, '').padStart(4, '0') || data.orderNumber;
+  const templateSettings = loadReceiptTemplateSettings();
+  const receiptVisibility = getReceiptTemplateVisibility(templateSettings);
+  const showCampaignImage = shouldShowReceiptCampaign(templateSettings);
+  const renderedCustomElements = await renderReceiptCustomElements(templateSettings, {
+    orderNumber: orderNumDisplay,
+    invoiceNumber: `INV-${orderNumDisplay}`,
+    total: totalAmount.toFixed(2),
+    date: `${fmtDate} ${fmtTime}`,
+  });
+  const customElementsHtml = (placement: "afterOrderInfo" | "footer") => renderedCustomElements
+    .filter((element) => element.placement === placement)
+    .map((element) => `
+      <div style="text-align:center;padding:6px 10px;break-inside:avoid;">
+        ${element.label ? `<div style="font-size:11px;font-weight:bold;margin-bottom:4px;">${escapeReceiptHtml(element.label)}</div>` : ""}
+        ${element.imageDataUrl ? `<img src="${element.imageDataUrl}" alt="" style="display:block;max-width:72%;max-height:100px;width:auto;height:auto;margin:4px auto;object-fit:contain;" />` : ""}
+        ${element.kind === "link" && /^https?:\/\/\S+$/i.test(element.renderedValue.trim())
+          ? `<div style="font-size:10px;direction:ltr;word-break:break-all;">${escapeReceiptHtml(element.renderedValue)}</div>`
+          : element.kind === "text" || !element.imageDataUrl
+            ? `<div style="font-size:11px;direction:${element.kind === "barcode" ? "ltr" : "rtl"};word-break:break-word;">${escapeReceiptHtml(element.renderedValue)}</div>`
+            : ""}
+      </div>`)
+    .join("");
 
   const orderTypeStr = (data.orderTypeName || (data.orderType as string) || '');
   const orderTypeLabel =
@@ -1126,6 +1172,18 @@ export async function buildReceiptPreviewHtml(data: TaxInvoiceData): Promise<str
       zatcaQrSvg = svgStr.replace(/<\?xml[^?]*\?>/g, '').replace(/width="\d+"/, 'width="100"').replace(/height="\d+"/, 'height="100"');
       _zatcaQrCache.set(cacheKey, zatcaQrSvg);
     } catch {}
+  }
+
+  let trackingQrHtml = "";
+  if (templateSettings.mode === "custom" && receiptVisibility.trackingCode && await isOrderTrackingEnabled()) {
+    try {
+      const trackingNum = String(data.orderNumber).replace(/\D/g, '') || String(data.orderNumber);
+      const trackingUrl = `${window.location.origin}/track/${encodeURIComponent(trackingNum)}`;
+      const trackingQr = await QRCode.toDataURL(trackingUrl, { width: 140, margin: 1, errorCorrectionLevel: "M" });
+      trackingQrHtml = `<div class="qr-container"><div style="font-size:11px;font-weight:bold;margin-bottom:5px;">باركود تتبع الطلب</div><img src="${trackingQr}" alt="Tracking QR" style="width:82px;height:82px;display:inline-block;" /></div>`;
+    } catch {
+      trackingQrHtml = "";
+    }
   }
 
   const totalQty = data.items.reduce((s, i) => s + (i.quantity || 1), 0);
@@ -1199,12 +1257,19 @@ export async function buildReceiptPreviewHtml(data: TaxInvoiceData): Promise<str
       </div>
     </div>`;
 
+  const campaignImageHtml = showCampaignImage
+    ? `<img src="${RECEIPT_CAMPAIGN_IMAGE}" alt="صورة الحملة" style="display:block;width:calc(100% + 24px);max-width:none;height:auto;margin:0 -12px;object-fit:contain;" />`
+    : "";
+  const orderNumberHtml = `<div class="order-line">رقم الطلب: #${orderNumDisplay}</div>`;
+  const customOrderDetailsHtml = customElementsHtml("afterOrderInfo");
+  const customFooterHtml = customElementsHtml("footer");
+
   return `<!DOCTYPE html><html dir="rtl"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
 body{font-family:'Cairo',Tahoma,Arial,sans-serif;direction:rtl;background:#d6d6d6;display:flex;justify-content:center;align-items:flex-start;padding:24px 10px;min-height:100vh;color:#000;}
-.paper{background:#fff;width:302px;padding:12px 12px 10px;box-shadow:0 2px 8px rgba(0,0,0,.18),0 8px 32px rgba(0,0,0,.12);}
+.paper{background:#fff;width:${paperWidthPx}px;padding:12px 12px 10px;box-shadow:0 2px 8px rgba(0,0,0,.18),0 8px 32px rgba(0,0,0,.12);}
 .label{background:#000;color:#fff;padding:2px 8px;border-radius:4px;font-size:13px;font-weight:bold;margin-bottom:8px;display:inline-block;}
 .header{text-align:center;border-bottom:1px solid #000;padding-bottom:10px;margin-bottom:10px;}
 .website{font-size:13px;font-weight:bold;color:#b45309;margin-bottom:4px;}
@@ -1231,28 +1296,34 @@ body{font-family:'Cairo',Tahoma,Arial,sans-serif;direction:rtl;background:#d6d6d
 .qr-container{text-align:center;margin-top:10px;}
 .footer{text-align:center;margin-top:12px;font-size:11px;color:#666;}
 @media print{
-  @page{size:80mm auto;margin:0;}
+  @page{size:${paperWidth} auto;margin:0;}
   body{background:#fff!important;padding:0!important;display:block!important;}
-  .paper{width:80mm!important;box-shadow:none!important;}
+  .paper{width:${paperWidth}!important;box-shadow:none!important;}
 }
 </style></head><body><div class="paper">
 
   <!-- ══ رأس الفاتورة ══ -->
   <div class="header">
-    <div class="label">إيصال العميل (فاتورة ضريبية)</div>
-    ${tasaliHeaderHtml}
-    <div class="website">${brand.website}</div>
+    ${campaignImageHtml}
+    ${!showCampaignImage ? `<div class="label">إيصال العميل (فاتورة ضريبية)</div>` : ""}
+    ${receiptVisibility.brandHeader && !showCampaignImage ? tasaliHeaderHtml : ""}
+    ${showCampaignImage ? orderNumberHtml : ""}
+    ${receiptVisibility.website ? `<div class="website">${brand.website}</div>` : ""}
     <div class="head-line">الرقم الضريبي: ${data.vatNumber || VAT_NUMBER}</div>
-    <div class="order-line">رقم الطلب: #${orderNumDisplay}</div>
+    ${!showCampaignImage ? orderNumberHtml : ""}
     <div class="head-line" style="direction:ltr;">${fmtDate} ${fmtTime}</div>
   </div>
 
   <!-- ══ بيانات الطلب ══ -->
-  <div class="info-block">
+  ${receiptVisibility.orderDetails || (templateSettings.mode === "custom" && receiptVisibility.customer) ? `<div class="info-block">
+    ${templateSettings.mode === "custom" && receiptVisibility.customer && data.customerName && data.customerName !== "عميل نقدي" ? `<div>العميل: ${escapeReceiptHtml(data.customerName)}</div>` : ""}
+    ${receiptVisibility.orderDetails ? `
     <div>${orderTypeLabel ? `نوع الطلب: ${orderTypeLabel}` : ''}</div>
     ${data.tableNumber ? `<div>طاولة: ${data.tableNumber}</div>` : ''}
     ${data.employeeName ? `<div>الموظف: ${data.employeeName}</div>` : ''}
-  </div>
+    ` : ""}
+  </div>` : ""}
+  ${customOrderDetailsHtml}
 
   <!-- ══ الأصناف ══ -->
   ${data.items.map(item => {
@@ -1278,10 +1349,10 @@ body{font-family:'Cairo',Tahoma,Arial,sans-serif;direction:rtl;background:#d6d6d
     <div class="row"><span>ضريبة القيمة المضافة (15%):</span><span>${vat.toFixed(2)} ر.س</span></div>
     ${disc > 0 ? `<div class="row" style="color:#16a34a;"><span>الخصم:</span><span>-${disc.toFixed(2)} ر.س</span></div>` : ''}
     <div class="row total"><span>الإجمالي شامل الضريبة:</span><span>${totalAmount.toFixed(2)} ر.س</span></div>
-    <div class="row" style="margin-top:5px;font-size:11px;"><span>طريقة الدفع:</span><span>${pmIcon} ${pmLabel}</span></div>
-    ${data.splitPayment ? `
+    ${receiptVisibility.payment ? `<div class="row" style="margin-top:5px;font-size:11px;"><span>طريقة الدفع:</span><span>${pmIcon} ${pmLabel}</span></div>` : ""}
+    ${receiptVisibility.payment && data.splitPayment ? `
     <div class="split-row row">${data.splitPayment.cash > 0 ? `<span>نقدي: ${data.splitPayment.cash.toFixed(2)}</span>` : '<span></span>'}${data.splitPayment.card > 0 ? `<span>شبكة: ${data.splitPayment.card.toFixed(2)}</span>` : ''}</div>` : ''}
-    ${(data.cashReceived && data.cashReceived > 0 && !data.splitPayment) ? `
+    ${receiptVisibility.payment && data.cashReceived && data.cashReceived > 0 && !data.splitPayment ? `
     <div class="change-box">
       <div class="change-row"><span>المبلغ المستلم:</span><span>${data.cashReceived.toFixed(2)} ر.س</span></div>
       <div class="change-row" style="font-weight:900;font-size:13px;margin-top:2px;"><span>الباقي للعميل:</span><span>${Math.max(0, data.cashReceived - totalAmount).toFixed(2)} ر.س</span></div>
@@ -1295,16 +1366,18 @@ body{font-family:'Cairo',Tahoma,Arial,sans-serif;direction:rtl;background:#d6d6d
   ${(data as any).notes ? `<div class="notes-box"><strong>ملاحظات:</strong> ${(data as any).notes}</div>` : ''}
 
   <!-- ══ كود QR ZATCA ══ -->
+  ${trackingQrHtml}
   ${zatcaQrSvg ? `<div class="qr-container">${zatcaQrSvg}<div style="font-size:10px;margin-top:4px;">امسح للتحقق من الفاتورة</div></div>` : ''}
 
   <!-- ══ نقاط الولاء ══ -->
   ${(data as any).loyaltyPoints ? `<div class="loyalty-box">⭐ +${(data as any).loyaltyPoints} نقطة أضيفت لرصيدك</div>` : ''}
 
   <!-- ══ التذييل ══ -->
-  <div class="footer">
-    <div style="font-weight:bold;margin-bottom:4px;">${brand.website}</div>
+  ${receiptVisibility.footer ? `<div class="footer">
+    ${receiptVisibility.website ? `<div style="font-weight:bold;margin-bottom:4px;">${brand.website}</div>` : ""}
     شكراً لزيارتكم!
-  </div>
+  </div>` : ""}
+  ${customFooterHtml}
 
 </div></body></html>`;
 }
@@ -1762,6 +1835,7 @@ export async function printAllReceipts(data: TaxInvoiceData & { deliveryType?: s
   try {
     const { loadPrinterSettings, buildEscPosReceipt, buildReceiptBitmapEscPos, buildEscPosKitchenTicketBitmap, thermalPrint } = await import('./thermal-printer');
     const printerSettings = loadPrinterSettings();
+    const receiptTemplateSettings = loadReceiptTemplateSettings();
 
     if (printerSettings.enabled && printerSettings.autoPrint) {
       const { date: fmtDate, time: fmtTime } = formatDate(data.date);
@@ -1774,35 +1848,45 @@ export async function printAllReceipts(data: TaxInvoiceData & { deliveryType?: s
 
       // Build ESC/POS receipt — image mode for TAPOS/Chinese printers (no encoding issues)
       // Also force image mode for Bluetooth — BLE thermal printers cannot render Arabic via ESC/POS charset commands
-      const effectiveArabicEncoding = (printerSettings.mode === 'bluetooth' || printerSettings.arabicEncoding === 'image') ? 'image' : printerSettings.arabicEncoding;
+      const needsReceiptBitmap = receiptTemplateSettings.mode === "campaign" || receiptTemplateSettings.mode === "custom";
+      const effectiveArabicEncoding = (needsReceiptBitmap || printerSettings.mode === 'bluetooth' || printerSettings.arabicEncoding === 'image') ? 'image' : printerSettings.arabicEncoding;
       let escData: Uint8Array;
       if (effectiveArabicEncoding === 'image') {
-        escData = await buildReceiptBitmapEscPos({
-          shopName: COMPANY_NAME,
-          vatNumber: data.vatNumber || VAT_NUMBER,
-          branchName: data.branchName,
-          orderNumber: data.orderNumber,
-          orderDate: dateStr,
-          cashierName: data.employeeName,
-          customerName: data.customerName !== 'عميل نقدي' ? data.customerName : undefined,
-          tableNumber: data.tableNumber,
-          orderType: orderTypeLabel || undefined,
-          items: data.items.map(item => ({
-            name: item.coffeeItem.nameAr,
-            nameEn: (item.coffeeItem as any).nameEn,
-            qty: item.quantity,
-            price: parseNumber(item.coffeeItem.price),
-            addons: getItemAddons(item).map((a: any) => a.nameAr),
-          })),
-          subtotal: subtotalBeforeTax,
-          vat: vatAmount,
-          total: totalAmount,
-          discount: data.invoiceDiscount ? parseNumber(data.invoiceDiscount) : undefined,
-          paymentMethod: data.paymentMethod,
-          paperWidth: printerSettings.paperWidth,
-          feedLines: printerSettings.feedLines,
-          logoDataUrl: '/logo-print.png',
-        });
+        if (needsReceiptBitmap) {
+          escData = await _buildFastCustomerEscPos(
+            data,
+            orderTypeLabel,
+            printerSettings.paperWidth,
+            printerSettings.feedLines,
+          );
+        } else {
+          escData = await buildReceiptBitmapEscPos({
+            shopName: COMPANY_NAME,
+            vatNumber: data.vatNumber || VAT_NUMBER,
+            branchName: data.branchName,
+            orderNumber: data.orderNumber,
+            orderDate: dateStr,
+            cashierName: data.employeeName,
+            customerName: data.customerName !== 'عميل نقدي' ? data.customerName : undefined,
+            tableNumber: data.tableNumber,
+            orderType: orderTypeLabel || undefined,
+            items: data.items.map(item => ({
+              name: item.coffeeItem.nameAr,
+              nameEn: (item.coffeeItem as any).nameEn,
+              qty: item.quantity,
+              price: parseNumber(item.coffeeItem.price),
+              addons: getItemAddons(item).map((a: any) => a.nameAr),
+            })),
+            subtotal: subtotalBeforeTax,
+            vat: vatAmount,
+            total: totalAmount,
+            discount: data.invoiceDiscount ? parseNumber(data.invoiceDiscount) : undefined,
+            paymentMethod: data.paymentMethod,
+            paperWidth: printerSettings.paperWidth,
+            feedLines: printerSettings.feedLines,
+            logoDataUrl: '/logo-print.png',
+          });
+        }
       } else {
         escData = buildEscPosReceipt({
           shopName: COMPANY_NAME,

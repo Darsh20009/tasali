@@ -44,6 +44,7 @@ import {
 } from "@/lib/thermal-printer";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslate } from "@/lib/useTranslate";
+import InvoiceTemplateSettingsPanel from "@/components/invoice-template-settings-panel";
 
 export default function PrinterSettingsPanel() {
   const { toast } = useToast();
@@ -473,6 +474,8 @@ export default function PrinterSettingsPanel() {
 
   return (
     <div className="space-y-4">
+
+      <InvoiceTemplateSettingsPanel />
 
       {/* ══ Multi-Printer Management Card ══ */}
       <Card className="border-2 border-primary/20">

@@ -6,6 +6,16 @@ import { useRef, useState, useEffect } from "react";
 import QRCode from "qrcode";
 import { fmtOrderNum, printHtmlInPage, isAndroidDevice } from "@/lib/print-utils";
 import { useTranslate } from "@/lib/useTranslate";
+import {
+  getReceiptTemplateVisibility,
+  loadReceiptTemplateSettings,
+  RECEIPT_CAMPAIGN_IMAGE,
+  renderReceiptCustomElements,
+  shouldShowReceiptCampaign,
+  type ReceiptTemplateSettings,
+  type RenderedReceiptCustomElement,
+} from "@/lib/receipt-template-settings";
+import { loadPrinterSettings } from "@/lib/thermal-printer";
 
 interface ReceiptInvoiceProps {
   order: Order;
@@ -33,13 +43,19 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
   const [trackingQrUrl, setTrackingQrUrl] = useState<string>(precomputedTrackingQr || "");
   const [zatcaQrUrl, setZatcaQrUrl] = useState<string>(precomputedZatcaQr || "");
   const [trackingEnabled, setTrackingEnabled] = useState(false);
+  const [paperWidth] = useState<"58mm" | "80mm">(() => loadPrinterSettings().paperWidth);
+  const paperWidthPx = paperWidth === "58mm" ? 219 : 300;
+  const [templateSettings] = useState<ReceiptTemplateSettings>(loadReceiptTemplateSettings);
+  const receiptVisibility = getReceiptTemplateVisibility(templateSettings);
+  const [customElements, setCustomElements] = useState<RenderedReceiptCustomElement[]>([]);
+  const [customElementsReady, setCustomElementsReady] = useState(false);
 
   useEffect(() => {
     fetch("/api/public/settings")
       .then((res) => res.ok ? res.json() : {})
-      .then((settings: any) => setTrackingEnabled(settings.orderTrackingEnabled === true))
+      .then((settings: any) => setTrackingEnabled(settings.orderTrackingEnabled === true && receiptVisibility.trackingCode))
       .catch(() => setTrackingEnabled(false));
-  }, []);
+  }, [receiptVisibility.trackingCode]);
 
   const getItemsArray = (): any[] => {
     try {
@@ -60,6 +76,32 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
   const subtotal = totalAmount / 1.15;
   const vat = totalAmount - subtotal;
 
+  useEffect(() => {
+    if (!order?.orderNumber || templateSettings.mode !== "custom") {
+      setCustomElements([]);
+      setCustomElementsReady(true);
+      return;
+    }
+    let cancelled = false;
+    setCustomElementsReady(false);
+    const createdAt = safeOrder.createdAt ? new Date(safeOrder.createdAt) : new Date();
+    renderReceiptCustomElements(templateSettings, {
+      orderNumber: String(order.orderNumber).replace(/\D/g, "").padStart(4, "0"),
+      invoiceNumber: `INV-${order.orderNumber}`,
+      total: totalAmount.toFixed(2),
+      date: createdAt.toLocaleString("ar-SA"),
+    }).then((rendered) => {
+      if (cancelled) return;
+      setCustomElements(rendered);
+      setCustomElementsReady(true);
+    }).catch(() => {
+      if (cancelled) return;
+      setCustomElements([]);
+      setCustomElementsReady(true);
+    });
+    return () => { cancelled = true; };
+  }, [order?.orderNumber, safeOrder.createdAt, totalAmount, templateSettings]);
+
   // Step 1: Generate QR codes
   useEffect(() => {
     if (!order?.orderNumber) return;
@@ -78,7 +120,7 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
         setZatcaQrUrl(await QRCode.toDataURL(payload, { width: 180, margin: 1, errorCorrectionLevel: "M" }));
       } catch {}
     })();
-  }, [order?.orderNumber, trackingEnabled]);
+  }, [order?.orderNumber, trackingEnabled, templateSettings.visibility.trackingCode]);
 
   if (!order?.orderNumber) return null;
 
@@ -128,13 +170,14 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
     if (!el) return "";
     const clone = el.cloneNode(true) as HTMLElement;
     clone.style.margin = "0 auto";
+    clone.style.width = showCampaignImage ? paperWidth : `${paperWidthPx}px`;
     return `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8">
 <title>فاتورة ${order.orderNumber}</title>
 <style>
-  @page { size: 80mm auto; margin: 0; }
+  @page { size: ${paperWidth} auto; margin: 0; }
   * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
   html, body { margin: 0; padding: 0; background: #fff; font-family: 'Cairo','Tajawal',Tahoma,Arial,sans-serif; }
-  body { padding: 4mm 2mm; }
+  body { padding: ${showCampaignImage ? "0" : "4mm 2mm"}; }
   img { max-width: 100%; }
 </style></head><body>${clone.outerHTML}</body></html>`;
   };
@@ -149,7 +192,8 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
 
   useEffect(() => {
     // Skip staged iframe on Android — we use the no-iframe path
-    if (isAndroidDevice) { setPrintReady(true); return; }
+    if (isAndroidDevice) { setPrintReady(customElementsReady); return; }
+    if (templateSettings.mode === "custom" && !customElementsReady) return;
     // Wait until both QR codes are generated before staging the iframe
     if ((trackingEnabled && !trackingQrUrl) || !zatcaQrUrl || !invoiceRef.current) return;
     if (printIframeRef.current) return; // already staged
@@ -196,7 +240,7 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trackingEnabled, trackingQrUrl, zatcaQrUrl]);
+  }, [trackingEnabled, trackingQrUrl, zatcaQrUrl, customElementsReady, templateSettings.mode, paperWidth]);
 
   // Cleanup the staged iframe on unmount
   useEffect(() => {
@@ -278,6 +322,27 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
   const cell = (extra?: React.CSSProperties): React.CSSProperties => ({ padding: "3px 0", fontSize: "13px", lineHeight: "1.7", ...extra });
   const bold = (extra?: React.CSSProperties): React.CSSProperties => ({ fontWeight: 700, ...extra });
   const dash = (): React.CSSProperties => ({ borderTop: "1px dashed #aaa", margin: "10px 0" });
+  const isCustom = templateSettings.mode === "custom";
+  const showCampaignImage = shouldShowReceiptCampaign(templateSettings);
+  const renderCustomElements = (placement: "afterOrderInfo" | "footer") => customElements
+    .filter((element) => element.placement === placement)
+    .map((element) => (
+      <div key={element.id} style={{ textAlign: "center", padding: "6px 4px", breakInside: "avoid" }}>
+        {element.label && <div style={{ fontSize: "11px", fontWeight: 900, marginBottom: "4px" }}>{element.label}</div>}
+        {element.imageDataUrl && (
+          <img
+            src={element.imageDataUrl}
+            alt={element.label || element.kind}
+            style={{ display: "block", maxWidth: element.kind === "barcode" ? "85%" : "40%", maxHeight: "100px", width: "auto", height: "auto", margin: "4px auto" }}
+          />
+        )}
+        {(element.kind === "text" || !element.imageDataUrl || element.kind === "link") && (
+          <div style={{ fontSize: "10px", direction: element.kind === "link" || element.kind === "barcode" ? "ltr" : "rtl", wordBreak: "break-all" }}>
+            {element.renderedValue}
+          </div>
+        )}
+      </div>
+    ));
 
   return (
     <div className="space-y-4">
@@ -289,7 +354,7 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
           fontFamily: "'Cairo', 'Tajawal', Tahoma, Arial, sans-serif",
           background: "#fff",
           color: "#000",
-          width: "300px",
+          width: `${paperWidthPx}px`,
           margin: "0 auto",
           padding: "0",
           fontSize: "13px",
@@ -297,41 +362,56 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
           fontWeight: 700,
         }}
       >
-        {/* ── top spacing ── */}
-        <div style={{ height: "20px" }} />
+        {!showCampaignImage && <div style={{ height: "20px" }} />}
 
-        {/* ── 1. Order number ── */}
-        <div style={{ textAlign: "center", fontWeight: 900, fontSize: "22px", letterSpacing: "2px", padding: "10px 0 6px" }}>
+        {showCampaignImage && (
+          <img
+            src={RECEIPT_CAMPAIGN_IMAGE}
+            alt="صورة الحملة"
+            style={{ display: "block", width: "100%", height: "auto", margin: 0, objectFit: "contain" }}
+          />
+        )}
+
+        {/* The campaign layout places the order number directly below the full-width artwork. */}
+        <div style={{ textAlign: "center", fontWeight: 900, fontSize: "22px", letterSpacing: "2px", padding: showCampaignImage ? "6px 0" : "10px 0 6px" }}>
           #{orderNum}
         </div>
 
         {/* ── 2. Logo ── */}
-        <div style={{ padding: "6px 0 10px", marginBottom: "4px" }}>
+        {!showCampaignImage && (!isCustom || templateSettings.visibility.brandHeader) && <div style={{ padding: "6px 0 10px", marginBottom: "4px" }}>
           <img
             src="/logo.png"
             alt="تسالي كرومش"
             crossOrigin="anonymous"
             style={{ width: "200px", height: "auto", display: "block", margin: "0 auto" }}
           />
-        </div>
+        </div>}
 
         {/* ── 3. Business info ── */}
         <div style={{ textAlign: "center", fontSize: "12px", lineHeight: "1.9", marginBottom: "8px" }}>
-          <div style={{ fontWeight: 900, fontSize: "15px" }}>تسالي كرومش</div>
-          <div style={{ fontSize: "11px", color: "#444" }}></div>
+          {(!isCustom || templateSettings.visibility.brandHeader) && <div style={{ fontWeight: 900, fontSize: "15px" }}>تسالي كرومش</div>}
+          {isCustom && templateSettings.visibility.website && <div style={{ fontSize: "10px", direction: "ltr" }}>{brand.website}</div>}
           {brand.taxNumber && <div style={{ direction: "ltr", fontSize: "11px", color: "#444" }}>الرقم الضريبي: {brand.taxNumber}</div>}
           <div style={{ direction: "ltr", fontSize: "11px", color: "#444" }}>{timeStr} · {dateStr}</div>
-          <div style={{ fontWeight: 700, fontSize: "13px", marginTop: "3px", background: "#f0f0f0", padding: "2px 8px", display: "inline-block", borderRadius: "4px" }}>
+          {(!isCustom || templateSettings.visibility.orderDetails) && <div style={{ fontWeight: 700, fontSize: "13px", marginTop: "3px", background: "#f0f0f0", padding: "2px 8px", display: "inline-block", borderRadius: "4px" }}>
             {orderTypeLabel}
-          </div>
+          </div>}
         </div>
 
         {/* ── 4. Cashier ── */}
-        {safeOrder.employeeName && (
+        {(!isCustom || templateSettings.visibility.orderDetails) && safeOrder.employeeName && (
           <div style={{ textAlign: "center", fontSize: "11px", color: "#555", marginBottom: "4px" }}>
             الكاشير: <strong>{safeOrder.employeeName}</strong>
           </div>
         )}
+
+        {isCustom && templateSettings.visibility.customer && safeOrder.customerName && safeOrder.customerName !== "عميل نقدي" && (
+          <div style={{ textAlign: "center", fontSize: "11px", color: "#555", marginBottom: "4px" }}>
+            العميل: <strong>{safeOrder.customerName}</strong>
+          </div>
+        )}
+
+        {renderCustomElements("afterOrderInfo")}
 
         {/* ── 5. Items header ── */}
         <div style={dash()} />
@@ -392,10 +472,10 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
         </div>
 
         {/* Payment method */}
-        <div style={{ display: "flex", justifyContent: "space-between", ...cell({ fontSize: "12px", paddingTop: "4px" }) }}>
+        {(!isCustom || templateSettings.visibility.payment) && <div style={{ display: "flex", justifyContent: "space-between", ...cell({ fontSize: "12px", paddingTop: "4px" }) }}>
           <span style={{ fontFamily: "Arial, sans-serif" }}>SAR {totalAmount.toFixed(2)}</span>
           <span>طريقة الدفع: {paymentLabel}</span>
-        </div>
+        </div>}
 
         <div style={dash()} />
 
@@ -420,10 +500,12 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
         })()}
 
         {/* ── 9. Tagline ── */}
-        <div style={{ textAlign: "center", fontSize: "13px", fontWeight: 700, padding: "2px 0 4px" }}>
-          "تسالي وكرومش .. لكل لحظة نكهة"
-        </div>
-        <div style={{ textAlign: "center", fontSize: "11px", color: "#555", paddingBottom: "8px" }}>تسالي كرومش</div>
+        {(!isCustom || templateSettings.visibility.footer) && <>
+          <div style={{ textAlign: "center", fontSize: "13px", fontWeight: 700, padding: "2px 0 4px" }}>
+            "تسالي وكرومش .. لكل لحظة نكهة"
+          </div>
+          <div style={{ textAlign: "center", fontSize: "11px", color: "#555", paddingBottom: "8px" }}>تسالي كرومش</div>
+        </>}
 
         {/* ── 10. Tracking QR barcode — small on right with text beside it ── */}
         {trackingEnabled && trackingQrUrl && (
@@ -453,9 +535,11 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
         )}
 
         {/* ── 12. Powered by ── */}
-        <div style={{ borderTop: "1px dashed #ccc", textAlign: "center", padding: "10px 0", marginTop: "4px", fontFamily: "Arial, sans-serif", fontSize: "11px", color: "#555", letterSpacing: "0.3px" }}>
-          Powered by QIROX STUDIO
-        </div>
+        {(!isCustom || templateSettings.visibility.footer) && (
+          <div style={{ borderTop: "1px dashed #ccc", textAlign: "center", padding: "10px 0", marginTop: "4px", fontFamily: "Arial, sans-serif", fontSize: "11px", color: "#555", letterSpacing: "0.3px" }}>
+            Powered by QIROX STUDIO
+          </div>
+        )}
 
         <div style={{ height: "16px" }} />
       </div>
@@ -463,11 +547,11 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
       {/* ─── Action Buttons ─── */}
       {variant === "button" && (
         <div className="flex gap-2 w-full no-print">
-          <Button onClick={printReceipt} className="flex-1 bg-primary hover:bg-primary/90" data-testid="button-print-invoice">
+          <Button onClick={printReceipt} disabled={!printReady} className="flex-1 bg-primary hover:bg-primary/90" data-testid="button-print-invoice">
             <Printer className="ml-2 h-4 w-4" />
             {tc("طباعة الفاتورة", "Print Invoice")}
           </Button>
-          <Button onClick={generatePDF} variant="outline" className="flex-1" data-testid="button-download-invoice">
+          <Button onClick={generatePDF} disabled={!printReady} variant="outline" className="flex-1" data-testid="button-download-invoice">
             <Download className="ml-2 h-4 w-4" />
             {tc("حفظ PDF", "Save PDF")}
           </Button>
