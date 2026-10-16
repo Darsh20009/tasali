@@ -14,7 +14,7 @@
   "dependencies": {
     "@capacitor/cli": "^7.6.8",
     "@capacitor/core": "^8.5.0",
-    "@capacitor/ios": "^8.5.0",
+    "@capacitor/ios": "^8.5.3",
     "@hookform/resolvers": "^3.10.0",
     "@jridgewell/trace-mapping": "^0.3.31",
     "@radix-ui/react-accordion": "^1.2.20",
@@ -141,6 +141,7 @@
   },
   "overrides": {
     "fast-xml-parser": "4.4.1",
-    "tar": "7.5.22"
+    "tar": "7.5.22",
+    "proxy-addr": "2.0.8"
   }
 }
