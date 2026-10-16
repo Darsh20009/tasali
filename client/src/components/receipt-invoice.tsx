@@ -9,6 +9,7 @@ import { useTranslate } from "@/lib/useTranslate";
 import {
   getReceiptTemplateVisibility,
   loadReceiptTemplateSettings,
+  loadSharedReceiptTemplateSettings,
   RECEIPT_CAMPAIGN_IMAGE,
   renderReceiptCustomElements,
   shouldShowReceiptCampaign,
@@ -45,7 +46,8 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
   const [trackingEnabled, setTrackingEnabled] = useState(false);
   const [paperWidth] = useState<"58mm" | "80mm">(() => loadPrinterSettings().paperWidth);
   const paperWidthPx = paperWidth === "58mm" ? 219 : 300;
-  const [templateSettings] = useState<ReceiptTemplateSettings>(loadReceiptTemplateSettings);
+  const [templateSettings, setTemplateSettings] = useState<ReceiptTemplateSettings>(loadReceiptTemplateSettings);
+  const [templateSettingsReady, setTemplateSettingsReady] = useState(false);
   const receiptVisibility = getReceiptTemplateVisibility(templateSettings);
   const [customElements, setCustomElements] = useState<RenderedReceiptCustomElement[]>([]);
   const [customElementsReady, setCustomElementsReady] = useState(false);
@@ -191,8 +193,23 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
   const [printReady, setPrintReady] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+    setTemplateSettingsReady(false);
+    setPrintReady(false);
+    try { printIframeRef.current?.remove(); } catch {}
+    printIframeRef.current = null;
+    loadSharedReceiptTemplateSettings().then((sharedSettings) => {
+      if (cancelled) return;
+      setTemplateSettings(sharedSettings);
+      setTemplateSettingsReady(true);
+    });
+    return () => { cancelled = true; };
+  }, [order?.id, order?.orderNumber]);
+
+  useEffect(() => {
     // Skip staged iframe on Android — we use the no-iframe path
-    if (isAndroidDevice) { setPrintReady(customElementsReady); return; }
+    if (isAndroidDevice) { setPrintReady(templateSettingsReady && customElementsReady); return; }
+    if (!templateSettingsReady) return;
     if (templateSettings.mode === "custom" && !customElementsReady) return;
     // Wait until both QR codes are generated before staging the iframe
     if ((trackingEnabled && !trackingQrUrl) || !zatcaQrUrl || !invoiceRef.current) return;
@@ -240,7 +257,7 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trackingEnabled, trackingQrUrl, zatcaQrUrl, customElementsReady, templateSettings.mode, paperWidth]);
+  }, [trackingEnabled, trackingQrUrl, zatcaQrUrl, customElementsReady, templateSettingsReady, templateSettings.mode, paperWidth]);
 
   // Cleanup the staged iframe on unmount
   useEffect(() => {
@@ -292,7 +309,7 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
 
   useEffect(() => {
     if (variant !== "auto" || !(order?.id || order?.orderNumber)) return;
-    if (!printReady) return;
+    if (!printReady || !templateSettingsReady) return;
     // If a hardware thermal printer is configured, printTaxInvoice() already
     // handled printing this receipt.  Firing window.print() here too would:
     //   • produce a duplicate paper receipt for every customer (all devices)
@@ -316,7 +333,7 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
     if (isAndroidDevice) return;
     const t = setTimeout(() => { printReceipt(); }, 50);
     return () => clearTimeout(t);
-  }, [variant, order?.id, order?.orderNumber, printReady]);
+  }, [variant, order?.id, order?.orderNumber, printReady, templateSettingsReady]);
 
   /* ─── style helpers ─── */
   const cell = (extra?: React.CSSProperties): React.CSSProperties => ({ padding: "3px 0", fontSize: "13px", lineHeight: "1.7", ...extra });
@@ -547,11 +564,11 @@ export function ReceiptInvoice({ order, variant = "button", precomputedTrackingQ
       {/* ─── Action Buttons ─── */}
       {variant === "button" && (
         <div className="flex gap-2 w-full no-print">
-          <Button onClick={printReceipt} disabled={!printReady} className="flex-1 bg-primary hover:bg-primary/90" data-testid="button-print-invoice">
+          <Button onClick={printReceipt} disabled={!printReady || !templateSettingsReady} className="flex-1 bg-primary hover:bg-primary/90" data-testid="button-print-invoice">
             <Printer className="ml-2 h-4 w-4" />
             {tc("طباعة الفاتورة", "Print Invoice")}
           </Button>
-          <Button onClick={generatePDF} disabled={!printReady} variant="outline" className="flex-1" data-testid="button-download-invoice">
+          <Button onClick={generatePDF} disabled={!printReady || !templateSettingsReady} variant="outline" className="flex-1" data-testid="button-download-invoice">
             <Download className="ml-2 h-4 w-4" />
             {tc("حفظ PDF", "Save PDF")}
           </Button>

@@ -4,10 +4,11 @@ import brand from "@/lib/brand";
 import {
   escapeReceiptHtml,
   getReceiptTemplateVisibility,
-  loadReceiptTemplateSettings,
+  loadSharedReceiptTemplateSettings,
   RECEIPT_CAMPAIGN_IMAGE,
   renderReceiptCustomElements,
   shouldShowReceiptCampaign,
+  type ReceiptTemplateSettings,
 } from "@/lib/receipt-template-settings";
 
 /** Tracking is an opt-in customer feature. Printing must fail closed when unavailable. */
@@ -822,6 +823,7 @@ async function _buildFastCustomerEscPos(
   orderTypeThermal: string,
   paperWidth: '58mm' | '80mm',
   feedLines: number,
+  templateSettingsOverride?: ReceiptTemplateSettings,
 ): Promise<Uint8Array> {
   const { buildReceiptBitmapEscPos } = await import('./thermal-printer');
 
@@ -832,7 +834,7 @@ async function _buildFastCustomerEscPos(
 
   const invoiceTs = data.date ? new Date(data.date).toISOString() : new Date().toISOString();
   const { date: fmtDate, time: fmtTime } = formatDate(data.date);
-  const templateSettings = loadReceiptTemplateSettings();
+  const templateSettings = templateSettingsOverride ?? await loadSharedReceiptTemplateSettings();
   const receiptVisibility = getReceiptTemplateVisibility(templateSettings);
   const receiptOrderNumber = String(data.orderNumber).replace(/\D/g, '').padStart(4, '0') || String(data.orderNumber);
 
@@ -1113,7 +1115,10 @@ function formatDate(dateStr: string): { date: string; time: string } {
 }
 
 /** Build a visual HTML receipt for preview — image-free, instant print */
-export async function buildReceiptPreviewHtml(data: TaxInvoiceData): Promise<string> {
+export async function buildReceiptPreviewHtml(
+  data: TaxInvoiceData,
+  templateSettingsOverride?: ReceiptTemplateSettings,
+): Promise<string> {
   const { loadPrinterSettings } = await import("./thermal-printer");
   const paperWidth = loadPrinterSettings().paperWidth;
   const paperWidthPx = paperWidth === "58mm" ? 219 : 302;
@@ -1123,7 +1128,7 @@ export async function buildReceiptPreviewHtml(data: TaxInvoiceData): Promise<str
   const disc = data.invoiceDiscount ? parseNumber(data.invoiceDiscount) : 0;
   const { date: fmtDate, time: fmtTime } = formatDate(data.date);
   const orderNumDisplay = String(data.orderNumber).replace(/\D/g, '').padStart(4, '0') || data.orderNumber;
-  const templateSettings = loadReceiptTemplateSettings();
+  const templateSettings = templateSettingsOverride ?? await loadSharedReceiptTemplateSettings();
   const receiptVisibility = getReceiptTemplateVisibility(templateSettings);
   const showCampaignImage = shouldShowReceiptCampaign(templateSettings);
   const renderedCustomElements = await renderReceiptCustomElements(templateSettings, {
@@ -1835,7 +1840,7 @@ export async function printAllReceipts(data: TaxInvoiceData & { deliveryType?: s
   try {
     const { loadPrinterSettings, buildEscPosReceipt, buildReceiptBitmapEscPos, buildEscPosKitchenTicketBitmap, thermalPrint } = await import('./thermal-printer');
     const printerSettings = loadPrinterSettings();
-    const receiptTemplateSettings = loadReceiptTemplateSettings();
+    const receiptTemplateSettings = await loadSharedReceiptTemplateSettings();
 
     if (printerSettings.enabled && printerSettings.autoPrint) {
       const { date: fmtDate, time: fmtTime } = formatDate(data.date);
@@ -1848,7 +1853,7 @@ export async function printAllReceipts(data: TaxInvoiceData & { deliveryType?: s
 
       // Build ESC/POS receipt — image mode for TAPOS/Chinese printers (no encoding issues)
       // Also force image mode for Bluetooth — BLE thermal printers cannot render Arabic via ESC/POS charset commands
-      const needsReceiptBitmap = receiptTemplateSettings.mode === "campaign" || receiptTemplateSettings.mode === "custom";
+      const needsReceiptBitmap = shouldShowReceiptCampaign(receiptTemplateSettings) || receiptTemplateSettings.mode === "custom";
       const effectiveArabicEncoding = (needsReceiptBitmap || printerSettings.mode === 'bluetooth' || printerSettings.arabicEncoding === 'image') ? 'image' : printerSettings.arabicEncoding;
       let escData: Uint8Array;
       if (effectiveArabicEncoding === 'image') {
@@ -1858,6 +1863,7 @@ export async function printAllReceipts(data: TaxInvoiceData & { deliveryType?: s
             orderTypeLabel,
             printerSettings.paperWidth,
             printerSettings.feedLines,
+            receiptTemplateSettings,
           );
         } else {
           escData = await buildReceiptBitmapEscPos({

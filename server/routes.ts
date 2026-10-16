@@ -1676,6 +1676,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/receipt-template-settings", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const tenantId = req.employee?.tenantId || getTenantIdFromRequest(req) || "demo-tenant";
+      const config = await BusinessConfigModel.findOne({ tenantId })
+        .select({ receiptTemplateSettings: 1 })
+        .lean();
+      res.setHeader("Cache-Control", "no-store");
+      res.json({ settings: (config as any)?.receiptTemplateSettings ?? null });
+    } catch (error) {
+      console.error("[RECEIPT TEMPLATE] Error loading settings:", error);
+      res.status(500).json({ error: "Failed to load receipt template settings" });
+    }
+  });
+
+  app.put("/api/receipt-template-settings", requireAuth, requireManager, async (req: AuthRequest, res) => {
+    try {
+      const raw = req.body?.settings;
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+        return res.status(400).json({ error: "Receipt template settings are required" });
+      }
+
+      const validModes = ["default", "campaign", "custom"];
+      if (!validModes.includes(raw.mode)) {
+        return res.status(400).json({ error: "Invalid receipt template mode" });
+      }
+
+      const visibility = raw.visibility && typeof raw.visibility === "object" && !Array.isArray(raw.visibility)
+        ? raw.visibility
+        : {};
+      const validKinds = ["qr", "barcode", "link", "text"];
+      const customElements = (Array.isArray(raw.customElements) ? raw.customElements : [])
+        .slice(0, 8)
+        .flatMap((element: any) => {
+          if (
+            !element ||
+            typeof element !== "object" ||
+            !validKinds.includes(element.kind) ||
+            typeof element.value !== "string"
+          ) return [];
+
+          return [{
+            id: typeof element.id === "string" ? element.id.slice(0, 80) : crypto.randomUUID(),
+            kind: element.kind,
+            label: typeof element.label === "string" ? element.label.slice(0, 80) : "",
+            value: element.value.slice(0, 240),
+            placement: element.placement === "footer" ? "footer" : "afterOrderInfo",
+            enabled: element.enabled !== false,
+          }];
+        });
+
+      const settings = {
+        mode: raw.mode,
+        showCampaignImage: raw.mode === "default" ? true : raw.showCampaignImage === true,
+        visibility: {
+          brandHeader: raw.mode === "default" ? false : visibility.brandHeader !== false,
+          website: visibility.website !== false,
+          orderDetails: visibility.orderDetails !== false,
+          customer: visibility.customer !== false,
+          payment: visibility.payment !== false,
+          trackingCode: visibility.trackingCode !== false,
+          footer: visibility.footer !== false,
+        },
+        customElements,
+      };
+      const tenantId = req.employee?.tenantId || getTenantIdFromRequest(req) || "demo-tenant";
+      const config = await BusinessConfigModel.findOneAndUpdate(
+        { tenantId },
+        { $set: { receiptTemplateSettings: settings, updatedAt: new Date() } },
+        { new: true, upsert: true, runValidators: false },
+      ).select({ receiptTemplateSettings: 1 });
+
+      cache.invalidateKey(cacheKey("biz-config", tenantId));
+      res.setHeader("Cache-Control", "no-store");
+      res.json({ settings: (config as any)?.receiptTemplateSettings ?? settings });
+    } catch (error) {
+      console.error("[RECEIPT TEMPLATE] Error saving settings:", error);
+      res.status(500).json({ error: "Failed to save receipt template settings" });
+    }
+  });
+
   app.patch("/api/business-config", requireAuth, requireManager, async (req: AuthRequest, res) => {
     try {
       const tenantId = getTenantIdFromRequest(req) || "demo-tenant";

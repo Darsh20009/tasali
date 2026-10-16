@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ImagePlus, Plus, Trash2 } from "lucide-react";
+import { ImagePlus, Plus, Save, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { useTranslate } from "@/lib/useTranslate";
 import { buildReceiptPreviewHtml } from "@/lib/print-utils";
 import {
+  fetchSharedReceiptTemplateSettings,
   loadReceiptTemplateSettings,
   RECEIPT_CAMPAIGN_IMAGE,
   saveReceiptTemplateSettings,
@@ -30,6 +31,10 @@ const visibilityOptions = [
 export default function InvoiceTemplateSettingsPanel() {
   const tc = useTranslate();
   const [settings, setSettings] = useState<ReceiptTemplateSettings>(loadReceiptTemplateSettings);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [saveState, setSaveState] = useState<"saved" | "error" | null>(null);
   const [draftKind, setDraftKind] = useState<ReceiptCustomElementKind>("qr");
   const [draftLabel, setDraftLabel] = useState("");
   const [draftValue, setDraftValue] = useState("");
@@ -37,9 +42,45 @@ export default function InvoiceTemplateSettingsPanel() {
   const [previewHtml, setPreviewHtml] = useState("");
   const [previewError, setPreviewError] = useState(false);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetchSharedReceiptTemplateSettings()
+      .then((sharedSettings) => {
+        if (cancelled) return;
+        setSettings(sharedSettings ?? loadReceiptTemplateSettings());
+        setLoadError(false);
+      })
+      .catch((error) => {
+        console.error("Could not load shared receipt template settings", error);
+        if (cancelled) return;
+        setSettings(loadReceiptTemplateSettings());
+        setLoadError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
   const commit = (next: ReceiptTemplateSettings) => {
     setSettings(next);
-    saveReceiptTemplateSettings(next);
+    setSaveState(null);
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    setSaveState(null);
+    try {
+      const saved = await saveReceiptTemplateSettings(settings);
+      setSettings(saved);
+      setLoadError(false);
+      setSaveState("saved");
+    } catch (error) {
+      console.error("Could not save shared receipt template settings", error);
+      setSaveState("error");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const updateElement = (id: string, patch: Partial<ReceiptCustomElement>) => {
@@ -83,7 +124,7 @@ export default function InvoiceTemplateSettingsPanel() {
           coffeeItem: { nameAr: "مشروب تجريبي", nameEn: "Sample drink", price: "30.00" },
           quantity: 1,
         }],
-      } as any).then((html) => {
+      } as any, settings).then((html) => {
         if (cancelled) return;
         setPreviewHtml(html);
         setPreviewError(false);
@@ -98,7 +139,7 @@ export default function InvoiceTemplateSettingsPanel() {
   }, [settings]);
 
   const modeOptions = [
-    { value: "default" as const, title: "الافتراضي", subtitle: "التصميم الحالي كما هو" },
+    { value: "default" as const, title: "الافتراضي", subtitle: "صورة الحملة ثم رقم الطلب بدون شعار النشاط" },
     { value: "campaign" as const, title: "الحملة", subtitle: "صورة الحملة بعرض الورق" },
     { value: "custom" as const, title: "تخصيص", subtitle: "تحكم بالعناصر وأضف أكوادًا" },
   ];
@@ -112,6 +153,12 @@ export default function InvoiceTemplateSettingsPanel() {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        {isLoading && (
+          <p className="text-sm text-muted-foreground" role="status">
+            {tc("جارٍ تحميل شكل الفاتورة المحفوظ...", "Loading the saved invoice layout...")}
+          </p>
+        )}
+        <fieldset disabled={isLoading || isSaving} className="contents">
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" role="group" aria-label={tc("قالب الفاتورة", "Invoice template")}>
           {modeOptions.map((option) => (
             <Button
@@ -123,7 +170,7 @@ export default function InvoiceTemplateSettingsPanel() {
               onClick={() => commit({ ...settings, mode: option.value })}
             >
               <span className="font-semibold">{tc(option.title, option.value === "default" ? "Default" : option.value === "campaign" ? "Campaign" : "Custom")}</span>
-              <span className="text-xs font-normal opacity-80">{tc(option.subtitle, option.value === "default" ? "Keep the current design" : option.value === "campaign" ? "Full-width campaign image" : "Control fields and add codes")}</span>
+              <span className="text-xs font-normal opacity-80">{tc(option.subtitle, option.value === "default" ? "Campaign image followed by the order number, without the business logo" : option.value === "campaign" ? "Full-width campaign image" : "Control fields and add codes")}</span>
             </Button>
           ))}
         </div>
@@ -310,8 +357,26 @@ export default function InvoiceTemplateSettingsPanel() {
           </div>
         </details>
 
+        </fieldset>
+        <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs text-muted-foreground" role="status" aria-live="polite">
+            {loadError
+              ? tc("تعذر تحميل الإعدادات المشتركة. المعروض هو آخر شكل محفوظ على هذا الجهاز.", "Could not load shared settings. Showing the last layout saved on this device.")
+              : saveState === "saved"
+                ? tc("تم حفظ شكل الفاتورة وتطبيقه على جميع الأجهزة.", "Invoice layout saved and applied to all devices.")
+                : saveState === "error"
+                  ? tc("لم يتم الحفظ على الخادم. تحقق من الاتصال ثم حاول مرة أخرى.", "Could not save to the server. Check the connection and try again.")
+                  : tc("التعديلات لا تُطبق على الأجهزة الأخرى إلا بعد الضغط على حفظ.", "Changes apply to other devices only after you save.")}
+          </p>
+          <Button type="button" onClick={handleSave} disabled={isLoading || isSaving} className="shrink-0">
+            <Save className="ml-2 h-4 w-4" />
+            {isSaving
+              ? tc("جارٍ الحفظ...", "Saving...")
+              : tc("حفظ لجميع الأجهزة", "Save for all devices")}
+          </Button>
+        </div>
         <p className="text-xs text-muted-foreground">
-          {tc("الإعدادات محفوظة على هذا الجهاز وتخص فاتورة العميل، ولا تغيّر إيصال المطبخ.", "Settings are saved on this device and apply to customer receipts only, not kitchen tickets.")}
+          {tc("هذا الإعداد يخص فاتورة العميل فقط ولا يغيّر إيصال المطبخ. إعداد واقتران الطابعة يبقيان خاصين بكل جهاز.", "This setting applies to customer receipts, not kitchen tickets. Printer setup and pairing stay on each device.")}
         </p>
       </CardContent>
     </Card>

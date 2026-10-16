@@ -1,5 +1,6 @@
 import QRCode from "qrcode";
 import JsBarcode from "jsbarcode";
+import { apiRequest } from "@/lib/queryClient";
 
 export const RECEIPT_CAMPAIGN_IMAGE = "/images/invoice-campaign.webp?v=3";
 
@@ -47,9 +48,9 @@ const STORAGE_KEY = "qirox-receipt-template-v1";
 
 export const DEFAULT_RECEIPT_TEMPLATE_SETTINGS: ReceiptTemplateSettings = {
   mode: "default",
-  showCampaignImage: false,
+  showCampaignImage: true,
   visibility: {
-    brandHeader: true,
+    brandHeader: false,
     website: true,
     orderDetails: true,
     customer: true,
@@ -85,17 +86,18 @@ export function normalizeReceiptTemplateSettings(value: unknown): ReceiptTemplat
   if (!isRecord(value)) return DEFAULT_RECEIPT_TEMPLATE_SETTINGS;
   const visibility = isRecord(value.visibility) ? value.visibility : {};
   const validModes: ReceiptTemplateMode[] = ["default", "campaign", "custom"];
+  const mode = validModes.includes(value.mode as ReceiptTemplateMode)
+    ? value.mode as ReceiptTemplateMode
+    : "default";
   const elements = Array.isArray(value.customElements)
     ? value.customElements.map(normalizeElement).filter((item): item is ReceiptCustomElement => !!item).slice(0, 8)
     : [];
 
   return {
-    mode: validModes.includes(value.mode as ReceiptTemplateMode)
-      ? value.mode as ReceiptTemplateMode
-      : "default",
-    showCampaignImage: value.showCampaignImage === true,
+    mode,
+    showCampaignImage: mode === "default" ? true : value.showCampaignImage === true,
     visibility: {
-      brandHeader: visibility.brandHeader !== false,
+      brandHeader: mode === "default" ? false : visibility.brandHeader !== false,
       website: visibility.website !== false,
       orderDetails: visibility.orderDetails !== false,
       customer: visibility.customer !== false,
@@ -117,17 +119,46 @@ export function loadReceiptTemplateSettings(): ReceiptTemplateSettings {
   }
 }
 
-export function saveReceiptTemplateSettings(settings: ReceiptTemplateSettings): void {
-  if (typeof window === "undefined") return;
+function cacheReceiptTemplateSettings(settings: ReceiptTemplateSettings): ReceiptTemplateSettings {
+  const normalized = normalizeReceiptTemplateSettings(settings);
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+    } catch (error) {
+      console.error("Could not save receipt template settings", error);
+    }
+  }
+  return normalized;
+}
+
+export async function fetchSharedReceiptTemplateSettings(): Promise<ReceiptTemplateSettings | null> {
+  const response = await apiRequest("GET", "/api/receipt-template-settings");
+  const payload = await response.json();
+  if (!payload || payload.settings == null) return null;
+  return cacheReceiptTemplateSettings(normalizeReceiptTemplateSettings(payload.settings));
+}
+
+export async function loadSharedReceiptTemplateSettings(): Promise<ReceiptTemplateSettings> {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizeReceiptTemplateSettings(settings)));
+    return (await fetchSharedReceiptTemplateSettings()) ?? loadReceiptTemplateSettings();
   } catch (error) {
-    console.error("Could not save receipt template settings", error);
+    console.warn("Could not load shared receipt template settings; using the last local copy", error);
+    return loadReceiptTemplateSettings();
   }
 }
 
+export async function saveReceiptTemplateSettings(settings: ReceiptTemplateSettings): Promise<ReceiptTemplateSettings> {
+  const normalized = normalizeReceiptTemplateSettings(settings);
+  const response = await apiRequest("PUT", "/api/receipt-template-settings", { settings: normalized });
+  const payload = await response.json();
+  if (!payload || payload.settings == null) {
+    throw new Error("The server did not confirm the saved receipt template settings");
+  }
+  return cacheReceiptTemplateSettings(normalizeReceiptTemplateSettings(payload.settings));
+}
+
 export function shouldShowReceiptCampaign(settings: ReceiptTemplateSettings): boolean {
-  return settings.mode === "campaign" || (settings.mode === "custom" && settings.showCampaignImage);
+  return settings.mode === "campaign" || settings.showCampaignImage;
 }
 
 export function getReceiptTemplateVisibility(settings: ReceiptTemplateSettings) {

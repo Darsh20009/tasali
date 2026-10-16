@@ -118,6 +118,7 @@ const businessConfigSchema = new mongoose.Schema({
       integrationIds: [Number],
     },
   },
+  receiptTemplateSettings: { type: mongoose.Schema.Types.Mixed, default: null },
   updatedAt: { type: Date, default: Date.now },
   shiftPeriods: [{ start: Number, end: Number }],
   timezoneOffsetHours: { type: Number, default: 3 },
